@@ -55,6 +55,8 @@ Full provenance for every claim in this section is in §7, Full repository reuse
 
 **2.13 Metrics engine (new).** A pure-function package, `metrics/`, with unit tests against known values. It reads from the data layer and emits a **metrics packet** (§3) per instrument. Conventions are fixed in code and documented in the spec so results are reproducible: alpha/beta by regression of net-of-fee fund returns on the category benchmark's TRI over a 3-year window; tracking error as the annualized standard deviation of active returns versus the stated index TRI; expense drag versus category-average TER; overlap as weighted ISIN intersection of holdings; style drift from returns-based style analysis on NAV. The risk-free rate for India is an open input (§9, open decision 6). The engine uses numpy/pandas and Riskfolio-Lib. Specialists receive the packet as data; none of them compute these figures.
 
+*Implemented in Plan 0d (stock and ETF metrics).* Stock benchmark is the Nifty 50 price index; ETF tracking index is the Nifty 50 TRI. ETF tracking error is measured on exchange closing prices, so it includes premium/discount noise and overstates NAV-based tracking error (NIFTYBEES: about 2.5% on this basis); the packet carries a note saying so. The default window is 1 year (252 returns), not the 3 years planned for funds. Mutual-fund metrics (expense drag, alpha vs category benchmark, overlap) are not implemented.
+
 **2.14 Evaluation harness (new).** Automated checks run in CI and on demand:
 
 - **Schema validation** of every specialist and judge output.
@@ -291,6 +293,9 @@ Checked against the live sources; re-checked by `pytest --live`.
 | `nsepython.index_total_returns` | **Broken** (endpoint returns HTML); use jugaad-data |
 | AMFI TER | Page builds its table in the browser; no direct file found (mutual funds on hold) |
 | AMFI portfolio holdings | About 45 separate fund-house sites with differing formats (mutual funds on hold) |
+| niftyindices `NIFTY 1D RATE INDEX` via jugaad-data `index_raw` | Works; daily overnight-rate accrual index; ratio between two dates is the risk-free return (5.25% annualised over the last year) |
+| niftyindices `NIFTY 50` price index via jugaad-data `index_raw` | Works; stock benchmark |
+| FRED India short-rate series (`IRSTCB01INM156N`, `INTDSRINM193N`) | Stale (end 2023 / 2022); only `INDIRLTLT01STM` (10-year yield) is recent, with ~3-month lag; FRED resets plain Python `requests` connections (curl works) |
 
 ## 7. Full repository reuse audit
 
@@ -397,7 +402,7 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 3. **Kronos validation plan.** Define a concrete backtest comparing Kronos-derived forecasts against a naive baseline on Indian equities/bonds/fund NAVs before it's allowed to influence any specialist's verdict.
 4. **Fixed-income mechanics.** Decide how far to go modeling real bond mechanics (coupons, day-count, duration) versus treating bonds as generic price series indefinitely.
 5. **Single-user vs. broader audience.** Any move beyond personal use raises the regulatory question flagged in PRD §5 and should be revisited before it happens, not after.
-6. **India risk-free rate source** for alpha, Sharpe, and option pricing. FRED is US-centric; candidates (an RBI T-bill series, repo rate) are unverified. Needed before Phase 3 metrics and Phase 4 options.
+6. ~~**India risk-free rate source**~~ **Resolved 5 Oct 2026:** the Nifty 1D Rate Index (an overnight-rate accrual index from niftyindices) supplies per-period risk-free returns as level ratios. It is an overnight proxy, slightly below a 91-day T-bill; no free T-bill series was found.
 7. **Second agent runtime** for the portability test (§2.14). Name it before Phase 1 ends.
 8. **Verify-before-spec items** (found unverified in the Oct 3, 2026 review): ISIN prefix→type rules; nsepython bond, ETF, and results data depth; free iNAV source; free ETF holdings source; free government-security yield source; the AMFI NAV file as an mftool fallback; AMC holdings file formats. *Partly resolved 5 Oct 2026 (see §6.2): jugaad-data TRI, NSE equity/ETF lists and the AMFI NAV file are confirmed; ETF holdings, iNAV, G-sec yields, ISIN prefix rules, AMFI TER capture and AMC holdings formats remain open.*
 9. **Model classifier adoption.** Decide whether Jev (or any model classifier) is enabled in the resolver, based on the labeled resolver test set; default is off.
@@ -406,6 +411,7 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 ## Revision history
 
 - **Sep 26, 2026** — Initial TRD. (Original preserved at `docs/archive/TRD-2026-09-26.md`.)
+- **Oct 5, 2026 (Phase 0d)** — Metrics engine implemented for stocks and ETFs; open decision 6 (risk-free rate) resolved (see `docs/superpowers/plans/2026-10-05-phase-0d-metrics-engine.md`).
 - **Oct 5, 2026 (Phase 0c)** — Instrument resolver implemented for equity and ETF (see `docs/superpowers/plans/2026-10-05-phase-0c-instrument-resolver.md`).
 - **Oct 5, 2026 (Phase 0b)** — Added §6.2 source verification log; holiday-aware freshness; equity/ETF data layer implemented (see `docs/superpowers/plans/2026-10-05-phase-0b-equity-etf-data.md`).
 - **Oct 5, 2026 (code)** — Adapter protocol split into DataAdapter and BrokerAdapter to match `src/athena/contracts.py` (Phase 0a implemented: contracts, freshness, store, fallback, coverage, canary).
