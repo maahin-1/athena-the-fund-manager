@@ -52,25 +52,17 @@ All commands run from the project root `D:\projects\learn-project\athena-the-fun
 **Interfaces:**
 - Produces: importable package `athena` with `athena.__version__ == "0.1.0"`; a working `pytest` command via `.venv/Scripts/python -m pytest`.
 
-- [ ] **Step 1: Initialise git (the folder is not a repo yet) and create the virtualenv**
+- [ ] **Step 1: Create the virtualenv (the git repo already exists and tracks `origin` = github.com/maahin-1/athena-the-fund-manager, public)**
 
 ```bash
-git init
 python -m venv .venv
 ```
 
-Expected: `Initialized empty Git repository ...`; `.venv/` exists.
+Expected: `.venv/` exists. Commit with the GitHub no-reply identity (`git -c user.name=maahin-1 -c user.email=177068896+maahin-1@users.noreply.github.com commit ...`) so no personal email is published, and push after each task with `git push`.
 
-- [ ] **Step 2: Write `.gitignore`**
+- [ ] **Step 2: Confirm `.gitignore` already ignores the right paths**
 
-```
-.venv/
-__pycache__/
-*.egg-info/
-.pytest_cache/
-*.duckdb
-*.duckdb.wal
-```
+`.gitignore` already contains `.venv/`, `__pycache__/`, `*.egg-info/`, `.pytest_cache/`, `*.duckdb`, `*.duckdb.wal`, `.claude/` and `graphify-out/`. Do not overwrite it; run `cat .gitignore` and only add missing lines.
 
 - [ ] **Step 3: Write `pyproject.toml`**
 
@@ -134,8 +126,9 @@ Expected: `1 passed`.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add pyproject.toml .gitignore src/athena/__init__.py tests/test_smoke.py PRD.md TRD.md docs .graphifyignore
+git add pyproject.toml src/athena/__init__.py tests/test_smoke.py
 git commit -m "chore: scaffold athena package with pytest"
+git push
 ```
 
 ---
@@ -1262,8 +1255,9 @@ Run `/graphify . --update` so the graph reflects the revised TRD and the new `sr
 - [ ] **Step 4: Commit**
 
 ```bash
-git add TRD.md graphify-out
-git commit -m "docs: align TRD adapter contract with code; refresh graph"
+git add TRD.md
+git commit -m "docs: align TRD adapter contract with code"
+git push
 ```
 
 ---
