@@ -273,6 +273,23 @@ What each specialist needs, what a free source provides, and how v1 behaves. Sta
 | Options / volatility | Option chain | nsepython (breakage risk) | Partial | 15-minute staleness limit, canary |
 | Risk-free rate (alpha, Sharpe, pricing) | India T-bill / repo rate | None confirmed; FRED India coverage unverified | Open | Open decision 6 |
 
+### 6.2 Source verification log (5 Oct 2026)
+
+Checked against the live sources; re-checked by `pytest --live`.
+
+| Source | Result |
+| --- | --- |
+| NSE holiday list (`NSELive().holiday_list()`) | Works; segment `CM`; current year only; 2 Oct 2026 is a holiday |
+| NSE `EQUITY_L.csv`, `eq_etfseclist.csv` | Work with a browser `User-Agent`; ETF list gives each ETF's underlying index |
+| jugaad-data `stock_df` | Works; dates are IST midnight stored as naive UTC (18:30 the previous day); unadjusted prices |
+| jugaad-data `index_tri_raw(name, index_name, from, to)` | Works; returns TRI and NTR |
+| Yahoo `.NS` history | Works but invents flat zero-volume rows on market holidays; use `auto_adjust=False`; statements returned 4 years for SBIN |
+| AMFI `NAVAll.txt` | Works; scheme code, ISINs, NAV, date in one file (mutual funds on hold) |
+| NSE live quotes and option chain (jugaad-data, nsepython) | **Broken** (KeyError / empty); intraday quote and option-chain datasets unavailable for now |
+| `nsepython.index_total_returns` | **Broken** (endpoint returns HTML); use jugaad-data |
+| AMFI TER | Page builds its table in the browser; no direct file found (mutual funds on hold) |
+| AMFI portfolio holdings | About 45 separate fund-house sites with differing formats (mutual funds on hold) |
+
 ## 7. Full repository reuse audit
 
 Every repo below was cloned and its actual code inspected (not just its README), so these verdicts can be trusted as engineering assessments, not summaries of marketing copy. (The Oct 3, 2026 additions — llm-council, Jev — were assessed from the repository's source file and published documentation, not a full clone.)
@@ -380,12 +397,13 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 5. **Single-user vs. broader audience.** Any move beyond personal use raises the regulatory question flagged in PRD §5 and should be revisited before it happens, not after.
 6. **India risk-free rate source** for alpha, Sharpe, and option pricing. FRED is US-centric; candidates (an RBI T-bill series, repo rate) are unverified. Needed before Phase 3 metrics and Phase 4 options.
 7. **Second agent runtime** for the portability test (§2.14). Name it before Phase 1 ends.
-8. **Verify-before-spec items** (found unverified in the Oct 3, 2026 review): ISIN prefix→type rules; nsepython bond, ETF, and results data depth; free iNAV source; free ETF holdings source; free government-security yield source; the AMFI NAV file as an mftool fallback; AMC holdings file formats.
+8. **Verify-before-spec items** (found unverified in the Oct 3, 2026 review): ISIN prefix→type rules; nsepython bond, ETF, and results data depth; free iNAV source; free ETF holdings source; free government-security yield source; the AMFI NAV file as an mftool fallback; AMC holdings file formats. *Partly resolved 5 Oct 2026 (see §6.2): jugaad-data TRI, NSE equity/ETF lists and the AMFI NAV file are confirmed; ETF holdings, iNAV, G-sec yields, ISIN prefix rules, AMFI TER capture and AMC holdings formats remain open.*
 9. **Model classifier adoption.** Decide whether Jev (or any model classifier) is enabled in the resolver, based on the labeled resolver test set; default is off.
 10. **Judge panel trigger.** Define the instability tolerance in §2.14 (for example, the fraction of order-swap flips) that switches on the Phase 4b panel.
 
 ## Revision history
 
 - **Sep 26, 2026** — Initial TRD. (Original preserved at `docs/archive/TRD-2026-09-26.md`.)
+- **Oct 5, 2026 (Phase 0b)** — Added §6.2 source verification log; holiday-aware freshness; equity/ETF data layer implemented (see `docs/superpowers/plans/2026-10-05-phase-0b-equity-etf-data.md`).
 - **Oct 5, 2026 (code)** — Adapter protocol split into DataAdapter and BrokerAdapter to match `src/athena/contracts.py` (Phase 0a implemented: contracts, freshness, store, fallback, coverage, canary).
 - **Oct 3, 2026** — Gap closure after review against the PRD, a check of free data sources, and a review of karpathy/llm-council and Jev. Added: free-only data decision and coverage matrix (§6.1); data layer with batch loaders and local store (§2.11); instrument resolver and routing table (§2.12, §3); metrics engine (§2.13); evaluation harness (§2.14); arbitration protocol detail (§2.15); `data_coverage` in the specialist contract; per-dataset staleness table, fallback chains, and adapter canary (§5); Phase 0 in the roadmap; five new open decisions (6–10); llm-council and Jev entries in §4 and §7; refreshed data source table (§6) with confirmed and unverified sources.
