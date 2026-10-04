@@ -84,3 +84,12 @@ def test_export_parquet_writes_all_rows(tmp_path):
     store.export_parquet(out)
     count = duckdb.connect().execute("SELECT count(*) FROM read_parquet(?)", [out]).fetchone()[0]
     assert count == 2
+
+
+def test_latest_records_returns_newest_per_key_sorted():
+    store = DataStore()
+    store.put_many([rec(2, 1.0, key="B"), rec(5, 3.0, key="B"), rec(3, 2.0, key="A")])
+    store.put(Record("mf.ter", "A", datetime(2026, 10, 3, tzinfo=UTC), "x", {"ter": 1}))
+    got = store.latest_records("mf.nav")
+    assert [(r.key, r.payload["nav"]) for r in got] == [("A", 2.0), ("B", 3.0)]
+    assert store.latest_records("missing") == []

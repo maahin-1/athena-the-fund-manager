@@ -67,6 +67,16 @@ class DataStore:
             return None
         return Record(row[0], row[1], _from_db(row[2]), row[3], json.loads(row[4]))
 
+    def latest_records(self, dataset: str) -> list[Record]:
+        """The newest record for every key in a dataset."""
+        rows = self._con.execute(
+            "SELECT dataset, key, as_of, source, payload FROM ("
+            "SELECT *, row_number() OVER (PARTITION BY key ORDER BY as_of DESC, rowid DESC) AS rn "
+            "FROM records WHERE dataset = ?) WHERE rn = 1 ORDER BY key",
+            [dataset],
+        ).fetchall()
+        return [Record(r[0], r[1], _from_db(r[2]), r[3], json.loads(r[4])) for r in rows]
+
     def export_parquet(self, path: str) -> None:
         escaped = path.replace("'", "''")
         self._con.execute(f"COPY records TO '{escaped}' (FORMAT PARQUET)")
