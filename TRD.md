@@ -109,10 +109,12 @@ Full provenance for every claim in this section is in §7, Full repository reuse
 **DataAdapter / BrokerAdapter interface** (one shape, many implementations — ccxt's `Exchange` pattern):
 
 ```python
-class Adapter(Protocol):
-    def describe(self) -> dict: ...        # capability map: {"fetch_ohlcv": True, "place_order": "emulated", ...}
+class DataAdapter(Protocol):
+    def describe(self) -> dict: ...        # capability map: {"fetch_ohlcv": True, "fetch_quote": "emulated", ...}
     def fetch_quote(self, symbol: str, **params) -> Quote: ...
     def fetch_ohlcv(self, symbol: str, timeframe: str, since=None, limit=None, **params) -> list[Bar]: ...
+
+class BrokerAdapter(DataAdapter, Protocol):   # Phase 5
     def place_order(self, symbol: str, side: str, qty: float, order_type: str, **params) -> Order: ...
 ```
 
@@ -385,4 +387,5 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 ## Revision history
 
 - **Sep 26, 2026** — Initial TRD. (Original preserved at `docs/archive/TRD-2026-09-26.md`.)
+- **Oct 5, 2026 (code)** — Adapter protocol split into DataAdapter and BrokerAdapter to match `src/athena/contracts.py` (Phase 0a implemented: contracts, freshness, store, fallback, coverage, canary).
 - **Oct 3, 2026** — Gap closure after review against the PRD, a check of free data sources, and a review of karpathy/llm-council and Jev. Added: free-only data decision and coverage matrix (§6.1); data layer with batch loaders and local store (§2.11); instrument resolver and routing table (§2.12, §3); metrics engine (§2.13); evaluation harness (§2.14); arbitration protocol detail (§2.15); `data_coverage` in the specialist contract; per-dataset staleness table, fallback chains, and adapter canary (§5); Phase 0 in the roadmap; five new open decisions (6–10); llm-council and Jev entries in §4 and §7; refreshed data source table (§6) with confirmed and unverified sources.
