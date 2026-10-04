@@ -88,3 +88,8 @@ def test_new_dataset_limits():
     assert DEFAULT_LIMITS["calendar.nse_holidays"] == Limit(120, "days")
     assert DEFAULT_LIMITS["master.nse_equity"] == Limit(7, "days")
     assert DEFAULT_LIMITS["master.nse_etf"] == Limit(7, "days")
+
+
+def test_index_and_rate_limits():
+    assert DEFAULT_LIMITS["index.price"] == Limit(1, "business_days")
+    assert DEFAULT_LIMITS["rate.overnight"] == Limit(1, "business_days")

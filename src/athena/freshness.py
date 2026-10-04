@@ -27,6 +27,8 @@ DEFAULT_LIMITS: dict[str, Limit | None] = {
     "calendar.nse_holidays": Limit(120, "days"),
     "master.nse_equity": Limit(7, "days"),
     "master.nse_etf": Limit(7, "days"),
+    "index.price": Limit(1, "business_days"),
+    "rate.overnight": Limit(1, "business_days"),
 }
 
 

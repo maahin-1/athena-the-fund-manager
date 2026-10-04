@@ -67,6 +67,15 @@ class DataStore:
             return None
         return Record(row[0], row[1], _from_db(row[2]), row[3], json.loads(row[4]))
 
+    def history(self, dataset: str, key: str) -> list[Record]:
+        """Every record for a key, oldest first."""
+        rows = self._con.execute(
+            "SELECT dataset, key, as_of, source, payload FROM records "
+            "WHERE dataset = ? AND key = ? ORDER BY as_of, rowid",
+            [dataset, key],
+        ).fetchall()
+        return [Record(r[0], r[1], _from_db(r[2]), r[3], json.loads(r[4])) for r in rows]
+
     def latest_records(self, dataset: str) -> list[Record]:
         """The newest record for every key in a dataset."""
         rows = self._con.execute(

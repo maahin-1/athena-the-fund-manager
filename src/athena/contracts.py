@@ -36,6 +36,10 @@ class UnknownInstrument(AthenaError):
     """An input could not be matched to any known instrument."""
 
 
+class InsufficientData(AthenaError):
+    """Too little (or degenerate) data to compute a metric."""
+
+
 class UnsupportedOperation(AthenaError):
     """An adapter was asked for a capability its describe() map declares absent."""
 

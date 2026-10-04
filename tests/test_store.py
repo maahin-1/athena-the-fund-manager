@@ -93,3 +93,10 @@ def test_latest_records_returns_newest_per_key_sorted():
     got = store.latest_records("mf.nav")
     assert [(r.key, r.payload["nav"]) for r in got] == [("A", 2.0), ("B", 3.0)]
     assert store.latest_records("missing") == []
+
+
+def test_history_returns_every_record_for_a_key_oldest_first():
+    store = DataStore()
+    store.put_many([rec(5, 3.0), rec(2, 1.0), rec(3, 2.0), rec(4, 9.0, key="OTHER")])
+    assert [r.payload["nav"] for r in store.history("mf.nav", "119551")] == [1.0, 2.0, 3.0]
+    assert store.history("mf.nav", "missing") == []

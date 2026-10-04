@@ -14,6 +14,7 @@ from athena.contracts import (
     Record,
     RefreshResult,
     SchemaChangedError,
+    InsufficientData,
     StaleDataError,
     UnknownInstrument,
     UnsupportedOperation,
@@ -39,7 +40,7 @@ def test_record_is_frozen():
 
 @pytest.mark.parametrize(
     "exc",
-    [StaleDataError, EmptyRefreshError, SchemaChangedError, AllSourcesFailed, UnsupportedOperation, UnknownInstrument],
+    [StaleDataError, EmptyRefreshError, SchemaChangedError, AllSourcesFailed, UnsupportedOperation, UnknownInstrument, InsufficientData],
 )
 def test_errors_share_a_base_class(exc):
     assert issubclass(exc, AthenaError)
