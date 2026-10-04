@@ -51,7 +51,7 @@ class FallbackChain:
             except Exception as exc:  # any source failure moves to the next source
                 failures.append((name, f"{type(exc).__name__}: {exc}"))
                 continue
-            if value is None:
+            if value is None or (hasattr(value, "__len__") and len(value) == 0):
                 failures.append((name, "returned no data"))
                 continue
             return ChainResult(value, name, tuple(failures))

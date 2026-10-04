@@ -34,6 +34,13 @@ def test_none_result_counts_as_failure():
     assert result.failures == (("jugaad", "returned no data"),)
 
 
+def test_empty_sequence_counts_as_failure():
+    chain = FallbackChain([("a", ok([])), ("b", ok([1]))])
+    result = chain.run()
+    assert result.source == "b"
+    assert result.failures == (("a", "returned no data"),)
+
+
 def test_arguments_are_forwarded():
     chain = FallbackChain([("a", lambda symbol, timeframe="1d": (symbol, timeframe))])
     assert chain.run("SBIN", timeframe="1h").value == ("SBIN", "1h")

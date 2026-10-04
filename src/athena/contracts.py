@@ -32,6 +32,10 @@ class AllSourcesFailed(AthenaError):
     """Every source in a fallback chain failed or was skipped."""
 
 
+class UnsupportedOperation(AthenaError):
+    """An adapter was asked for a capability its describe() map declares absent."""
+
+
 @dataclass(frozen=True)
 class Record:
     dataset: str

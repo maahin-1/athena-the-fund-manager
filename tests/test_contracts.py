@@ -15,6 +15,7 @@ from athena.contracts import (
     RefreshResult,
     SchemaChangedError,
     StaleDataError,
+    UnsupportedOperation,
 )
 
 UTC = timezone.utc
@@ -35,7 +36,9 @@ def test_record_is_frozen():
         r.source = "other"
 
 
-@pytest.mark.parametrize("exc", [StaleDataError, EmptyRefreshError, SchemaChangedError, AllSourcesFailed])
+@pytest.mark.parametrize(
+    "exc", [StaleDataError, EmptyRefreshError, SchemaChangedError, AllSourcesFailed, UnsupportedOperation]
+)
 def test_errors_share_a_base_class(exc):
     assert issubclass(exc, AthenaError)
 
