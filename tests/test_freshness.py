@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
 from athena.contracts import StaleDataError
 from athena.freshness import DEFAULT_LIMITS, Limit, age_in_business_days, check_fresh
+from athena.trading_calendar import TradingCalendar
 
 UTC = timezone.utc
 
@@ -60,3 +61,30 @@ def test_unknown_dataset_is_an_error():
 def test_naive_datetimes_are_rejected():
     with pytest.raises(ValueError, match="timezone-aware"):
         check_fresh("mf.nav", datetime(2026, 10, 2), dt(3))
+
+
+CAL = TradingCalendar.from_dates([date(2026, 10, 2)])
+
+
+def test_holiday_calendar_prevents_false_stale_on_monday():
+    nav_as_of = datetime(2026, 10, 1, 12, 30, tzinfo=UTC)  # Thu 18:00 IST
+    now = datetime(2026, 10, 5, 3, 30, tzinfo=UTC)  # Mon 09:00 IST
+    with pytest.raises(StaleDataError):
+        check_fresh("mf.nav", nav_as_of, now)  # weekday-only age = 2 (counts the Fri holiday)
+    check_fresh("mf.nav", nav_as_of, now, calendar=CAL)  # trading-day age = 1
+
+
+def test_calendar_still_flags_genuinely_stale_data():
+    with pytest.raises(StaleDataError, match="2 business days"):
+        check_fresh(
+            "mf.nav",
+            datetime(2026, 10, 1, 12, 30, tzinfo=UTC),
+            datetime(2026, 10, 6, 3, 30, tzinfo=UTC),
+            calendar=CAL,
+        )
+
+
+def test_new_dataset_limits():
+    assert DEFAULT_LIMITS["calendar.nse_holidays"] == Limit(120, "days")
+    assert DEFAULT_LIMITS["master.nse_equity"] == Limit(7, "days")
+    assert DEFAULT_LIMITS["master.nse_etf"] == Limit(7, "days")
