@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from athena.contracts import Bar
-from athena.orchestrator.builders import HISTORY_DAYS, history_fetcher, technical_packet_builder
+from athena.orchestrator.builders import HISTORY_DAYS, RequestCache, history_fetcher, technical_packet_builder
 from athena.resolver import Resolution
 
 NOW = datetime(2026, 10, 5, 4, 0, tzinfo=timezone.utc)
@@ -51,3 +51,18 @@ def test_technical_packet_builder_builds_a_packet_for_the_resolved_symbol():
     packet = build(resolution)
     assert fetched == ["SBIN"] and packet["instrument"] == "SBIN" and packet["as_of"] == NOW.isoformat()
     assert packet["metrics"]["last_close"]["value"] == 179.0
+
+
+def test_request_cache_downloads_each_symbol_once_until_cleared():
+    fetched = []
+
+    def fetch(symbol):
+        fetched.append(symbol)
+        return bars()
+
+    cache = RequestCache(fetch)
+    cache("SBIN"), cache("SBIN"), cache("TCS")
+    assert fetched == ["SBIN", "TCS"]
+    cache.clear()
+    cache("SBIN")
+    assert fetched == ["SBIN", "TCS", "SBIN"]

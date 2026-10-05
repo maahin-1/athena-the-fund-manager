@@ -34,3 +34,20 @@ def technical_packet_builder(
         return build_technical_packet(resolution.identifier, clock(), fetch_bars(resolution.identifier))
 
     return build
+
+
+class RequestCache:
+    """Remembers each symbol's bars for one request, so every specialist, the charts and the fundamentals share one
+    price download. Whoever owns the request calls `clear()` when it starts."""
+
+    def __init__(self, fetch: Callable[[str], list[Bar]]):
+        self._fetch = fetch
+        self._bars: dict[str, list[Bar]] = {}
+
+    def __call__(self, symbol: str) -> list[Bar]:
+        if symbol not in self._bars:
+            self._bars[symbol] = self._fetch(symbol)
+        return self._bars[symbol]
+
+    def clear(self) -> None:
+        self._bars.clear()

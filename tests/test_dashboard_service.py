@@ -3,7 +3,8 @@ from dash_fakes import FUNDAMENTALS, ambiguous_result, resolution
 
 from athena.contracts import EmptyRefreshError
 from athena.dashboard.risk import RiskWorld
-from athena.dashboard.service import DashboardService, RequestCache
+from athena.dashboard.service import DashboardService
+from athena.orchestrator.builders import RequestCache
 from athena.orchestrator.orchestrator import OK, OrchestrationResult
 
 BARS = make_bars([100.0 + i * 0.5 for i in range(320)], symbol="SBIN")
@@ -41,16 +42,6 @@ def make_service(result=None):
     return service, fetch, orchestrator
 
 
-def test_request_cache_downloads_each_symbol_once_until_cleared():
-    fetch = CountingFetch()
-    cache = RequestCache(fetch)
-    cache("SBIN"), cache("SBIN"), cache("TCS")
-    assert fetch.symbols == ["SBIN", "TCS"]
-    cache.clear()
-    cache("SBIN")
-    assert fetch.symbols == ["SBIN", "TCS", "SBIN"]
-
-
 def test_a_view_shares_one_download_between_the_specialists_and_the_charts():
     service, fetch, orchestrator = make_service()
     view = service.view("sbin")
@@ -83,13 +74,16 @@ def test_an_ambiguous_query_downloads_nothing_and_returns_candidates():
 # ---- fundamentals source
 class FakeFundamentals:
     def __init__(self, packet=None, error=None):
-        self.packet, self.error, self.calls = packet, error, []
+        self.packet, self.error, self.calls, self.clears = packet, error, [], 0
 
-    def __call__(self, resolution, bars, now):
-        self.calls.append((resolution.identifier, len(bars), now))
+    def __call__(self, resolution):
+        self.calls.append(resolution.identifier)
         if self.error:
             raise self.error
         return self.packet
+
+    def clear(self):
+        self.clears += 1
 
 
 def service_with(fundamentals, asset_class="equity"):
@@ -103,8 +97,16 @@ def service_with(fundamentals, asset_class="equity"):
 def test_a_stock_view_gets_the_fundamentals_panels_built_from_the_same_bars():
     source = FakeFundamentals(FUNDAMENTALS)
     view = service_with(source).view("sbin")
-    assert source.calls == [("SBIN", len(BARS), NOW)]
+    assert source.calls == ["SBIN"]
     assert [p.title for p in view.panels][2:] == ["Valuation", "Business quality", "Earnings"]
+
+
+def test_each_request_starts_by_clearing_the_fundamentals_cache():
+    source = FakeFundamentals(FUNDAMENTALS)
+    service = service_with(source)
+    service.view("sbin")
+    service.view("sbin")
+    assert source.clears == 2
 
 
 def test_an_etf_never_asks_for_fundamentals():
