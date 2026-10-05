@@ -51,7 +51,7 @@ Full provenance for every claim in this section is in §7, Full repository reuse
 4. **Fuzzy name match** to a scored candidate list. A single candidate above the match threshold is accepted with `resolution_path: "fuzzy"`; otherwise the input is ambiguous.
 5. **Ambiguity.** An optional model classifier, behind a `Classifier` interface, chooses among the candidate records only (never from open vocabulary); it routes when its top probability is at or above a threshold (proposed default 0.85). Otherwise the resolver returns the candidate list and asks the user. The model classifier may be Jev (TypeSafe's decision model, reached through OpenRouter's Decisions API — alpha, probabilities per option, no free-text output, 32k context; not to be confused with jarrodwatts/jev-trader, §7) or any small LLM. **Adoption gate:** the classifier stays off until the labeled resolver test set (§2.14) shows deterministic misroutes that it fixes. Send identifiers only, never holdings.
 
-*Implemented in Plan 0c (equity and ETF only; funds and bonds unsupported until their masters exist).* The model classifier is a `Classifier` protocol with no implementation yet. Candidate ranking is by edit similarity and is known to be noisy for short ambiguous queries (e.g. `SBI`); it is to be measured and improved against the labeled set. ETF free-text name search is weak because NSE ETF names are squashed (`NIPINDETFNIFTYBEES`); tickers and ISINs work.
+*Implemented in Plan 0c (equity and ETF only; funds and bonds unsupported until their masters exist).* The model classifier is a `Classifier` protocol with no implementation yet. Candidates whose symbol or name starts with the query (3+ characters) are ranked first but can never be auto-accepted; auto-accept needs an edit similarity of at least 0.90 with a 0.05 lead (on 40 prefix queries the right instrument was offered 18 times before this and 39 times after, with no wrong answers). ETF free-text name search is weak because NSE ETF names are squashed (`NIPINDETFNIFTYBEES`); tickers and ISINs work.
 
 **2.13 Metrics engine (new).** A pure-function package, `metrics/`, with unit tests against known values. It reads from the data layer and emits a **metrics packet** (§3) per instrument. Conventions are fixed in code and documented in the spec so results are reproducible: alpha/beta by regression of net-of-fee fund returns on the category benchmark's TRI over a 3-year window; tracking error as the annualized standard deviation of active returns versus the stated index TRI; expense drag versus category-average TER; overlap as weighted ISIN intersection of holdings; style drift from returns-based style analysis on NAV. The risk-free rate for India is an open input (§9, open decision 6). The engine uses numpy/pandas and Riskfolio-Lib. Specialists receive the packet as data; none of them compute these figures.
 
@@ -67,6 +67,8 @@ Full provenance for every claim in this section is in §7, Full repository reuse
 - **Abstention test.** With required inputs removed, a specialist must report `partial` or `insufficient`, not a confident signal.
 - **Portability test.** The specialist specs and orchestrator logic run on at least one agent runtime other than the build runtime (the runtime to use is an open decision, §9).
 - **Optional dev-time grader.** Anonymized rubric review of MF/ETF outputs by several different models (llm-council idea, §7).
+
+*Implemented in Plan 0e:* number-grounding validator, specialist-output and judge-verdict validators, abstention and order-invariance checks (callable-based, so they apply to any specialist or judge), and a resolver evaluation that scores correct / safe / wrong / missed (wrong must stay at zero). Not yet implemented: golden sets (they need the Phase 1 specialists), the portability test (needs a named second runtime), and the optional multi-model rubric grader. The resolver set is 20 hand-labeled cases plus seeded synthetic ones generated from the master lists, short of the 100-200 labeled instruments targeted above; synthetic cases test self-consistency, not the lists.
 
 **2.15 Arbitration protocol (new).** The detail behind debate-then-judge:
 
@@ -411,6 +413,7 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 ## Revision history
 
 - **Sep 26, 2026** — Initial TRD. (Original preserved at `docs/archive/TRD-2026-09-26.md`.)
+- **Oct 5, 2026 (Phase 0e)** — Evaluation harness implemented; resolver prefix ranking fixed (see `docs/superpowers/plans/2026-10-05-phase-0e-evaluation-harness.md`).
 - **Oct 5, 2026 (Phase 0d)** — Metrics engine implemented for stocks and ETFs; open decision 6 (risk-free rate) resolved (see `docs/superpowers/plans/2026-10-05-phase-0d-metrics-engine.md`).
 - **Oct 5, 2026 (Phase 0c)** — Instrument resolver implemented for equity and ETF (see `docs/superpowers/plans/2026-10-05-phase-0c-instrument-resolver.md`).
 - **Oct 5, 2026 (Phase 0b)** — Added §6.2 source verification log; holiday-aware freshness; equity/ETF data layer implemented (see `docs/superpowers/plans/2026-10-05-phase-0b-equity-etf-data.md`).
