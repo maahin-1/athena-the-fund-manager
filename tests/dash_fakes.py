@@ -7,12 +7,15 @@ from athena.contracts import AthenaError
 from athena.dashboard.view import build_view
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, OK, OrchestrationResult
 from athena.resolver import Ambiguity, Candidate, Resolution
+from athena.metrics.fundamentals import build_fundamentals_packet
 from athena.technicals.packet import build_technical_packet
+from fund_fixtures import ACME, PRICE, index_history
 
 NOW = datetime(2026, 10, 5, 4, 0, tzinfo=timezone.utc)
 CLOSES = [100.0 + i * 0.5 for i in range(320)]
 BARS = make_bars(CLOSES, symbol="SBIN")
 TECHNICAL = build_technical_packet("SBIN", NOW, BARS)
+FUNDAMENTALS = build_fundamentals_packet("SBIN", NOW, ACME, PRICE, NOW, index_history())
 RISK = {
     "instrument": "SBIN",
     "as_of": NOW.isoformat(),
@@ -41,8 +44,8 @@ def ambiguous_result():
     return OrchestrationResult(NEEDS_CLARIFICATION, "sbi", None, ambiguity, {}, {}, None, None, None, ())
 
 
-def full_view(asset_class="equity", status=OK, risk=RISK):
-    return build_view(ok_result(asset_class, status), BARS, TECHNICAL, risk)
+def full_view(asset_class="equity", status=OK, risk=RISK, fundamentals=None, fundamentals_note=None):
+    return build_view(ok_result(asset_class, status), BARS, TECHNICAL, risk, fundamentals, fundamentals_note)
 
 
 class FakeService:

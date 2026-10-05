@@ -1,6 +1,10 @@
-from dash_fakes import BARS, RISK, TECHNICAL, ambiguous_result, full_view, ok_result
+import copy
 
-from athena.dashboard.view import UNMAPPED_ETF_NOTE, build_view
+from dash_fakes import BARS, FUNDAMENTALS, RISK, TECHNICAL, ambiguous_result, full_view, ok_result
+from fund_fixtures import ACME, NOW, PRICE, index_history
+
+from athena.dashboard.view import ETF_FUNDAMENTALS_NOTE, LENDER_NOTE, UNMAPPED_ETF_NOTE, build_view
+from athena.metrics.fundamentals import build_fundamentals_packet
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 
 
@@ -61,3 +65,52 @@ def test_an_ambiguous_result_becomes_a_candidate_list_with_no_charts_or_panels()
 def test_a_no_view_result_keeps_its_status():
     view = full_view(status=NO_VIEW)
     assert view.status == NO_VIEW
+
+
+# ---- fundamentals panels
+def test_a_stock_with_fundamentals_gets_three_more_panels_after_technical_and_risk():
+    panels = full_view(fundamentals=FUNDAMENTALS).panels
+    assert [p.title for p in panels][2:] == ["Valuation", "Business quality", "Earnings"]
+    assert all(p.coverage == "full" and not p.missing for p in panels[2:])
+    assert panels[2].as_of == "annual to 2026-03-31, quarter to 2026-06-30" and "NSE index valuation" in panels[2].source
+
+
+def test_each_fundamentals_panel_holds_only_its_own_group_and_copies_the_packet_figures():
+    valuation, quality, earnings = full_view(fundamentals=FUNDAMENTALS).panels[2:]
+    names = {p.title: {row.name for row in p.rows} for p in (valuation, quality, earnings)}
+    assert {"pe_trailing", "pb", "fcf_yield", "peg", "index_pe"} <= names["Valuation"]
+    assert {"roe_latest", "net_margin_latest", "revenue_cagr", "debt_to_equity"} <= names["Business quality"]
+    assert {"accruals_ratio", "eps_surprise_last", "days_to_next_earnings"} <= names["Earnings"]
+    assert not (names["Valuation"] & names["Business quality"]) and not (names["Business quality"] & names["Earnings"])
+    pe = next(row for row in valuation.rows if row.name == "pe_trailing")
+    assert pe.value == FUNDAMENTALS["metrics"]["pe_trailing"]["value"] and pe.unit == "ratio" and pe.window
+
+
+def test_a_group_with_missing_figures_is_partial_and_lists_why():
+    thin = copy.deepcopy(ACME)
+    thin["earnings_dates"] = []
+    packet = build_fundamentals_packet("SBIN", NOW, thin, PRICE, NOW, index_history())
+    earnings = full_view(fundamentals=packet).panels[4]
+    assert earnings.coverage == "partial" and earnings.missing["eps_surprise_last"] == "no reported earnings with a surprise figure"
+    assert full_view(fundamentals=packet).panels[2].coverage == "full"
+
+
+def test_a_group_with_no_figures_at_all_is_insufficient():
+    empty = build_fundamentals_packet("SBIN", NOW, {}, None, NOW, {})
+    assert [p.coverage for p in full_view(fundamentals=empty).panels[2:]] == ["insufficient"] * 3
+
+
+def test_data_quality_flags_and_the_lender_note_reach_the_notes():
+    flagged = copy.deepcopy(ACME)
+    flagged["quality_flags"] = ["quarterly periods a, b carry identical figures (possible duplicate); treated as missing"]
+    flagged["info"]["sector"] = "Financial Services"
+    notes = full_view(fundamentals=build_fundamentals_packet("SBIN", NOW, flagged, PRICE, NOW, index_history())).notes
+    assert flagged["quality_flags"][0] in notes and LENDER_NOTE in notes
+    assert LENDER_NOTE not in full_view(fundamentals=FUNDAMENTALS).notes
+
+
+def test_an_etf_gets_no_fundamentals_panels_and_a_note_and_a_failure_note_is_passed_through():
+    etf = full_view("etf")
+    assert [p.title.split()[0] for p in etf.panels] == ["Technical", "Risk"] and ETF_FUNDAMENTALS_NOTE in etf.notes
+    failed = full_view(fundamentals_note="fundamentals unavailable: no statements for 'X'")
+    assert "fundamentals unavailable: no statements for 'X'" in failed.notes and len(failed.panels) == 2

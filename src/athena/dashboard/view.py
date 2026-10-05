@@ -14,6 +14,9 @@ from athena.technicals.series import indicator_series
 
 NO_DATA = "no data"
 UNMAPPED_ETF_NOTE = "tracking error and difference are unavailable: no tracking index is mapped for this ETF"
+ETF_FUNDAMENTALS_NOTE = "financial statements do not apply to ETFs, so there are no valuation, quality or earnings panels"
+LENDER_NOTE = "this is a bank or lender: cash-flow, margin and working-capital ratios do not apply and are listed as unavailable"
+FUNDAMENTAL_PANELS = (("valuation", "Valuation"), ("quality", "Business quality"), ("earnings", "Earnings"))
 
 
 @dataclass(frozen=True)
@@ -87,11 +90,31 @@ def _panel(title: str, packet: Mapping[str, Any], as_of: str, source: str) -> Pa
     return Panel(title, as_of, source, _coverage(packet), rows, dict(packet.get("missing_reasons", {})))
 
 
+def _fundamental_panels(packet: Mapping[str, Any]) -> list[Panel]:
+    """One panel per group of the fundamentals packet, each with its own coverage label."""
+    groups = packet["groups"]
+    as_of = f"annual to {packet['latest_annual_period'] or 'n/a'}, quarter to {packet['latest_quarter'] or 'n/a'}"
+    panels = []
+    for group, title in FUNDAMENTAL_PANELS:
+        rows = tuple(
+            MetricRow(name, metric["value"], metric["unit"], metric.get("window") or "", metric.get("note", ""))
+            for name, metric in packet["metrics"].items()
+            if metric["group"] == group
+        )
+        missing = {name: packet["missing_reasons"][name] for name in packet["missing"] if groups[name] == group}
+        coverage = "insufficient" if not rows else "partial" if missing else "full"
+        source = "Yahoo statements, NSE index valuation" if group == "valuation" else "Yahoo statements"
+        panels.append(Panel(title, as_of, source, coverage, rows, missing))
+    return panels
+
+
 def build_view(
     result: OrchestrationResult,
     bars: Sequence[Bar] = (),
     technical: Mapping[str, Any] | None = None,
     risk: Mapping[str, Any] | None = None,
+    fundamentals: Mapping[str, Any] | None = None,
+    fundamentals_note: str | None = None,
 ) -> DashboardView:
     """Everything the page shows, as plain data: verdict, specialist views, panels with as-of and coverage, charts."""
     if result.status == NEEDS_CLARIFICATION and result.ambiguity:
@@ -116,6 +139,16 @@ def build_view(
         panels.append(_panel("Risk and benchmark metrics", risk, as_of, f"{source}, NIFTY 50, Nifty 1D Rate Index"))
         if resolution.asset_class == "etf" and "tracking_error" in risk["missing"]:
             notes.append(UNMAPPED_ETF_NOTE)
+
+    if fundamentals is not None:
+        panels.extend(_fundamental_panels(fundamentals))
+        notes.extend(fundamentals["data_quality_flags"])
+        if fundamentals["is_lender"]:
+            notes.append(LENDER_NOTE)
+    if fundamentals_note:
+        notes.append(fundamentals_note)
+    if resolution.asset_class == "etf":
+        notes.append(ETF_FUNDAMENTALS_NOTE)
 
     price_figure = rsi_figure = None
     if candles:

@@ -1,6 +1,7 @@
 from bar_factory import NOW, make_bars
-from dash_fakes import ambiguous_result, resolution
+from dash_fakes import FUNDAMENTALS, ambiguous_result, resolution
 
+from athena.contracts import EmptyRefreshError
 from athena.dashboard.risk import RiskWorld
 from athena.dashboard.service import DashboardService, RequestCache
 from athena.orchestrator.orchestrator import OK, OrchestrationResult
@@ -77,3 +78,46 @@ def test_an_ambiguous_query_downloads_nothing_and_returns_candidates():
     service, fetch, _ = make_service(ambiguous_result())
     view = service.view("sbi")
     assert fetch.symbols == [] and view.candidates and view.price_figure is None
+
+
+# ---- fundamentals source
+class FakeFundamentals:
+    def __init__(self, packet=None, error=None):
+        self.packet, self.error, self.calls = packet, error, []
+
+    def __call__(self, resolution, bars, now):
+        self.calls.append((resolution.identifier, len(bars), now))
+        if self.error:
+            raise self.error
+        return self.packet
+
+
+def service_with(fundamentals, asset_class="equity"):
+    fetch = CountingFetch()
+    cache = RequestCache(fetch)
+    result = OrchestrationResult(OK, "sbin", resolution(asset_class), None, {}, {}, None, 0.0, VERDICT, ())
+    orchestrator = FakeOrchestrator(cache, result)
+    return DashboardService(orchestrator, cache, RiskWorld({}, {}, {}), clock=lambda: NOW, fundamentals=fundamentals)
+
+
+def test_a_stock_view_gets_the_fundamentals_panels_built_from_the_same_bars():
+    source = FakeFundamentals(FUNDAMENTALS)
+    view = service_with(source).view("sbin")
+    assert source.calls == [("SBIN", len(BARS), NOW)]
+    assert [p.title for p in view.panels][2:] == ["Valuation", "Business quality", "Earnings"]
+
+
+def test_an_etf_never_asks_for_fundamentals():
+    source = FakeFundamentals(FUNDAMENTALS)
+    view = service_with(source, "etf").view("niftybees")
+    assert source.calls == [] and len(view.panels) == 2
+
+
+def test_a_fundamentals_failure_becomes_a_note_and_the_rest_of_the_page_survives():
+    view = service_with(FakeFundamentals(error=EmptyRefreshError("no statements for 'SBIN'"))).view("sbin")
+    assert len(view.panels) == 2 and view.price_figure is not None
+    assert "fundamentals unavailable: no statements for 'SBIN'" in view.notes
+
+
+def test_without_a_fundamentals_source_nothing_changes():
+    assert len(service_with(None).view("sbin").panels) == 2

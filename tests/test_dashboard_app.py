@@ -94,3 +94,14 @@ def test_each_metric_table_has_one_text_value_column_so_the_browser_never_gets_m
         assert {type(v) for v in frame.value["value"]} == {str}
     values = dict(zip(app.dataframe[0].value["metric"], app.dataframe[0].value["value"]))
     assert values["trend_alignment"] == "aligned_up" and values["last_close"] == "259.5"
+
+
+def test_the_page_shows_the_three_fundamentals_panels_each_with_coverage():
+    app = open_app(FakeService(full_view(fundamentals=dash_fakes.FUNDAMENTALS)), "sbin")
+    assert not app.exception and len(app.dataframe) == 5
+    bold = texts(app.markdown)
+    assert all(any(title in m for m in bold) for title in ("Valuation", "Business quality", "Earnings"))
+    captions = texts(app.caption)
+    assert sum("annual to 2026-03-31, quarter to 2026-06-30" in c and "coverage: full" in c for c in captions) == 3
+    for frame in app.dataframe:
+        assert {type(v) for v in frame.value["value"]} == {str}
