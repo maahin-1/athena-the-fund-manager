@@ -28,6 +28,7 @@ DEFAULT_LIMITS: dict[str, Limit | None] = {
     "master.nse_equity": Limit(7, "days"),
     "master.nse_etf": Limit(7, "days"),
     "index.price": Limit(1, "business_days"),
+    "index.valuation": Limit(1, "business_days"),
     "rate.overnight": Limit(1, "business_days"),
 }
 
