@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from athena.adapters.prices import JugaadPriceAdapter, YahooPriceAdapter, ohlcv_
 from athena.agents.base import Specialist
 from athena.agents.quant_technical import QUANT_TECHNICAL
 from athena.clock import utc_now
-from athena.contracts import AthenaError
+from athena.contracts import AthenaError, Bar
 from athena.fallback import FallbackChain
 from athena.llm.envfile import DEFAULT_ENV_FILE
 from athena.llm.router import Router, build_router
@@ -25,15 +26,29 @@ from athena.trading_calendar import TradingCalendar
 
 
 def build_orchestrator(
-    resolver: InstrumentResolver, llm_router: Router, chain: FallbackChain, clock: Callable[[], datetime] = utc_now
+    resolver: InstrumentResolver,
+    llm_router: Router,
+    chain: FallbackChain,
+    clock: Callable[[], datetime] = utc_now,
+    fetch_bars: Callable[[str], list[Bar]] | None = None,
 ) -> Orchestrator:
-    """Wire the specialists that exist (today only Quant/Technical) to their data and models."""
+    """Wire the specialists that exist (today only Quant/Technical) to their data and models.
+    `fetch_bars` lets a caller share one price download with other consumers (the dashboard does)."""
+    fetch = fetch_bars or history_fetcher(chain, clock=clock)
     specialists = {"quant_technical": Specialist(QUANT_TECHNICAL, llm_router.client_for("specialist"))}
-    builders = {"quant_technical": technical_packet_builder(history_fetcher(chain, clock=clock), clock)}
+    builders = {"quant_technical": technical_packet_builder(fetch, clock)}
     return Orchestrator(resolver, specialists, builders)
 
 
-def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:
+@dataclass(frozen=True)
+class LiveSources:
+    resolver: InstrumentResolver
+    llm_router: Router
+    chain: FallbackChain
+    store: DataStore
+
+
+def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     """Everything wired to real sources: NSE master lists and holidays, jugaad-data then Yahoo for prices, and
     whichever LLM providers have keys. Loads into a fresh in-memory store on every call."""
     llm_router = build_router(env_file=env_file)
@@ -46,7 +61,12 @@ def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:
     calendar = load_calendar(store, years) if years else TradingCalendar(frozenset())
     resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar))
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
-    return build_orchestrator(resolver, llm_router, chain)
+    return LiveSources(resolver, llm_router, chain, store)
+
+
+def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:
+    sources = live_sources(env_file)
+    return build_orchestrator(sources.resolver, sources.llm_router, sources.chain)
 
 
 def main(argv: list[str] | None = None, factory: Callable[..., Orchestrator] = live_orchestrator) -> int:
