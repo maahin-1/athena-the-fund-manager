@@ -24,6 +24,9 @@ ACCEPT_MARGIN = 0.05
 CANDIDATE_FLOOR = 0.55
 MODEL_THRESHOLD = 0.85
 MAX_CANDIDATES = 5
+MIN_PREFIX_LENGTH = 3
+PREFIX_BASE = 0.70  # a prefix match scores 0.70-0.89: it ranks first but can never reach ACCEPT_SCORE on its own
+PREFIX_SPAN = 0.19
 _NAME_STOPWORDS = {"limited", "ltd"}
 
 
@@ -131,6 +134,16 @@ def _score(query: str, target: str) -> float:
     return matcher.ratio()
 
 
+def _prefix_score(symbol_query: str, name_key: str, entry: _Entry) -> float:
+    """0.0 unless the query starts the symbol or the name; shorter targets score higher."""
+    best = 0.0
+    if len(symbol_query) >= MIN_PREFIX_LENGTH and entry.symbol.lower().startswith(symbol_query):
+        best = PREFIX_BASE + PREFIX_SPAN * len(symbol_query) / len(entry.symbol)
+    if len(name_key) >= MIN_PREFIX_LENGTH and entry.norm_name.startswith(name_key):
+        best = max(best, PREFIX_BASE + PREFIX_SPAN * len(name_key) / len(entry.norm_name))
+    return best
+
+
 class InstrumentResolver:
     def __init__(self, index: InstrumentIndex, classifier: Classifier | None = None) -> None:
         self._index = index
@@ -175,22 +188,28 @@ class InstrumentResolver:
         raise UnknownInstrument(f"ISIN {text} is not in the NSE equity or ETF lists.{note}")
 
     def _resolve_fuzzy(self, query: str, text: str, name_key: str) -> Resolution | Ambiguity:
-        scored: list[tuple[float, str, _Entry]] = []
+        symbol_query = text.lower()
+        scored: list[tuple[float, float, bool, str, _Entry]] = []  # edit, shown, is_prefix, kind, entry
         for entry in self._index.by_symbol.values():
             name_score = _score(name_key, entry.norm_name)
-            symbol_score = _score(text.lower(), entry.symbol.lower())
-            best = max(name_score, symbol_score)
-            if best >= CANDIDATE_FLOOR:
-                scored.append((best, "name" if name_score >= symbol_score else "ticker", entry))
+            symbol_score = _score(symbol_query, entry.symbol.lower())
+            edit = max(name_score, symbol_score)
+            prefix = _prefix_score(symbol_query, name_key, entry)
+            shown = max(edit, prefix)
+            if shown >= CANDIDATE_FLOOR:
+                kind = "name" if name_score >= symbol_score else "ticker"
+                scored.append((edit, shown, prefix > 0.0, kind, entry))
         if not scored:
             raise UnknownInstrument(f"no instrument matches {query!r}")
-        scored.sort(key=lambda item: (-item[0], item[2].asset_class != "etf", item[2].symbol))
-        candidates = tuple(self._candidate(e, s) for s, _, e in scored[:MAX_CANDIDATES])
 
-        top_score, top_kind, top_entry = scored[0]
-        runner_up = scored[1][0] if len(scored) > 1 else 0.0
-        if top_score >= ACCEPT_SCORE and top_score - runner_up >= ACCEPT_MARGIN:
-            return self._resolved(top_entry, top_kind, "fuzzy", round(top_score, 4), candidates)
+        ranked = sorted(scored, key=lambda i: (not i[2], -i[1], i[4].asset_class != "etf", i[4].symbol))
+        candidates = tuple(self._candidate(i[4], i[1]) for i in ranked[:MAX_CANDIDATES])
+
+        by_edit = sorted(scored, key=lambda i: (-i[0], i[4].asset_class != "etf", i[4].symbol))
+        top_edit, _, _, top_kind, top_entry = by_edit[0]
+        runner_up = by_edit[1][0] if len(by_edit) > 1 else 0.0
+        if top_edit >= ACCEPT_SCORE and top_edit - runner_up >= ACCEPT_MARGIN:
+            return self._resolved(top_entry, top_kind, "fuzzy", round(top_edit, 4), candidates)
 
         if self._classifier is not None:
             try:

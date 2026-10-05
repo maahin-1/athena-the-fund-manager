@@ -196,3 +196,29 @@ def test_index_requires_both_masters():
     store.put(Record(EQUITY_DATASET, "SBIN", NOW, "nse.archives", {"name": "State Bank of India", "isin": "INE062A01020"}))
     with pytest.raises(EmptyRefreshError, match="master.nse_etf"):
         InstrumentIndex.from_store(store, now=NOW)
+
+
+def _mini_resolver():
+    store = DataStore()
+    for symbol, name in (("SUNDARAM", "Sundaram Brake Linings Limited"), ("SOUND", "Sound Systems Limited"), ("SUNTV", "Sun TV Network Limited")):
+        store.put(Record(EQUITY_DATASET, symbol, NOW, "nse.archives", {"name": name, "isin": "INE000000000"}))
+    store.put(Record(ETF_DATASET, "NIFTYBEES", NOW, "nse.archives", {"name": "NIPINDETFNIFTYBEES", "isin": "INF000000000"}))
+    return InstrumentResolver(InstrumentIndex.from_store(store, now=NOW))
+
+
+def test_prefix_matches_rank_ahead_of_look_alikes_and_are_never_auto_accepted():
+    result = _mini_resolver().resolve("SUND")
+    assert isinstance(result, Ambiguity)  # a prefix is not a name, so it is never accepted on its own
+    identifiers = [c.identifier for c in result.candidates]
+    assert identifiers[0] == "SUNDARAM"
+    assert "SOUND" in identifiers and identifiers.index("SUNDARAM") < identifiers.index("SOUND")
+
+
+def test_name_prefix_surfaces_the_group_for_a_short_ambiguous_query():
+    result = resolver_for_tata().resolve("TATA")
+    assert isinstance(result, Ambiguity)
+    assert {"TATAMOTORS", "TATASTEEL", "TCS"} <= {c.identifier for c in result.candidates}
+
+
+def resolver_for_tata():
+    return InstrumentResolver(InstrumentIndex.from_store(make_store(), now=NOW))
