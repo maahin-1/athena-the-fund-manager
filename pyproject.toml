@@ -7,7 +7,7 @@ name = "athena"
 version = "0.1.0"
 description = "Agentic multi-asset fund manager"
 requires-python = ">=3.11"
-dependencies = ["duckdb>=1.0", "requests>=2.31", "jugaad-data>=0.35", "yfinance>=1.0", "numpy>=1.26"]
+dependencies = ["duckdb>=1.0", "requests>=2.31", "jugaad-data>=0.35", "yfinance>=1.0", "numpy>=1.26", "TA-Lib>=0.6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
