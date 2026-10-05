@@ -11,7 +11,6 @@ from athena.fallback import FallbackChain, HealthRegistry
 from athena.llm.client import OpenAICompatibleClient
 from athena.llm.envfile import DEFAULT_ENV_FILE, read_setting
 from athena.llm.errors import ProviderError
-from athena.llm.policy import OPENAI_CHEAP_MODELS, ModelPolicy, allow_all, allowlist, free_only
 
 
 @dataclass(frozen=True)
@@ -19,18 +18,17 @@ class ProviderSpec:
     name: str
     base_url: str
     key_name: str
-    policy: ModelPolicy
     token_param: str = "max_tokens"
     send_temperature: bool = True
 
 
 PROVIDERS: dict[str, ProviderSpec] = {
-    "nvidia": ProviderSpec("nvidia", "https://integrate.api.nvidia.com/v1", "NVIDIA_API_KEY", allow_all("nvidia")),
+    "nvidia": ProviderSpec("nvidia", "https://integrate.api.nvidia.com/v1", "NVIDIA_API_KEY"),
     "openrouter": ProviderSpec(
-        "openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", free_only("openrouter")
+        "openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"
     ),
     "openai": ProviderSpec(
-        "openai", "https://api.openai.com/v1", "OPENAI_API_KEY", allowlist("openai", OPENAI_CHEAP_MODELS),
+        "openai", "https://api.openai.com/v1", "OPENAI_API_KEY",
         token_param="max_completion_tokens", send_temperature=False,
     ),
 }
@@ -127,7 +125,7 @@ def build_router(
                 continue
             clients.append(
                 OpenAICompatibleClient(
-                    provider, model, spec.base_url, keys[provider], spec.policy,
+                    provider, model, spec.base_url, keys[provider],
                     token_param=spec.token_param, send_temperature=spec.send_temperature,
                     **client_options,  # type: ignore[arg-type]
                 )

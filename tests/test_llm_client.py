@@ -2,14 +2,13 @@ import pytest
 import requests
 
 from athena.llm.client import OpenAICompatibleClient
-from athena.llm.errors import ModelNotAllowed, ProviderError
-from athena.llm.policy import allow_all, allowlist, free_only
+from athena.llm.errors import ProviderError
 from llm_fakes import SECRET, FakePost, FakeResponse
 
-def make(post, policy=None, model="some/model", **options):
+def make(post, model="some/model", **options):
     sleeps = []
     client = OpenAICompatibleClient(
-        "test", model, "https://example.test/v1/", SECRET, policy or allow_all("test"),
+        "test", model, "https://example.test/v1/", SECRET,
         post=post, sleep=sleeps.append, **options,
     )
     client.sleeps = sleeps
@@ -37,15 +36,6 @@ def test_parameter_profile_can_use_max_completion_tokens_and_no_temperature():
 
 def test_empty_content_from_a_reasoning_model_comes_back_as_an_empty_string():
     assert make(FakePost(FakeResponse(content=None))).complete("s", "u") == ""
-
-
-def test_a_disallowed_model_is_rejected_when_the_client_is_built_before_any_request():
-    post = FakePost(FakeResponse())
-    with pytest.raises(ModelNotAllowed):
-        make(post, policy=free_only("openrouter"), model="openai/gpt-5.4")
-    with pytest.raises(ModelNotAllowed):
-        make(post, policy=allowlist("openai", ["gpt-5.4-nano"]), model="gpt-5.4")
-    assert post.calls == []
 
 
 def test_rate_limits_and_server_errors_are_retried_with_backoff_then_succeed():

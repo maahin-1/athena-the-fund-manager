@@ -45,7 +45,7 @@ def probe_models(
             if not key:
                 continue
             client = OpenAICompatibleClient(
-                provider, model, spec.base_url, key, spec.policy,
+                provider, model, spec.base_url, key,
                 token_param=spec.token_param, send_temperature=spec.send_temperature,
                 max_tokens=PROBE_MAX_TOKENS, timeout=60.0, retries=0, post=post,
             )

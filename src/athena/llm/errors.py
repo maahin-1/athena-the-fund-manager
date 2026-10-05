@@ -3,10 +3,6 @@ from __future__ import annotations
 from athena.contracts import AthenaError
 
 
-class ModelNotAllowed(AthenaError):
-    """A model id is outside the provider's spending policy (for example a paid OpenRouter model)."""
-
-
 class ProviderError(AthenaError):
     """A provider call failed. `status` is the HTTP status (None for network errors); `retryable` says whether
     trying the same model again could help (rate limits, server errors, timeouts)."""

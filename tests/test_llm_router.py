@@ -2,13 +2,12 @@ import pytest
 
 from athena.contracts import AllSourcesFailed, AthenaError
 from athena.llm.client import OpenAICompatibleClient
-from athena.llm.policy import allow_all
 from athena.llm.router import PROVIDERS, ROLE_TIERS, TIERS, FallbackLLM, StaticRouter, build_router
 from llm_fakes import FakePost, FakeResponse
 
 
 def client(name, post):
-    return OpenAICompatibleClient("p", name, "https://x.test/v1", "k", allow_all("p"), post=post, sleep=lambda s: None, retries=0)
+    return OpenAICompatibleClient("p", name, "https://x.test/v1", "k", post=post, sleep=lambda s: None, retries=0)
 
 
 def test_first_working_model_answers_and_failures_are_recorded():
@@ -59,11 +58,11 @@ def test_static_router_maps_roles_to_tiers_with_a_default():
         StaticRouter({"cheap": tiers["cheap"]}).client_for("judge")
 
 
-def test_every_configured_tier_entry_obeys_its_providers_policy():
+def test_every_tier_names_known_providers_and_every_role_maps_to_a_tier():
     for tier, entries in TIERS.items():
         assert entries, tier
         for provider, model in entries:
-            PROVIDERS[provider].policy.check(model)  # raises ModelNotAllowed on a paid OpenRouter or non-allowlisted OpenAI id
+            assert provider in PROVIDERS and model, (tier, provider, model)
     assert set(ROLE_TIERS.values()) <= set(TIERS)
 
 

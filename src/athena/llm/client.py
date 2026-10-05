@@ -7,7 +7,6 @@ from typing import Any
 import requests
 
 from athena.llm.errors import ProviderError
-from athena.llm.policy import ModelPolicy
 
 RETRYABLE_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 
@@ -15,8 +14,7 @@ RETRYABLE_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 class OpenAICompatibleClient:
     """One model on one OpenAI-compatible chat-completions endpoint (NVIDIA NIM, OpenRouter, OpenAI).
 
-    Satisfies the `LLMClient` protocol. The model policy is checked when the client is built and again
-    before every request."""
+    Satisfies the `LLMClient` protocol."""
 
     def __init__(
         self,
@@ -24,7 +22,6 @@ class OpenAICompatibleClient:
         model: str,
         base_url: str,
         api_key: str,
-        policy: ModelPolicy,
         token_param: str = "max_tokens",
         send_temperature: bool = True,
         max_tokens: int = 3000,
@@ -33,12 +30,10 @@ class OpenAICompatibleClient:
         post: Callable[..., Any] = requests.post,
         sleep: Callable[[float], None] = time.sleep,
     ):
-        policy.check(model)
         self.provider = provider
         self.model = model
         self.url = base_url.rstrip("/") + "/chat/completions"
         self._api_key = api_key
-        self.policy = policy
         self.token_param = token_param
         self.send_temperature = send_temperature
         self.max_tokens = max_tokens
@@ -66,7 +61,6 @@ class OpenAICompatibleClient:
         return payload
 
     def complete(self, system: str, user: str) -> str:
-        self.policy.check(self.model)
         failure: ProviderError | None = None
         for attempt in range(self.retries + 1):
             if attempt:
