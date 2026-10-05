@@ -39,7 +39,7 @@ Full provenance for every claim in this section is in §7, Full repository reuse
 
 **2.9 Visualization/Dashboard agent.** Consumes every specialist's structured numeric output and renders: candles + moving averages + Bollinger Bands + volume and momentum/pattern-recognition flags via ta-lib-python; an options Greeks/IV/decay panel via vollib; a portfolio risk/overlap view via Riskfolio-Lib. Built as an interactive, re-queryable dashboard, not a static image. Each panel shows its dataset's as-of time and coverage label.
 
-**2.10 Paper-trading / backtest engine.** Backtest simulator on backtrader's `Cerebro`/`BackBroker`/pandas-feed/`SignalStrategy` pattern (see §4 for the licensing caveat and the FinRL alternative) or FinRL directly. Live/paper execution kept as a separate layer: broker adapters for Kite Connect and Groww exposed as MCP tools following the alpaca-mcp-server (OpenAPI-spec-driven tool generation, hand-crafted order-placement overrides) and ccxt-mcp (accounts referenced by name never credential, capability tiers config-file-owned, preview-then-confirm-token round-trip before any real trade, output redaction) patterns, with one flag switching paper vs. live base URL.
+**2.10 Paper-trading / backtest engine.** Backtest simulator on backtrader's `Cerebro`/`BackBroker`/pandas-feed/`SignalStrategy` pattern (see §4 for the licensing caveat and the FinRL alternative) or FinRL directly. Live/paper execution kept as a separate layer: a broker adapter for Kite Connect (Zerodha) exposed as MCP tools following the alpaca-mcp-server (OpenAPI-spec-driven tool generation, hand-crafted order-placement overrides) and ccxt-mcp (accounts referenced by name never credential, capability tiers config-file-owned, preview-then-confirm-token round-trip before any real trade, output redaction) patterns, with one flag switching paper vs. live base URL.
 
 **2.11 Data layer (new).** Two kinds of source behind one contract. **Live adapters** (the `Adapter` protocol in §3) serve quotes, OHLCV, and option chains on demand. **Batch loaders** (the `BatchLoader` protocol in §3) ingest periodic file-based disclosures — AMFI expense ratios and portfolio holdings, index total-return series, NSE/BSE bond repository records — into a local store. The store is DuckDB over Parquet (the pattern borrowed from Jon-Becker/prediction-market-analysis, §7). Every record carries `as_of`, `source`, and the dataset's freshness class; reads return a `Record(as_of, source, payload)`. Batch refresh runs on a schedule per dataset (cadence table in §5) and stores history, so backtests and metrics can read point-in-time values. Fallback chains and the daily canary are specified in §5.
 
@@ -135,7 +135,7 @@ class BatchLoader(Protocol):
     def read(self, dataset: str, key: str, **params) -> Record: ...     # Record(as_of, source, payload)
 ```
 
-Concrete live adapters: `NseAdapter` (jugaad-data/nsepython), `YahooAdapter`, `AmfiAdapter` (mftool, NAV), `KiteAdapter` (pykiteconnect), `GrowwAdapter` (growwapi). Concrete batch loaders: `AmfiTerLoader`, `AmfiHoldingsLoader`, `IndexTriLoader` (niftyindices.com / jugaad-data), `BondRepositoryLoader` (NSE/BSE trade repositories). Each declares its own `describe()` map so the orchestrator knows, per source, what's native, emulated, or unsupported.
+Concrete live adapters: `NseAdapter` (jugaad-data/nsepython), `YahooAdapter`, `AmfiAdapter` (mftool, NAV), `KiteAdapter` (pykiteconnect). Concrete batch loaders: `AmfiTerLoader`, `AmfiHoldingsLoader`, `IndexTriLoader` (niftyindices.com / jugaad-data), `BondRepositoryLoader` (NSE/BSE trade repositories). Each declares its own `describe()` map so the orchestrator knows, per source, what's native, emulated, or unsupported.
 
 **Instrument classification schema** (output of the resolver, §2.12):
 
@@ -192,7 +192,7 @@ Concrete live adapters: `NseAdapter` (jugaad-data/nsepython), `YahooAdapter`, `A
 | Portfolio risk & construction | Riskfolio-Lib (primary), PyPortfolioOpt (lighter-weight cross-check) | Open source (permissive) | Adopt as-is |
 | Backtesting | backtrader **or** FinRL — open decision, see §9 | backtrader: GPLv3 (dormant since 2023); FinRL: actively maintained | If backtrader, treat as a maintained fork with legal sign-off, not a tracked upstream |
 | Forecasting signal (optional) | Kronos | MIT | Adapt — validate on our asset classes before trusting as a signal (trained mostly on crypto/global exchanges) |
-| Broker execution | pykiteconnect (Zerodha, official), growwapi (Groww, official) | Official SDKs | Preferred over any unofficial wrapper |
+| Broker execution | pykiteconnect (Zerodha, official) | Official SDK | Preferred over any unofficial wrapper |
 | Free market data | jugaad-data, nsepython (NSE/BSE), Yahoo Finance, mftool (AMFI NAV), AMFI TER/holdings files, niftyindices.com index data | Open source / public files | Fallback chains required — NSE-scraping libraries break on endpoint changes. Free-only for v1 |
 | Broker tool exposure | Custom MCP server, patterned on alpaca-mcp-server + ccxt-mcp | — | Generic MCP (FastMCP-style), not tied to any agent host |
 
@@ -247,8 +247,7 @@ Concrete live adapters: `NseAdapter` (jugaad-data/nsepython), `YahooAdapter`, `A
 | Index total-return series | niftyindices.com historical data; jugaad-data | Free | Needed for ETF tracking error and fund benchmark alpha |
 | Indian bond data | NSE/BSE corporate bond trade repositories | Free | Issue date, rating, coupon frequency; no API found; no covenant or indenture data |
 | Macro/rates | FRED | Free | Standard for US series. India coverage is unverified (likely limited and lagged); an Indian risk-free rate source is an open decision |
-| Zerodha execution | [pykiteconnect](https://github.com/zerodha/pykiteconnect) | Paid/brokerage account | Official SDK, MIT license |
-| Groww execution | growwapi | Paid/brokerage account | Official SDK (PyPI) |
+| Zerodha execution | [pykiteconnect](https://github.com/zerodha/pykiteconnect) | Paid/brokerage account | Official SDK, MIT license Plans (checked Oct 2026): the free Personal plan covers orders, GTT and portfolio only; live WebSocket data and historical candles need the paid Connect plan at Rs 500 per month per API key, which is the one place the free-data-only rule is under review. |
 | US equities/options paper broker (reference architecture) | [alpaca-mcp-server](https://github.com/alpacahq/alpaca-mcp-server) | Free paper / funded live | Not usable for Indian markets directly; its MCP tool-generation pattern is the template to copy |
 | Options Greeks/IV | [vollib](https://github.com/vollib/vollib) | Free (library) | Core pricing/IV math |
 | Portfolio risk/construction | [Riskfolio-Lib](https://github.com/dcajasn/Riskfolio-Lib), [PyPortfolioOpt](https://github.com/robertmartin8/PyPortfolioOpt) | Free (library) | Riskfolio-Lib is the broader of the two |
@@ -328,7 +327,6 @@ Every repo below was cloned and its actual code inspected (not just its README),
 | Repo | Fills |
 | --- | --- |
 | [zerodha/pykiteconnect](https://github.com/zerodha/pykiteconnect) | Official Zerodha execution SDK |
-| growwapi (official, PyPI) | Official Groww execution SDK |
 | [jugaad-data](https://github.com/jugaad-py/jugaad-data), [nsepython](https://github.com/aeron7/nsepython) | Free NSE/BSE data |
 | [mftool](https://github.com/NayakwadiS/mftool) | AMFI mutual fund NAV data |
 | [AI4Finance-Foundation/FinRL](https://github.com/AI4Finance-Foundation/FinRL) | Actively-maintained backtest/simulation alternative to backtrader |
@@ -395,7 +393,7 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 2. **Debt/bonds.** Credit/duration specialists (§2.4) on government securities and listed corporate bonds; bonds still backtest as generic price series.
 3. **Mutual funds & ETFs.** Build §2.5/§2.6 from scratch against `AmfiAdapter`, the AMFI batch loaders, `IndexTriLoader`, the metrics engine, and Riskfolio-Lib.
 4. **Full arbitration.** Implement the debate-then-judge state machine (§1, §2.1, §2.15) — 2-round debate, anonymized labels, single judge; add the Options/Volatility specialist (§2.8) and its dashboard panel. Phase 4b judge panel only if §2.14 shows single-judge instability.
-5. **Live/paper execution.** `KiteAdapter`/`GrowwAdapter` behind the MCP tool-exposure layer (§2.10), paper/live toggle, preview/confirm-token safety (§5).
+5. **Live/paper execution.** `KiteAdapter` behind the MCP tool-exposure layer (§2.10), paper/live toggle, preview/confirm-token safety (§5).
 
 **Open technical decisions, in priority order:**
 
@@ -414,6 +412,7 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 
 - **Sep 26, 2026** — Initial TRD. (Original preserved at `docs/archive/TRD-2026-09-26.md`.)
 - **Oct 5, 2026 (Phase 0e)** — Evaluation harness implemented; resolver prefix ranking fixed (see `docs/superpowers/plans/2026-10-05-phase-0e-evaluation-harness.md`).
+- **Oct 5, 2026 (broker decision)** — Zerodha (Kite Connect) is the only broker; Groww and Upstox dropped from scope.
 - **Oct 5, 2026 (Phase 0d)** — Metrics engine implemented for stocks and ETFs; open decision 6 (risk-free rate) resolved (see `docs/superpowers/plans/2026-10-05-phase-0d-metrics-engine.md`).
 - **Oct 5, 2026 (Phase 0c)** — Instrument resolver implemented for equity and ETF (see `docs/superpowers/plans/2026-10-05-phase-0c-instrument-resolver.md`).
 - **Oct 5, 2026 (Phase 0b)** — Added §6.2 source verification log; holiday-aware freshness; equity/ETF data layer implemented (see `docs/superpowers/plans/2026-10-05-phase-0b-equity-etf-data.md`).
