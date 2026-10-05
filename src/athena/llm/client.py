@@ -8,7 +8,6 @@ import requests
 
 from athena.llm.errors import ProviderError
 from athena.llm.policy import ModelPolicy
-from athena.llm.spend import SpendGuard
 
 RETRYABLE_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 
@@ -17,8 +16,7 @@ class OpenAICompatibleClient:
     """One model on one OpenAI-compatible chat-completions endpoint (NVIDIA NIM, OpenRouter, OpenAI).
 
     Satisfies the `LLMClient` protocol. The model policy is checked when the client is built and again
-    before every request; the spend guard (if any) is checked before the request and updated from the
-    reported token usage after it."""
+    before every request."""
 
     def __init__(
         self,
@@ -27,7 +25,6 @@ class OpenAICompatibleClient:
         base_url: str,
         api_key: str,
         policy: ModelPolicy,
-        guard: SpendGuard | None = None,
         token_param: str = "max_tokens",
         send_temperature: bool = True,
         max_tokens: int = 3000,
@@ -42,7 +39,6 @@ class OpenAICompatibleClient:
         self.url = base_url.rstrip("/") + "/chat/completions"
         self._api_key = api_key
         self.policy = policy
-        self.guard = guard
         self.token_param = token_param
         self.send_temperature = send_temperature
         self.max_tokens = max_tokens
@@ -71,8 +67,6 @@ class OpenAICompatibleClient:
 
     def complete(self, system: str, user: str) -> str:
         self.policy.check(self.model)
-        if self.guard is not None:
-            self.guard.check(self.guard.estimate(len(system) + len(user), self.max_tokens))
         failure: ProviderError | None = None
         for attempt in range(self.retries + 1):
             if attempt:
@@ -90,7 +84,7 @@ class OpenAICompatibleClient:
                 continue
             if response.status_code == 200:
                 try:
-                    return self._read(response, system, user)
+                    return self._read(response)
                 except ProviderError as exc:  # OpenRouter can answer 200 with an error body
                     if not exc.retryable:
                         raise
@@ -107,7 +101,7 @@ class OpenAICompatibleClient:
         assert failure is not None
         raise failure
 
-    def _read(self, response: Any, system: str, user: str) -> str:
+    def _read(self, response: Any) -> str:
         try:
             body = response.json()
         except ValueError as exc:
@@ -122,10 +116,4 @@ class OpenAICompatibleClient:
                 status=status,
                 retryable=status is None or status in RETRYABLE_STATUSES,
             )
-        if self.guard is not None:
-            usage = body.get("usage") or {}
-            if "prompt_tokens" in usage and "completion_tokens" in usage:
-                self.guard.record(int(usage["prompt_tokens"]), int(usage["completion_tokens"]))
-            else:  # no usage reported: charge the worst case rather than nothing
-                self.guard.record(-(-(len(system) + len(user)) // 3), self.max_tokens)
         return choices[0]["message"].get("content") or ""

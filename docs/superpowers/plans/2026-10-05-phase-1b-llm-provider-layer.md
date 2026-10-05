@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Amendment (5 Oct 2026, after execution):** at the user's request the spend guard described below (Task 2, the guard parts of Tasks 3-5, `OPENAI_SPEND_CAP_USD`, `.athena/llm_spend.json`) was removed. The model policy (OpenAI allowlist, OpenRouter `:free` only) stays; OpenAI's account balance is now the only spend limit. The text below is the plan as executed, kept as a record.
+
 **Goal:** Give `Specialist` a real model behind the `LLMClient` protocol: NVIDIA first, OpenRouter free models second, OpenAI cheap models third, with the spending limits enforced in code so a bug or a loop cannot spend money the user did not allow.
 
 **Architecture:** `athena.llm` holds one `OpenAICompatibleClient` (all three providers speak the OpenAI chat-completions format) wrapped by per-provider rules. A `ModelPolicy` decides which model ids a provider may be asked for and is checked when a client is built and again before every request. A persisted `SpendGuard` caps cumulative OpenAI spend and fails closed. `FallbackLLM` chains clients using the existing `FallbackChain`, skipping a model the account cannot use for the rest of the session. `StaticRouter` maps roles (resolver, specialist, judge) to tiers (cheap, mid, strong). A `probe` module reports which configured models the account can call.

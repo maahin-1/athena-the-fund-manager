@@ -68,7 +68,7 @@ def test_every_configured_tier_entry_obeys_its_providers_policy():
 
 
 def test_build_router_uses_only_providers_with_keys(tmp_path):
-    router = build_router(env_file=tmp_path / "none.env", environ={"NVIDIA_API_KEY": "k1"}, spend_file=tmp_path / "s.json")
+    router = build_router(env_file=tmp_path / "none.env", environ={"NVIDIA_API_KEY": "k1"})
     strong = router.client_for("judge")
     assert isinstance(strong, FallbackLLM)
     assert strong.names == ["nvidia:nvidia/nemotron-3-ultra-550b-a55b"]
@@ -76,19 +76,18 @@ def test_build_router_uses_only_providers_with_keys(tmp_path):
 
 def test_build_router_with_all_keys_chains_nvidia_then_openrouter_then_openai(tmp_path):
     environ = {"NVIDIA_API_KEY": "k1", "OPENROUTER_API_KEY": "k2", "OPENAI_API_KEY": "k3"}
-    router = build_router(env_file=tmp_path / "none.env", environ=environ, spend_file=tmp_path / "s.json")
+    router = build_router(env_file=tmp_path / "none.env", environ=environ)
     names = router.client_for("specialist").names
     assert [n.split(":")[0] for n in names] == ["nvidia", "openrouter", "openai"]
 
 
 def test_build_router_without_any_key_raises(tmp_path):
     with pytest.raises(AthenaError, match="no LLM provider key"):
-        build_router(env_file=tmp_path / "none.env", environ={}, spend_file=tmp_path / "s.json")
+        build_router(env_file=tmp_path / "none.env", environ={})
 
 
-def test_openai_clients_get_the_spend_guard_and_the_gpt5_parameter_profile(tmp_path):
-    environ = {"OPENAI_API_KEY": "k3", "OPENAI_SPEND_CAP_USD": "0.25"}
-    router = build_router(env_file=tmp_path / "none.env", environ=environ, spend_file=tmp_path / "s.json")
+def test_openai_clients_get_the_gpt5_parameter_profile(tmp_path):
+    environ = {"OPENAI_API_KEY": "k3"}
+    router = build_router(env_file=tmp_path / "none.env", environ=environ)
     openai_client = router.client_for("specialist").clients[0]
-    assert openai_client.guard.cap_usd == 0.25
     assert openai_client.token_param == "max_completion_tokens" and not openai_client.send_temperature

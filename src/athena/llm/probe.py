@@ -11,8 +11,7 @@ import requests
 
 from athena.llm.client import OpenAICompatibleClient
 from athena.llm.envfile import DEFAULT_ENV_FILE, read_setting
-from athena.llm.router import DEFAULT_OPENAI_CAP_USD, PROVIDERS, TIERS
-from athena.llm.spend import DEFAULT_STATE_FILE, SpendGuard
+from athena.llm.router import PROVIDERS, TIERS
 
 PROBE_SYSTEM = "You are a connectivity check."
 PROBE_USER = "Reply with the single word OK."
@@ -31,11 +30,9 @@ class ProbeResult:
 def probe_models(
     env_file: Path | str = DEFAULT_ENV_FILE,
     environ: Mapping[str, str] | None = None,
-    spend_file: Path | str = DEFAULT_STATE_FILE,
     post: Callable[..., Any] = requests.post,
 ) -> list[ProbeResult]:
     """One tiny request per distinct (provider, model) in the tiers whose key is set. Never shows a key."""
-    cap = float(read_setting("OPENAI_SPEND_CAP_USD", env_file, environ) or DEFAULT_OPENAI_CAP_USD)
     results: list[ProbeResult] = []
     seen: set[tuple[str, str]] = set()
     for entries in TIERS.values():
@@ -49,7 +46,6 @@ def probe_models(
                 continue
             client = OpenAICompatibleClient(
                 provider, model, spec.base_url, key, spec.policy,
-                guard=SpendGuard(provider, cap, spend_file) if spec.capped else None,
                 token_param=spec.token_param, send_temperature=spec.send_temperature,
                 max_tokens=PROBE_MAX_TOKENS, timeout=60.0, retries=0, post=post,
             )

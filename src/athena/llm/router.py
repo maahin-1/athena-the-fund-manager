@@ -12,9 +12,6 @@ from athena.llm.client import OpenAICompatibleClient
 from athena.llm.envfile import DEFAULT_ENV_FILE, read_setting
 from athena.llm.errors import ProviderError
 from athena.llm.policy import OPENAI_CHEAP_MODELS, ModelPolicy, allow_all, allowlist, free_only
-from athena.llm.spend import DEFAULT_STATE_FILE, SpendGuard
-
-DEFAULT_OPENAI_CAP_USD = 1.0  # of an account holding about $4
 
 
 @dataclass(frozen=True)
@@ -25,7 +22,6 @@ class ProviderSpec:
     policy: ModelPolicy
     token_param: str = "max_tokens"
     send_temperature: bool = True
-    capped: bool = False
 
 
 PROVIDERS: dict[str, ProviderSpec] = {
@@ -35,7 +31,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
     ),
     "openai": ProviderSpec(
         "openai", "https://api.openai.com/v1", "OPENAI_API_KEY", allowlist("openai", OPENAI_CHEAP_MODELS),
-        token_param="max_completion_tokens", send_temperature=False, capped=True,
+        token_param="max_completion_tokens", send_temperature=False,
     ),
 }
 
@@ -115,7 +111,6 @@ class StaticRouter:
 def build_router(
     env_file: Path | str = DEFAULT_ENV_FILE,
     environ: Mapping[str, str] | None = None,
-    spend_file: Path | str = DEFAULT_STATE_FILE,
     tiers: Mapping[str, Sequence[tuple[str, str]]] = TIERS,
     **client_options: object,
 ) -> StaticRouter:
@@ -123,8 +118,6 @@ def build_router(
     keys = {name: read_setting(spec.key_name, env_file, environ) for name, spec in PROVIDERS.items()}
     if not any(keys.values()):
         raise AthenaError("no LLM provider key is set (NVIDIA_API_KEY, OPENROUTER_API_KEY or OPENAI_API_KEY)")
-    cap = float(read_setting("OPENAI_SPEND_CAP_USD", env_file, environ) or DEFAULT_OPENAI_CAP_USD)
-    guards = {"openai": SpendGuard("openai", cap, spend_file)}
     built: dict[str, FallbackLLM] = {}
     for tier, entries in tiers.items():
         clients = []
@@ -135,7 +128,6 @@ def build_router(
             clients.append(
                 OpenAICompatibleClient(
                     provider, model, spec.base_url, keys[provider], spec.policy,
-                    guard=guards.get(provider) if spec.capped else None,
                     token_param=spec.token_param, send_temperature=spec.send_temperature,
                     **client_options,  # type: ignore[arg-type]
                 )

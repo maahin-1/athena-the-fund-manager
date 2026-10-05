@@ -2,9 +2,8 @@ import pytest
 import requests
 
 from athena.llm.client import OpenAICompatibleClient
-from athena.llm.errors import ModelNotAllowed, ProviderError, SpendCapExceeded
+from athena.llm.errors import ModelNotAllowed, ProviderError
 from athena.llm.policy import allow_all, allowlist, free_only
-from athena.llm.spend import SpendGuard
 from llm_fakes import SECRET, FakePost, FakeResponse
 
 def make(post, policy=None, model="some/model", **options):
@@ -85,28 +84,6 @@ def test_the_api_key_never_appears_in_error_messages():
     with pytest.raises(ProviderError) as caught:
         make(echo).complete("s", "u")
     assert SECRET not in str(caught.value) and "<key>" in str(caught.value)
-
-
-def test_spend_is_recorded_from_reported_usage(tmp_path):
-    guard = SpendGuard("test", 1.0, tmp_path / "spend.json")
-    client = make(FakePost(FakeResponse(usage={"prompt_tokens": 1000, "completion_tokens": 2000})), guard=guard)
-    client.complete("s", "u")
-    assert guard.spent() == pytest.approx(0.0225)
-
-
-def test_missing_usage_is_charged_at_the_worst_case(tmp_path):
-    guard = SpendGuard("test", 10.0, tmp_path / "spend.json")
-    make(FakePost(FakeResponse()), guard=guard, max_tokens=1000).complete("s" * 30, "u" * 30)
-    assert guard.spent() == pytest.approx(SpendGuard.cost(20, 1000))
-
-
-def test_a_request_past_the_spend_cap_is_blocked_before_it_is_sent(tmp_path):
-    guard = SpendGuard("test", 0.001, tmp_path / "spend.json")
-    post = FakePost(FakeResponse())
-    client = make(post, guard=guard, max_tokens=3000)  # worst case $0.03 against a $0.001 cap
-    with pytest.raises(SpendCapExceeded):
-        client.complete("s", "u")
-    assert post.calls == [] and client.calls == 0
 
 
 def test_a_200_reply_carrying_a_retryable_error_body_is_retried():
