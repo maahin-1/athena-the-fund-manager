@@ -5,4 +5,7 @@ __pycache__/
 *.duckdb
 *.duckdb.wal
 .claude/
+.env
+.env.*
+!.env.example
 graphify-out/
