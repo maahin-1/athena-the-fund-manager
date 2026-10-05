@@ -31,7 +31,8 @@ def test_valuation_figures_match_a_hand_calculation():
 def test_index_context_compares_the_stock_with_the_nifty_50():
     p = packet()
     assert value(p, "index_pe") == 19.3 and value(p, "pe_vs_index") == pytest.approx(20 / 19.3, abs=1e-3)
-    assert value(p, "index_pe_percentile") == pytest.approx(100 * 150 / 300, abs=0.01)  # 149 days at 18.0 plus itself, below the 150 days at 21.0
+    assert value(p, "index_pe_percentile") == pytest.approx(150 / 300, abs=1e-4)  # 149 days at 18.0 plus itself, below the 150 at 21.0
+    assert p["metrics"]["index_pe_percentile"]["unit"] == "fraction" and "low means the market is cheap" in p["metrics"]["index_pe_percentile"]["note"]
 
 
 def test_quality_figures_match_a_hand_calculation():

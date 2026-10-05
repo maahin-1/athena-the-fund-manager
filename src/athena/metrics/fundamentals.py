@@ -80,7 +80,7 @@ def _cagr(points: list[tuple[date, float]], what: str) -> tuple[float, str]:
 
 
 def _percentile(values: list[float], x: float) -> float:
-    return 100.0 * sum(1 for value in values if value <= x) / len(values)
+    return sum(1 for value in values if value <= x) / len(values)
 
 
 def build_fundamentals_packet(
@@ -227,9 +227,13 @@ def build_fundamentals_packet(
         _need(bool(index_history) and len(index_history) >= MIN_INDEX_HISTORY, "index valuation history is too short")
         values = [row["pe"] for row in index_history.values()]  # type: ignore[union-attr]
         latest = index_history[max(index_history)]["pe"]  # type: ignore[index]
-        return R(_percentile(values, latest), f"{len(values)} trading days of NIFTY 50 P/E")
+        return R(
+            _percentile(values, latest),
+            f"{len(values)} trading days of NIFTY 50 P/E",
+            "share of those days on which the NIFTY 50 P/E was at or below today's: low means the market is cheap against its own history, high means dear",
+        )
 
-    attempt("index_pe_percentile", VALUATION, "percent", ["NIFTY 50 P/E history"], index_percentile)
+    attempt("index_pe_percentile", VALUATION, "fraction", ["NIFTY 50 P/E history"], index_percentile)
 
     # ---- quality (the ratio-only view of moat and business quality)
     def roe_by_year() -> list[tuple[date, float]]:
@@ -373,5 +377,6 @@ def build_fundamentals_packet(
         "metrics": metrics,
         "missing": list(reasons),
         "missing_reasons": reasons,
+        "not_applicable": [name for name, why in reasons.items() if why == LENDER_REASON],
         "groups": groups,
     }

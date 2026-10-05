@@ -16,7 +16,7 @@ MODEL_KEYS = ("signal", "confidence", "reasoning")
 OUTPUT_INSTRUCTIONS = (
     'Reply with one JSON object and nothing else: {"signal": "bullish"|"bearish"|"neutral", '
     '"confidence": 0-100, "reasoning": "2-4 sentences citing specific figures from the data"}. '
-    "Cite only figures that appear in the data."
+    "Cite only figures that appear in the data. Every figure carries a unit: a \"fraction\" is a decimal share (0.25 means 25 percent, so a return on equity of 0.487 is a very high 48.7 percent), \"percentage points\" are already in percent, and a \"ratio\" is a plain multiple."
 )
 
 
@@ -38,6 +38,7 @@ class SpecialistSpec:
     persona: str
     critical: tuple[str, ...]
     optional: tuple[str, ...] = ()
+    shows: tuple[str, ...] | None = None  # the only figures the model is shown; None means the whole packet
 
 
 def abstention(missing: Sequence[str], reason: str) -> dict[str, Any]:
@@ -77,13 +78,17 @@ class Specialist:
         self.model_calls = 0
 
     def analyze(self, packet: Mapping[str, Any]) -> dict[str, Any]:
-        coverage, missing = derive_coverage(self.spec.critical, self.spec.optional, packet.get("metrics", {}))
+        not_applicable = set(packet.get("not_applicable", ()))  # meaningless for this instrument, so not a data gap
+        critical = tuple(name for name in self.spec.critical if name not in not_applicable)
+        optional = tuple(name for name in self.spec.optional if name not in not_applicable)
+        coverage, missing = derive_coverage(critical, optional, packet.get("metrics", {}))
         if coverage is Coverage.INSUFFICIENT:
-            critical_gaps = [name for name in missing if name in self.spec.critical]
+            critical_gaps = [name for name in missing if name in critical]
             return abstention(missing, f"No view formed: required inputs are missing ({', '.join(critical_gaps)}).")
+        shown = self._visible(packet)
 
         system = f"{self.spec.persona}\n\n{OUTPUT_INSTRUCTIONS}"
-        user = self._render(packet, coverage, missing)
+        user = self._render(shown, coverage, missing)
         key = hashlib.sha256(f"{system}\n---\n{user}".encode()).hexdigest()
         if key in self._cache:
             return json.loads(json.dumps(self._cache[key]))
@@ -93,7 +98,7 @@ class Specialist:
         for _ in range(self.max_attempts):
             self.model_calls += 1
             reply = self.llm.complete(system, user + feedback)
-            output, errors = self._check(reply, packet, coverage, missing)
+            output, errors = self._check(reply, shown, coverage, missing)
             if not errors:
                 self._cache[key] = output
                 return json.loads(json.dumps(output))
@@ -103,8 +108,27 @@ class Specialist:
             return abstention(["valid_model_output"], "No view formed: the model output failed validation.")
         raise SpecialistError(f"{self.spec.name}: no valid output after {self.max_attempts} attempts: {errors}")
 
+    def _visible(self, packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        """The packet as the model sees it. A specialist that declares `shows` gets only those figures, and the
+        number-grounding check runs against the same view, so it cannot cite a figure it was never shown."""
+        if self.spec.shows is None:
+            return packet
+        names = set(self.spec.shows)
+        listed = ("metrics", "missing", "missing_reasons", "groups", "not_applicable")
+        view = {key: value for key, value in packet.items() if key not in listed}
+        view["metrics"] = {name: metric for name, metric in packet.get("metrics", {}).items() if name in names}
+        view["missing"] = [name for name in packet.get("missing", []) if name in names]
+        view["missing_reasons"] = {n: why for n, why in packet.get("missing_reasons", {}).items() if n in names}
+        view["not_applicable"] = [name for name in packet.get("not_applicable", []) if name in names]
+        return view
+
     def _render(self, packet: Mapping[str, Any], coverage: Coverage, missing: Sequence[str]) -> str:
         lines = [f"Specialist: {self.spec.name}", "Data (metrics packet):", json.dumps(packet, indent=2, sort_keys=True)]
+        if packet.get("not_applicable"):
+            lines.append(
+                f"Not applicable to this instrument (this is not a data gap; do not call it missing): "
+                f"{', '.join(packet['not_applicable'])}."
+            )
         if coverage is Coverage.PARTIAL:
             lines.append(
                 f"Data coverage is PARTIAL. Missing: {', '.join(missing)}. "
