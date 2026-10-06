@@ -1,5 +1,5 @@
 import dash_fakes
-from dash_fakes import FakeService, ambiguous_result, athena_error, full_view
+from dash_fakes import FakeService, ambiguous_result, athena_error, full_view, sample_backtest_view
 from streamlit.testing.v1 import AppTest
 
 from athena.dashboard.view import build_view
@@ -105,3 +105,71 @@ def test_the_page_shows_the_three_fundamentals_panels_each_with_coverage():
     assert sum("annual to 2026-03-31, quarter to 2026-06-30" in c and "coverage: full" in c for c in captions) == 3
     for frame in app.dataframe:
         assert {type(v) for v in frame.value["value"]} == {str}
+
+
+def test_the_page_offers_a_backtest_for_stocks_and_etfs_only():
+    assert len(open_app(FakeService(full_view("equity")), "sbin").checkbox) == 1
+    assert len(open_app(FakeService(full_view("etf")), "sbin").checkbox) == 1
+    assert len(open_app(FakeService(full_view("mutual_fund")), "sbin").checkbox) == 0
+    assert len(open_app(FakeService(build_view(ambiguous_result())), "sbi").checkbox) == 0
+    assert len(open_app(FakeService(), "").checkbox) == 0
+
+
+def test_nothing_is_replayed_until_the_box_is_ticked():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    assert service.backtests == [] and len(app.get("plotly_chart")) == 2
+
+
+def test_ticking_the_box_replays_the_rules_without_asking_the_specialists_again():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    app.checkbox[0].check().run()
+    assert not app.exception and service.backtests == ["SBIN"] and service.queries == ["sbin"]
+    assert len(app.get("plotly_chart")) == 4  # the price and RSI charts, plus one equity curve per rule
+    assert any("trend rule" in m for m in texts(app.markdown)) and any("persona rule" in m for m in texts(app.markdown))
+    captions = texts(app.caption)
+    assert any("same trades" in c and "Blinding check" in c for c in captions)
+    assert any("15 bps per side" in c for c in captions)
+    assert any("Past results do not predict future ones" in c and DISCLAIMER in c for c in captions)
+
+
+def test_the_backtest_tables_compare_strategy_and_buy_and_hold_as_text():
+    app = open_app(FakeService(full_view()), "sbin")
+    app.checkbox[0].check().run()
+    tables = [frame for frame in app.dataframe if "strategy" in frame.value.columns]
+    assert len(tables) == 2
+    for frame in tables:
+        assert list(frame.value["measure"]) == ["Total return", "Yearly return", "Worst drawdown", "Sharpe"]
+        assert {type(v) for column in ("strategy", "buy and hold") for v in frame.value[column]} == {str}
+
+
+def test_redrawing_the_page_does_not_replay_the_same_backtest_twice():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    app.checkbox[0].check().run()
+    app.checkbox[0].uncheck().run()
+    assert len(app.get("plotly_chart")) == 2  # unticked: the curves go away
+    app.checkbox[0].check().run()
+    assert service.backtests == ["SBIN"] and service.queries == ["sbin"] and len(app.get("plotly_chart")) == 4
+
+
+def test_a_rule_whose_blinded_run_differs_is_flagged_on_the_page():
+    from dataclasses import replace
+
+    from athena.dashboard.backtest_view import BacktestView
+
+    view = sample_backtest_view()
+    flagged = BacktestView(view.identifier, (replace(view.panels[0], blinded_identical=False), view.panels[1]), view.assumptions)
+    app = open_app(FakeService(full_view(), backtest=flagged), "sbin")
+    app.checkbox[0].check().run()
+    blinding = [c for c in texts(app.caption) if c.startswith("Blinding check")]
+    assert len(blinding) == 2 and "DIFFERENT trades" in blinding[0] and blinding[1].endswith("same trades")
+
+
+def test_a_backtest_that_cannot_run_shows_the_reason_and_keeps_the_analysis():
+    service = FakeService(full_view(), backtest_error=athena_error("not enough price history for SBIN"))
+    app = open_app(service, "sbin")
+    app.checkbox[0].check().run()
+    assert not app.exception and app.error[0].value == "not enough price history for SBIN"
+    assert len(app.metric) == 2 and len(app.get("plotly_chart")) == 2

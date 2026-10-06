@@ -5,15 +5,20 @@ from typing import Protocol
 import streamlit as st
 
 from athena.contracts import AthenaError
+from athena.dashboard.backtest_view import BacktestView
 from athena.dashboard.view import DashboardView, Panel
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 from athena.orchestrator.report import DISCLAIMER
 
 PLACEHOLDER = "SBIN"
+BACKTESTABLE = ("equity", "etf")
+BACKTEST_NOTE = "Past results do not predict future ones."
 
 
 class ViewService(Protocol):
     def view(self, query: str) -> DashboardView: ...
+
+    def backtest(self, identifier: str) -> BacktestView: ...
 
 
 def _show(value: str | float) -> str:
@@ -79,6 +84,53 @@ def render(view: DashboardView) -> None:
     st.caption(DISCLAIMER)
 
 
+def render_backtest(view: BacktestView) -> None:
+    """Draw a `BacktestView`: per rule a comparison table, the facts that do not fit it, the blinding check and the curve."""
+    st.markdown(f"**Backtest {view.identifier}**")
+    for panel in view.panels:
+        st.markdown(f"**{panel.rule} rule**: {panel.description}")
+        st.dataframe(
+            [{"measure": measure, "strategy": strategy, "buy and hold": hold} for measure, strategy, hold in panel.rows],
+            hide_index=True, width="stretch",
+        )
+        for fact in panel.facts:
+            st.caption(fact)
+        st.caption(
+            "Blinding check (ticker removed, dates shifted 28 years, prices rescaled to 100): "
+            + ("same trades" if panel.blinded_identical else "DIFFERENT trades, so the rule may depend on the name or the price level")
+        )
+        st.plotly_chart(panel.figure, width="stretch")
+    st.caption(view.assumptions)
+    st.caption(f"{BACKTEST_NOTE} {DISCLAIMER}")
+
+
+def _remembered(key: str, token: str, compute):
+    """Streamlit reruns the whole page on every click. Keep the last result per input, so a click redraws it instead of
+    asking the specialists or replaying eight years again."""
+    saved = st.session_state.get(key)
+    if saved is not None and saved[0] == token:
+        return saved[1]
+    value = compute()
+    st.session_state[key] = (token, value)
+    return value
+
+
+def _backtest_section(service: ViewService, identifier: str) -> None:
+    if not st.checkbox(
+        "Backtest the technical rules over 8 years",
+        key=f"backtest-{identifier}",
+        help="Replays each rule day by day on this instrument's price history and compares it with buy and hold.",
+    ):
+        return
+    try:
+        with st.spinner("Downloading history and replaying every trading day..."):
+            result = _remembered("backtest", identifier, lambda: service.backtest(identifier))
+    except (AthenaError, ValueError) as exc:
+        st.error(str(exc))
+        return
+    render_backtest(result)
+
+
 def run(service: ViewService) -> None:
     st.set_page_config(page_title="Athena", layout="wide")
     st.title("Athena")
@@ -88,11 +140,13 @@ def run(service: ViewService) -> None:
         return
     try:
         with st.spinner("Resolving, fetching data and asking the specialists..."):
-            view = service.view(query)
+            view = _remembered("view", query, lambda: service.view(query))
     except (AthenaError, ValueError) as exc:
         st.error(str(exc))
         return
     render(view)
+    if view.status != NEEDS_CLARIFICATION and view.asset_class in BACKTESTABLE:
+        _backtest_section(service, view.identifier)
 
 
 @st.cache_resource(show_spinner="Loading NSE lists, market series and models...")

@@ -1,7 +1,9 @@
 import plotly.graph_objects as go
 import pytest
+from dash_fakes import trend_runs
 
-from athena.dashboard.charts import RSI_OVERBOUGHT, RSI_OVERSOLD, price_chart, rsi_chart
+from athena.backtest.engine import BacktestResult, Config
+from athena.dashboard.charts import RSI_OVERBOUGHT, RSI_OVERSOLD, equity_chart, price_chart, rsi_chart
 from athena.technicals.candles import candles_from_bars
 from athena.technicals.series import indicator_series
 from bar_factory import make_bars
@@ -49,3 +51,25 @@ def test_charts_refuse_empty_or_misaligned_input():
         price_chart([], indicator_series([]), "x")
     with pytest.raises(ValueError, match="not aligned"):
         rsi_chart(CANDLES[:-1], SERIES)
+
+
+def test_equity_chart_draws_both_curves_and_marks_each_trade_on_the_strategy_curve():
+    result = trend_runs()[0].result
+    traces = traces_by_name(equity_chart(result, "SBIN trend"))
+    assert list(traces) == ["Strategy", "Buy and hold", "Entry", "Exit"]
+    assert list(traces["Strategy"].y) == list(result.equity) and list(traces["Buy and hold"].y) == list(result.benchmark)
+    trade = result.trades[0]
+    level = dict(zip(result.days, result.equity))
+    assert list(traces["Entry"].x) == [trade.entry_day] and list(traces["Entry"].y) == [level[trade.entry_day]]
+    assert list(traces["Exit"].x) == [trade.exit_day] and list(traces["Exit"].y) == [level[trade.exit_day]]
+
+
+def test_equity_chart_for_a_rule_that_never_trades_has_empty_marker_traces():
+    result = trend_runs()[1].result
+    traces = traces_by_name(equity_chart(result, "SBIN persona"))
+    assert result.trades == () and len(traces["Entry"].x) == 0 and len(traces["Exit"].x) == 0 and len(traces["Strategy"].x) == len(result.days)
+
+
+def test_equity_chart_refuses_a_result_without_days():
+    with pytest.raises(ValueError, match="no days"):
+        equity_chart(BacktestResult("x", Config(), (), (), (), (), ()), "x")

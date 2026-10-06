@@ -1,7 +1,8 @@
+import pytest
 from bar_factory import NOW, make_bars
-from dash_fakes import FUNDAMENTALS, ambiguous_result, resolution
+from dash_fakes import FUNDAMENTALS, INDEX, RATE, TREND_BARS, ambiguous_result, resolution
 
-from athena.contracts import EmptyRefreshError
+from athena.contracts import AthenaError, EmptyRefreshError
 from athena.dashboard.risk import RiskWorld
 from athena.dashboard.service import DashboardService
 from athena.orchestrator.builders import RequestCache
@@ -123,3 +124,26 @@ def test_a_fundamentals_failure_becomes_a_note_and_the_rest_of_the_page_survives
 
 def test_without_a_fundamentals_source_nothing_changes():
     assert len(service_with(None).view("sbin").panels) == 2
+
+
+def test_a_backtest_needs_a_long_history_source():
+    service = make_service()[0]
+    with pytest.raises(AthenaError, match="backtests are not available"):
+        service.backtest("SBIN")
+
+
+def test_a_backtest_replays_both_rules_on_the_long_history_of_the_identifier():
+    asked = []
+
+    def long_history(symbol):
+        asked.append(symbol)
+        return TREND_BARS
+
+    cache = RequestCache(CountingFetch())
+    service = DashboardService(
+        FakeOrchestrator(cache), cache, RiskWorld(INDEX, RATE, {}), clock=lambda: NOW, long_history=long_history
+    )
+    view = service.backtest("SBIN")
+    assert asked == ["SBIN"] and view.identifier == "SBIN"
+    assert [panel.rule for panel in view.panels] == ["trend", "persona"]
+    assert "15 bps per side" in view.assumptions and all(panel.blinded_identical for panel in view.panels)
