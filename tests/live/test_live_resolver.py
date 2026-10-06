@@ -65,3 +65,10 @@ def test_live_resolver_labeled_cases(resolver, query, expected):
     else:
         assert isinstance(result, Resolution)
         assert expected == (result.asset_class, result.identifier)
+
+
+def test_live_short_query_lists_more_than_five_candidates_and_any_of_them_can_be_confirmed(resolver):
+    result = resolver.resolve("TATA")
+    assert isinstance(result, Ambiguity) and 5 < len(result.candidates) <= 50
+    chosen = resolver.confirm(result, len(result.candidates) - 1)
+    assert chosen.identifier == result.candidates[-1].identifier and chosen.resolution_path == "user_confirmed"
