@@ -49,7 +49,7 @@ def live_world(years: int = BACKTEST_YEARS) -> BacktestWorld:
     NseHolidayLoader(store).refresh()
     holiday_years = [int(record.key) for record in store.latest_records(HOLIDAY_DATASET)]
     calendar = load_calendar(store, holiday_years) if holiday_years else TradingCalendar(frozenset())
-    resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar))
+    resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True)
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     refresh_risk_data(store, since=ist_date(utc_now()) - timedelta(days=365 * years))
     market = risk_world_from_store(store)

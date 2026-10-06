@@ -269,3 +269,52 @@ def test_confirm_accepts_any_candidate_on_the_long_list():
 def test_a_text_list_says_how_many_more_there_are():
     assert more_candidates_line(25, 10) == "  ...and 15 more; type the exact symbol."
     assert more_candidates_line(10, 10) is None and more_candidates_line(3, 3) is None
+
+
+def careful(*extra, classifier=None):
+    """A resolver for a person at a screen, over the test listings plus any extra (symbol, name, isin) equities."""
+    store = make_store()
+    for symbol, name, isin in extra:
+        store.put(Record(EQUITY_DATASET, symbol, NOW, "nse.archives", {"name": name, "series": "EQ", "isin": isin, "listing_date": "x"}))
+    return InstrumentResolver(InstrumentIndex.from_store(store, now=NOW), classifier, confirm_related=True)
+
+
+RPOWER = ("RPOWER", "Reliance Power Limited", "INE614G01033")
+
+
+@pytest.mark.parametrize("query", ["SBIN", "sbin", "NSE:SBIN.NS"])
+def test_a_typed_ticker_or_isin_is_still_taken_as_it_is_when_the_person_confirms_related(query):
+    result = careful().resolve(query)
+    assert isinstance(result, Resolution) and (result.identifier, result.resolution_path) == ("SBIN", "exact")
+    assert careful().resolve("INE062A01020").identifier == "SBIN"
+
+
+def test_a_typo_is_listed_with_its_relatives_not_picked_for_the_person():
+    result = careful().resolve("Tata Steal")
+    assert isinstance(result, Ambiguity)
+    assert [c.identifier for c in result.candidates][:2] == ["TATASTEEL", "TATAMOTORS"]
+    assert careful().resolve("Tata Steal").reason == "other instruments are related to what you typed"
+
+
+def test_an_exact_name_with_a_relative_is_listed_with_the_exact_one_first():
+    result = careful(RPOWER).resolve("Reliance Industries")
+    assert isinstance(result, Ambiguity)
+    assert [(c.identifier, c.score) for c in result.candidates][:2] == [("RELIANCE", 1.0), ("RPOWER", result.candidates[1].score)]
+    assert result.reason == "other instruments are related to this name"
+    assert len({c.identifier for c in result.candidates}) == len(result.candidates)  # nobody listed twice
+
+
+def test_an_exact_name_nothing_else_resembles_is_taken_as_it_is():
+    result = careful().resolve("Infosys Ltd")
+    assert isinstance(result, Resolution) and (result.identifier, result.resolution_path) == ("INFY", "exact")
+
+
+def test_a_model_never_settles_a_choice_when_the_person_confirms_related():
+    fake = FakeClassifier(index=0, probability=0.99)
+    assert isinstance(careful(classifier=fake).resolve("SBI"), Ambiguity)
+    assert fake.seen == []
+
+
+def test_a_weak_lone_match_is_still_listed_rather_than_picked():
+    result = careful().resolve("Mahindra")
+    assert isinstance(result, Ambiguity) and [c.identifier for c in result.candidates] == ["M&M"]

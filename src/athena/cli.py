@@ -82,7 +82,7 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     NseHolidayLoader(store).refresh()
     years = [int(record.key) for record in store.latest_records(HOLIDAY_DATASET)]
     calendar = load_calendar(store, years) if years else TradingCalendar(frozenset())
-    resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar))
+    resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True)
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
     bars = RequestCache(history_fetcher(chain))

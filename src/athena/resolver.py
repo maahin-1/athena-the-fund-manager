@@ -152,9 +152,14 @@ def _prefix_score(symbol_query: str, name_key: str, entry: _Entry) -> float:
 
 
 class InstrumentResolver:
-    def __init__(self, index: InstrumentIndex, classifier: Classifier | None = None) -> None:
+    """`confirm_related` is for a person at a screen: only a typed ticker or ISIN is taken as is. A name, a typo or a
+    short prefix is never settled by a guess (a similarity score or a model): when other instruments are related to
+    what was typed, they are all listed, the closest first, for the person to choose."""
+
+    def __init__(self, index: InstrumentIndex, classifier: Classifier | None = None, confirm_related: bool = False) -> None:
         self._index = index
         self._classifier = classifier
+        self._confirm_related = confirm_related
 
     def resolve(self, query: str) -> Resolution | Ambiguity:
         text = normalize_input(query)
@@ -170,6 +175,11 @@ class InstrumentResolver:
 
         name_key = normalize_name(query)
         matches = self._index.by_name.get(name_key, [])
+        if len(matches) == 1 and self._confirm_related:
+            related = self._related(text, name_key, exclude=matches[0])
+            if related:  # the exact name first, then everything else related to it
+                listed = (self._candidate(matches[0], 1.0), *related)[:MAX_LISTED]
+                return Ambiguity(query, listed, "other instruments are related to this name")
         if len(matches) == 1:
             return self._resolved(matches[0], "name", "exact", 1.0)
         if len(matches) > 1:
@@ -194,9 +204,10 @@ class InstrumentResolver:
             note = " It looks like a fund ISIN (INF); mutual-fund support is not available yet."
         raise UnknownInstrument(f"ISIN {text} is not in the NSE equity or ETF lists.{note}")
 
-    def _resolve_fuzzy(self, query: str, text: str, name_key: str) -> Resolution | Ambiguity:
+    def _scored(self, text: str, name_key: str) -> list[tuple[float, float, bool, str, _Entry]]:
+        """Every instrument that looks related to the query: (edit score, shown score, is prefix, kind, entry)."""
         symbol_query = text.lower()
-        scored: list[tuple[float, float, bool, str, _Entry]] = []  # edit, shown, is_prefix, kind, entry
+        scored: list[tuple[float, float, bool, str, _Entry]] = []
         for entry in self._index.by_symbol.values():
             name_score = _score(name_key, entry.norm_name)
             symbol_score = _score(symbol_query, entry.symbol.lower())
@@ -206,6 +217,15 @@ class InstrumentResolver:
             if shown >= CANDIDATE_FLOOR:
                 kind = "name" if name_score >= symbol_score else "ticker"
                 scored.append((edit, shown, prefix > 0.0, kind, entry))
+        return scored
+
+    def _related(self, text: str, name_key: str, exclude: _Entry) -> tuple[Candidate, ...]:
+        scored = [item for item in self._scored(text, name_key) if item[4] is not exclude]
+        ranked = sorted(scored, key=lambda i: (not i[2], -i[1], i[4].asset_class != "etf", i[4].symbol))
+        return tuple(self._candidate(i[4], i[1]) for i in ranked)
+
+    def _resolve_fuzzy(self, query: str, text: str, name_key: str) -> Resolution | Ambiguity:
+        scored = self._scored(text, name_key)
         if not scored:
             raise UnknownInstrument(f"no instrument matches {query!r}")
 
@@ -216,6 +236,10 @@ class InstrumentResolver:
         by_edit = sorted(scored, key=lambda i: (-i[0], i[4].asset_class != "etf", i[4].symbol))
         top_edit, _, _, top_kind, top_entry = by_edit[0]
         runner_up = by_edit[1][0] if len(by_edit) > 1 else 0.0
+        if self._confirm_related:  # a person chooses; nothing is settled by a score or a model, unless nothing else is related
+            if len(listed) == 1 and top_edit >= ACCEPT_SCORE:
+                return self._resolved(top_entry, top_kind, "fuzzy", round(top_edit, 4), candidates)
+            return Ambiguity(query, listed, "other instruments are related to what you typed")
         if top_edit >= ACCEPT_SCORE and top_edit - runner_up >= ACCEPT_MARGIN:
             return self._resolved(top_entry, top_kind, "fuzzy", round(top_edit, 4), candidates)
 
