@@ -9,10 +9,21 @@ from athena.dashboard.backtest_view import BacktestView
 from athena.dashboard.view import DashboardView, Panel
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 from athena.orchestrator.report import DISCLAIMER
+from athena.dashboard.charts import build_chart
+from athena.technicals.indicators import (
+    MAX_INDICATORS, REGISTRY, Selected, default_params, default_selection, next_id, short_history, validate,
+)
 
 PLACEHOLDER = "SBIN"
 QUERY_KEY = "query"  # the search box
 PICK_KEY = "picked_instrument"  # a table click waiting to be moved into the search box
+INDICATORS_KEY = "indicators"  # the chosen indicators, as a list of plain dicts
+VOLUME_KEY = "show_volume"
+ADD_KEY = "add_indicator"
+CHART_NOTE = (
+    "Chart indicators are for looking only. The specialists read their own fixed windows, "
+    "so changing them here never changes a verdict."
+)
 BACKTESTABLE = ("equity", "etf")
 BACKTEST_NOTE = "Past results do not predict future ones."
 
@@ -40,6 +51,69 @@ def _panel(panel: Panel) -> None:
         with st.expander(f"{len(panel.missing)} figure(s) not available"):
             for name, why in panel.missing.items():
                 st.write(f"{name}: {why}")
+
+
+def _chosen() -> list[dict]:
+    if INDICATORS_KEY not in st.session_state:
+        st.session_state[INDICATORS_KEY] = [item.to_dict() for item in default_selection()]
+    return st.session_state[INDICATORS_KEY]
+
+
+def _forget_widgets(prefix: str) -> None:
+    for key in [key for key in st.session_state if key.startswith(prefix)]:
+        del st.session_state[key]
+
+
+def _add_indicator() -> None:
+    chosen = _chosen()
+    if len(chosen) < MAX_INDICATORS:
+        key = st.session_state[ADD_KEY]
+        chosen.append(Selected(next_id([Selected.from_dict(d) for d in chosen], key), key, default_params(key)).to_dict())
+
+
+def _remove_indicator(item_id: str) -> None:
+    st.session_state[INDICATORS_KEY] = [d for d in _chosen() if d["id"] != item_id]
+    _forget_widgets(f"ind-{item_id}-")
+
+
+def _reset_indicators() -> None:
+    st.session_state[INDICATORS_KEY] = [item.to_dict() for item in default_selection()]
+    _forget_widgets("ind-")
+
+
+def _indicator_controls() -> list[Selected]:
+    """The Indicators section: each chosen indicator with its settings and a remove button, an add picker, a reset."""
+    chosen = _chosen()
+    with st.expander("Indicators"):  # a fixed label: a changing one would collapse the section after every click
+        for item in chosen:
+            spec = REGISTRY[item["key"]]
+            columns = st.columns([2, *([1] * len(spec.params)), 1])
+            columns[0].markdown(f"**{spec.label}**")
+            for column, param in zip(columns[1:], spec.params):
+                number = float if not param.integer else int
+                item["params"][param.name] = column.number_input(
+                    param.label, min_value=number(param.minimum), max_value=number(param.maximum),
+                    value=number(item["params"].get(param.name, param.default)), step=number(param.step),
+                    key=f"ind-{item['id']}-{param.name}",
+                )
+            columns[-1].button("Remove", key=f"remove-{item['id']}", on_click=_remove_indicator, args=(item["id"],))
+        picker, add, reset, volume = st.columns([3, 1, 1, 1])
+        picker.selectbox("Add indicator", list(REGISTRY), format_func=lambda key: REGISTRY[key].label, key=ADD_KEY)
+        add.button("Add", key="add_button", on_click=_add_indicator, disabled=len(chosen) >= MAX_INDICATORS)
+        reset.button("Reset", key="reset_button", on_click=_reset_indicators)
+        volume.checkbox("Volume", value=True, key=VOLUME_KEY)
+    return [Selected.from_dict(d) for d in chosen]
+
+
+def _chart_section(view: DashboardView) -> None:
+    valid, problems = validate(_indicator_controls())
+    for item_id, reason in problems.items():
+        st.warning(f"{item_id}: {reason}")
+    empty = short_history(view.candles, valid)
+    if empty:
+        st.caption("Not enough history to draw: " + ", ".join(empty) + ".")
+    st.plotly_chart(build_chart(view.candles, valid, view.chart_title, st.session_state.get(VOLUME_KEY, True)), width="stretch")
+    st.caption(CHART_NOTE)
 
 
 def render(view: DashboardView) -> None:
@@ -74,9 +148,8 @@ def render(view: DashboardView) -> None:
     if view.skipped:
         st.caption("Not run: " + "; ".join(f"{name} ({why})" for name, why in view.skipped.items()))
 
-    if view.price_figure is not None:
-        st.plotly_chart(view.price_figure, width="stretch")
-        st.plotly_chart(view.rsi_figure, width="stretch")
+    if view.candles:
+        _chart_section(view)
     for panel in view.panels:
         _panel(panel)
 

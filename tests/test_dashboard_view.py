@@ -34,16 +34,15 @@ def test_panel_rows_copy_the_packet_figures_exactly():
     assert by_name["reward_risk"].note  # the notes travel with the numbers
 
 
-def test_charts_are_built_from_the_same_bars():
+def test_the_view_carries_the_candles_the_chart_is_drawn_from_and_a_title():
     view = full_view()
-    assert view.price_figure is not None and view.rsi_figure is not None
-    assert len(view.price_figure.data[0].x) == len(BARS)
-    assert "SBIN" in view.price_figure.layout.title.text and "2026-10-02" in view.price_figure.layout.title.text
+    assert len(view.candles) == len(BARS) and view.candles[-1].close == BARS[-1].close
+    assert "SBIN" in view.chart_title and "2026-10-02" in view.chart_title
 
 
 def test_no_bars_means_no_charts_and_panels_that_say_no_data():
     view = build_view(ok_result(), (), {"metrics": {}, "missing": ["last_close"], "missing_reasons": {"last_close": "x"}}, None)
-    assert view.price_figure is None and view.rsi_figure is None
+    assert view.candles == () and view.chart_title == ""
     panel = view.panels[0]
     assert panel.as_of == "no data" and panel.coverage == "insufficient"
 
@@ -59,7 +58,7 @@ def test_an_ambiguous_result_becomes_a_candidate_list_with_no_charts_or_panels()
     view = build_view(ambiguous_result())
     assert view.status == NEEDS_CLARIFICATION and view.identifier == ""
     assert [(c.identifier, c.asset_class) for c in view.candidates] == [("SBIN", "equity")]
-    assert view.panels == () and view.price_figure is None and view.notes == ("several matches",)
+    assert view.panels == () and view.candles == () and view.notes == ("several matches",)
 
 
 def test_a_no_view_result_keeps_its_status():

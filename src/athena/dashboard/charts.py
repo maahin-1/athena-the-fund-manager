@@ -7,24 +7,36 @@ from plotly.subplots import make_subplots
 
 from athena.backtest.engine import BacktestResult
 from athena.technicals.candles import Candle
-from athena.technicals.series import IndicatorSeries
+from athena.technicals.indicators import OVERLAY, PANE, REGISTRY, Line, Selected, compute
 
 UP, DOWN = "#2e9e6b", "#d8574b"
-RSI_OVERBOUGHT, RSI_OVERSOLD = 70, 30
+OVERLAY_COLORS = ("#e0a030", "#7a5ccf", "#2aa7a1", "#d16ba5", "#5b8def", "#b5651d")
+PANE_COLORS = ("#3b7dd8", "#e0a030", "#7a5ccf")
+GREY = "#8a8f98"
+PRICE_WEIGHT, VOLUME_WEIGHT, PANE_WEIGHT = 3.0, 1.0, 1.4
+ROW_HEIGHT = 120
 
 
-def _require(candles: Sequence[Candle], series: IndicatorSeries) -> None:
+def _trace(line: Line, color: str, days: Sequence) -> go.BaseTraceType:
+    if line.style == "bars":
+        return go.Bar(x=days, y=list(line.values), name=line.name, marker_color=color, opacity=0.5)
+    return go.Scatter(
+        x=days, y=list(line.values), name=line.name, mode="markers" if line.style == "dots" else "lines",
+        line=dict(color=color, width=1, dash="dot" if line.style == "dot" else "solid"), marker=dict(color=color, size=3),
+    )
+
+
+def build_chart(candles: Sequence[Candle], selection: Sequence[Selected], title: str, show_volume: bool = True) -> go.Figure:
+    """One figure with a shared date axis: candles and the chosen overlays on top, volume under them, then one
+    sub-chart per chosen pane indicator. Every item of `selection` must be valid (see `indicators.validate`)."""
     if not candles:
         raise ValueError("no candles to chart")
-    if len(series.days) != len(candles):
-        raise ValueError("indicator series and candles are not aligned")
-
-
-def price_chart(candles: Sequence[Candle], series: IndicatorSeries, title: str) -> go.Figure:
-    """Candles with the 50- and 200-day averages and Bollinger Bands, volume underneath (PRD FR-6)."""
-    _require(candles, series)
     days = [c.day for c in candles]
-    figure = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
+    computed = [(item, REGISTRY[item.key], compute(candles, item)) for item in selection]
+    panes = [entry for entry in computed if entry[1].placement == PANE]
+    weights = [PRICE_WEIGHT] + ([VOLUME_WEIGHT] if show_volume else []) + [PANE_WEIGHT] * len(panes)
+    rows = len(weights)
+    figure = make_subplots(rows=rows, cols=1, shared_xaxes=True, row_heights=[w / sum(weights) for w in weights], vertical_spacing=0.03)
     figure.add_trace(
         go.Candlestick(
             x=days, open=[c.open for c in candles], high=[c.high for c in candles],
@@ -33,29 +45,35 @@ def price_chart(candles: Sequence[Candle], series: IndicatorSeries, title: str) 
         ),
         row=1, col=1,
     )
-    lines = (
-        ("SMA 50", series.sma_50, "#e0a030", "solid"),
-        ("SMA 200", series.sma_200, "#7a5ccf", "solid"),
-        ("Bollinger upper", series.bb_upper, "#8a8f98", "dot"),
-        ("Bollinger lower", series.bb_lower, "#8a8f98", "dot"),
-    )
-    for name, values, color, dash in lines:
-        figure.add_trace(go.Scatter(x=days, y=list(values), name=name, mode="lines", line=dict(color=color, width=1, dash=dash)), row=1, col=1)
-    figure.add_trace(
-        go.Bar(x=days, y=[c.volume for c in candles], name="Volume", marker_color=[UP if c.close >= c.open else DOWN for c in candles]),
-        row=2, col=1,
-    )
-    figure.update_layout(title=title, xaxis_rangeslider_visible=False, height=620, margin=dict(l=40, r=20, t=60, b=30), legend=dict(orientation="h"))
-    return figure
 
-
-def rsi_chart(candles: Sequence[Candle], series: IndicatorSeries, title: str = "RSI 14") -> go.Figure:
-    """RSI with the conventional 30 and 70 reference lines."""
-    _require(candles, series)
-    figure = go.Figure(go.Scatter(x=list(series.days), y=list(series.rsi_14), name="RSI 14", mode="lines", line=dict(color="#3b7dd8", width=1.5)))
-    figure.add_hline(y=RSI_OVERBOUGHT, line=dict(color=DOWN, width=1, dash="dot"))
-    figure.add_hline(y=RSI_OVERSOLD, line=dict(color=UP, width=1, dash="dot"))
-    figure.update_layout(title=title, yaxis=dict(range=[0, 100]), height=240, margin=dict(l=40, r=20, t=50, b=30), showlegend=False)
+    overlay_index = 0
+    for item, spec, lines in computed:
+        if spec.placement != OVERLAY:
+            continue
+        color = GREY if item.key == "bbands" else OVERLAY_COLORS[overlay_index % len(OVERLAY_COLORS)]
+        overlay_index += 0 if item.key == "bbands" else 1
+        for line in lines:
+            figure.add_trace(_trace(line, color, days), row=1, col=1)
+    next_row = 2
+    if show_volume:
+        figure.add_trace(
+            go.Bar(x=days, y=[c.volume for c in candles], name="Volume", marker_color=[UP if c.close >= c.open else DOWN for c in candles]),
+            row=next_row, col=1,
+        )
+        next_row += 1
+    for item, spec, lines in panes:
+        for position, line in enumerate(lines):
+            figure.add_trace(_trace(line, PANE_COLORS[position % len(PANE_COLORS)], days), row=next_row, col=1)
+        for level in spec.levels:
+            figure.add_hline(y=level, row=next_row, col=1, line=dict(color=GREY, width=1, dash="dot"))
+        if spec.y_range:
+            figure.update_yaxes(range=list(spec.y_range), row=next_row, col=1)
+        figure.update_yaxes(title_text=spec.label, title_font=dict(size=10), row=next_row, col=1)
+        next_row += 1
+    figure.update_layout(
+        title=title, xaxis_rangeslider_visible=False, height=260 + ROW_HEIGHT * rows, margin=dict(l=40, r=20, t=60, b=30),
+        legend=dict(orientation="h"),
+    )
     return figure
 
 

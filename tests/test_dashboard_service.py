@@ -47,7 +47,7 @@ def test_a_view_shares_one_download_between_the_specialists_and_the_charts():
     service, fetch, orchestrator = make_service()
     view = service.view("sbin")
     assert orchestrator.queries == ["sbin"] and fetch.symbols == ["SBIN"]
-    assert view.identifier == "SBIN" and view.price_figure is not None
+    assert view.identifier == "SBIN" and view.candles
     assert [panel.title.split()[0] for panel in view.panels] == ["Technical", "Risk"]
 
 
@@ -69,7 +69,7 @@ def test_every_request_starts_with_a_fresh_download():
 def test_an_ambiguous_query_downloads_nothing_and_returns_candidates():
     service, fetch, _ = make_service(ambiguous_result())
     view = service.view("sbi")
-    assert fetch.symbols == [] and view.candidates and view.price_figure is None
+    assert fetch.symbols == [] and view.candidates and view.candles == ()
 
 
 # ---- fundamentals source
@@ -118,7 +118,7 @@ def test_an_etf_never_asks_for_fundamentals():
 
 def test_a_fundamentals_failure_becomes_a_note_and_the_rest_of_the_page_survives():
     view = service_with(FakeFundamentals(error=EmptyRefreshError("no statements for 'SBIN'"))).view("sbin")
-    assert len(view.panels) == 2 and view.price_figure is not None
+    assert len(view.panels) == 2 and view.candles
     assert "fundamentals unavailable: no statements for 'SBIN'" in view.notes
 
 

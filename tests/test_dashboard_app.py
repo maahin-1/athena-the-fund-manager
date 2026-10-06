@@ -1,3 +1,5 @@
+import json
+
 import dash_fakes
 from dash_fakes import FakeService, RoutingService, ambiguous_result, athena_error, full_view, sample_backtest_view
 from streamlit.testing.v1 import AppTest
@@ -27,6 +29,19 @@ def texts(elements):
     return [element.value for element in elements]
 
 
+def backtest_box(app):
+    return app.checkbox(key="backtest-SBIN")
+
+
+def backtest_boxes(app):
+    return [box for box in app.checkbox if str(box.key).startswith("backtest-")]
+
+
+def chart_names(app):
+    """The names of the traces on the first chart on the page (the price chart)."""
+    return [trace.get("name") for trace in json.loads(app.get("plotly_chart")[0].proto.spec)["data"]]
+
+
 def test_an_empty_box_shows_a_prompt_and_calls_nothing():
     service = FakeService(full_view())
     app = open_app(service)
@@ -50,9 +65,9 @@ def test_the_page_shows_instrument_verdict_conviction_and_specialists():
     assert any("Not run: valuation (not built yet)" in c for c in texts(app.caption))
 
 
-def test_the_page_draws_both_charts_and_each_panel_with_as_of_and_coverage():
+def test_the_page_draws_the_chart_and_each_panel_with_as_of_and_coverage():
     app = open_app(FakeService(full_view()), "sbin")
-    assert len(app.get("plotly_chart")) == 2
+    assert len(app.get("plotly_chart")) == 1
     captions = texts(app.caption)
     assert any("coverage: full" in c and "as of 2026-10-02" in c for c in captions)  # technical panel
     assert any("coverage: partial" in c for c in captions)  # risk panel
@@ -108,25 +123,25 @@ def test_the_page_shows_the_three_fundamentals_panels_each_with_coverage():
 
 
 def test_the_page_offers_a_backtest_for_stocks_and_etfs_only():
-    assert len(open_app(FakeService(full_view("equity")), "sbin").checkbox) == 1
-    assert len(open_app(FakeService(full_view("etf")), "sbin").checkbox) == 1
-    assert len(open_app(FakeService(full_view("mutual_fund")), "sbin").checkbox) == 0
-    assert len(open_app(FakeService(build_view(ambiguous_result())), "sbi").checkbox) == 0
-    assert len(open_app(FakeService(), "").checkbox) == 0
+    assert len(backtest_boxes(open_app(FakeService(full_view("equity")), "sbin"))) == 1
+    assert len(backtest_boxes(open_app(FakeService(full_view("etf")), "sbin"))) == 1
+    assert len(backtest_boxes(open_app(FakeService(full_view("mutual_fund")), "sbin"))) == 0
+    assert len(backtest_boxes(open_app(FakeService(build_view(ambiguous_result())), "sbi"))) == 0
+    assert len(backtest_boxes(open_app(FakeService(), ""))) == 0
 
 
 def test_nothing_is_replayed_until_the_box_is_ticked():
     service = FakeService(full_view())
     app = open_app(service, "sbin")
-    assert service.backtests == [] and len(app.get("plotly_chart")) == 2
+    assert service.backtests == [] and len(app.get("plotly_chart")) == 1
 
 
 def test_ticking_the_box_replays_the_rules_without_asking_the_specialists_again():
     service = FakeService(full_view())
     app = open_app(service, "sbin")
-    app.checkbox[0].check().run()
+    backtest_box(app).check().run()
     assert not app.exception and service.backtests == ["SBIN"] and service.queries == ["sbin"]
-    assert len(app.get("plotly_chart")) == 4  # the price and RSI charts, plus one equity curve per rule
+    assert len(app.get("plotly_chart")) == 3  # the price chart, plus one equity curve per rule
     assert any("trend rule" in m for m in texts(app.markdown)) and any("persona rule" in m for m in texts(app.markdown))
     captions = texts(app.caption)
     assert any("same trades" in c and "Blinding check" in c for c in captions)
@@ -136,7 +151,7 @@ def test_ticking_the_box_replays_the_rules_without_asking_the_specialists_again(
 
 def test_the_backtest_tables_compare_strategy_and_buy_and_hold_as_text():
     app = open_app(FakeService(full_view()), "sbin")
-    app.checkbox[0].check().run()
+    backtest_box(app).check().run()
     tables = [frame for frame in app.dataframe if "strategy" in frame.value.columns]
     assert len(tables) == 2
     for frame in tables:
@@ -147,11 +162,11 @@ def test_the_backtest_tables_compare_strategy_and_buy_and_hold_as_text():
 def test_redrawing_the_page_does_not_replay_the_same_backtest_twice():
     service = FakeService(full_view())
     app = open_app(service, "sbin")
-    app.checkbox[0].check().run()
-    app.checkbox[0].uncheck().run()
-    assert len(app.get("plotly_chart")) == 2  # unticked: the curves go away
-    app.checkbox[0].check().run()
-    assert service.backtests == ["SBIN"] and service.queries == ["sbin"] and len(app.get("plotly_chart")) == 4
+    backtest_box(app).check().run()
+    backtest_box(app).uncheck().run()
+    assert len(app.get("plotly_chart")) == 1  # unticked: the curves go away
+    backtest_box(app).check().run()
+    assert service.backtests == ["SBIN"] and service.queries == ["sbin"] and len(app.get("plotly_chart")) == 3
 
 
 def test_a_rule_whose_blinded_run_differs_is_flagged_on_the_page():
@@ -162,7 +177,7 @@ def test_a_rule_whose_blinded_run_differs_is_flagged_on_the_page():
     view = sample_backtest_view()
     flagged = BacktestView(view.identifier, (replace(view.panels[0], blinded_identical=False), view.panels[1]), view.assumptions)
     app = open_app(FakeService(full_view(), backtest=flagged), "sbin")
-    app.checkbox[0].check().run()
+    backtest_box(app).check().run()
     blinding = [c for c in texts(app.caption) if c.startswith("Blinding check")]
     assert len(blinding) == 2 and "DIFFERENT trades" in blinding[0] and blinding[1].endswith("same trades")
 
@@ -170,14 +185,14 @@ def test_a_rule_whose_blinded_run_differs_is_flagged_on_the_page():
 def test_a_backtest_that_cannot_run_shows_the_reason_and_keeps_the_analysis():
     service = FakeService(full_view(), backtest_error=athena_error("not enough price history for SBIN"))
     app = open_app(service, "sbin")
-    app.checkbox[0].check().run()
+    backtest_box(app).check().run()
     assert not app.exception and app.error[0].value == "not enough price history for SBIN"
-    assert len(app.metric) == 2 and len(app.get("plotly_chart")) == 2
+    assert len(app.metric) == 2 and len(app.get("plotly_chart")) == 1
 
 
 def test_the_box_says_how_much_history_is_replayed():
     app = open_app(FakeService(full_view()), "sbin")
-    assert app.checkbox[0].label == "Backtest the technical rules (up to 8 years of history)"
+    assert backtest_box(app).label == "Backtest the technical rules (up to 8 years of history)"
 
 
 def test_each_backtest_note_is_shown_as_a_warning_and_none_without_notes():
@@ -185,7 +200,7 @@ def test_each_backtest_note_is_shown_as_a_warning_and_none_without_notes():
 
     notes = ("Prices adjusted for 1 split or bonus event(s) ...", "second note")
     app = open_app(FakeService(full_view(), backtest=replace(sample_backtest_view(), notes=notes)), "sbin")
-    app.checkbox[0].check().run()
+    backtest_box(app).check().run()
     assert not app.exception and texts(app.warning) == list(notes)
     plain = open_app(FakeService(full_view()), "sbin")
     plain.checkbox[0].check().run()
@@ -224,3 +239,83 @@ def test_a_later_ambiguous_search_does_not_repeat_the_old_click():
     app.text_input[0].set_value("tat").run()
     assert not app.exception and service.queries == ["sbi", "SBIN", "tat"]
     assert len(app.dataframe) == 1 and not app.metric  # the list is shown again and nothing was picked for the user
+
+
+DEFAULT_TRACES = ["Price", "SMA 50", "SMA 200", "Bollinger upper (20, 2)", "Bollinger lower (20, 2)", "Volume", "RSI 14"]
+
+
+def add_indicator(app, key):
+    app.selectbox(key="add_indicator").select(key)
+    app.button(key="add_button").click().run()
+
+
+def test_the_chart_starts_with_the_familiar_indicators_on_one_figure_and_says_they_are_for_looking():
+    app = open_app(FakeService(full_view()), "sbin")
+    assert not app.exception and chart_names(app) == DEFAULT_TRACES
+    assert "Indicators" in [e.label for e in app.expander]
+    assert any("Chart indicators are for looking only" in c for c in texts(app.caption))
+
+
+def test_adding_an_indicator_draws_it_in_its_own_row():
+    app = open_app(FakeService(full_view()), "sbin")
+    add_indicator(app, "macd")
+    assert not app.exception and chart_names(app) == DEFAULT_TRACES + ["MACD", "Signal", "Histogram"]
+
+
+def test_changing_a_setting_redraws_the_line_with_the_new_value():
+    app = open_app(FakeService(full_view()), "sbin")
+    app.number_input(key="ind-sma-1-length").set_value(30).run()
+    names = chart_names(app)
+    assert not app.exception and "SMA 30" in names and "SMA 50" not in names
+
+
+def test_removing_an_indicator_takes_its_lines_off_the_chart():
+    app = open_app(FakeService(full_view()), "sbin")
+    app.button(key="remove-rsi-1").click().run()
+    assert chart_names(app) == DEFAULT_TRACES[:-1]
+
+
+def test_reset_brings_back_the_default_indicators_and_their_settings():
+    app = open_app(FakeService(full_view()), "sbin")
+    app.number_input(key="ind-sma-1-length").set_value(30).run()
+    add_indicator(app, "macd")
+    app.button(key="remove-rsi-1").click().run()
+    app.button(key="reset_button").click().run()
+    assert not app.exception and chart_names(app) == DEFAULT_TRACES
+    assert app.number_input(key="ind-sma-1-length").value == 50
+
+
+def test_the_volume_row_can_be_switched_off():
+    app = open_app(FakeService(full_view()), "sbin")
+    app.checkbox(key="show_volume").uncheck().run()
+    assert "Volume" not in chart_names(app)
+
+
+def test_the_add_button_is_switched_off_at_the_limit_of_eight_indicators():
+    app = open_app(FakeService(full_view()), "sbin")
+    for key in ("ema", "wma", "sar", "macd"):
+        add_indicator(app, key)
+    assert {"EMA 20", "WMA 20", "Parabolic SAR", "MACD"} <= set(chart_names(app)) and app.button(key="add_button").disabled
+
+
+def test_a_choice_that_cannot_be_drawn_is_reported_and_the_others_are_still_drawn():
+    app = open_app(FakeService(full_view()), "sbin")
+    add_indicator(app, "macd")
+    app.number_input(key="ind-macd-1-fast").set_value(40).run()
+    assert not app.exception and any("macd-1: the fast length must be shorter than the slow length" in w for w in texts(app.warning))
+    names = chart_names(app)
+    assert "MACD" not in names and "SMA 50" in names
+
+
+def test_a_history_too_short_for_a_setting_is_said_on_the_page():
+    app = open_app(FakeService(full_view()), "sbin")
+    app.number_input(key="ind-sma-2-length").set_value(400).run()  # only 320 bars in this history
+    assert any("Not enough history to draw: SMA 400." in c for c in texts(app.caption))
+
+
+def test_the_chosen_indicators_stay_when_another_instrument_is_looked_up():
+    service = RoutingService({"sbin": full_view(), "tcs": full_view()})
+    app = open_app(service, "sbin")
+    app.number_input(key="ind-sma-1-length").set_value(30).run()
+    app.text_input[0].set_value("tcs").run()
+    assert service.queries == ["sbin", "tcs"] and "SMA 30" in chart_names(app)

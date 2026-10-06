@@ -4,13 +4,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-import plotly.graph_objects as go
-
 from athena.contracts import Bar
-from athena.dashboard.charts import price_chart, rsi_chart
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, OrchestrationResult
-from athena.technicals.candles import candles_from_bars
-from athena.technicals.series import indicator_series
+from athena.technicals.candles import Candle, candles_from_bars
 
 NO_DATA = "no data"
 UNMAPPED_ETF_NOTE = "tracking error and difference are unavailable: no tracking index is mapped for this ETF"
@@ -70,8 +66,8 @@ class DashboardView:
     specialists: tuple[SpecialistRow, ...]
     skipped: Mapping[str, str]
     panels: tuple[Panel, ...]
-    price_figure: go.Figure | None
-    rsi_figure: go.Figure | None
+    candles: tuple[Candle, ...]  # the daily history the chart is drawn from
+    chart_title: str
     candidates: tuple[CandidateRow, ...]
     notes: tuple[str, ...]
 
@@ -122,7 +118,7 @@ def build_view(
             CandidateRow(c.identifier, c.name, c.asset_class, c.score) for c in result.ambiguity.candidates
         )
         return DashboardView(
-            result.status, result.query, "", "", "", "", None, (), {}, (), None, None, candidates, (result.ambiguity.reason,)
+            result.status, result.query, "", "", "", "", None, (), {}, (), (), "", candidates, (result.ambiguity.reason,)
         )
 
     resolution = result.resolution
@@ -150,12 +146,7 @@ def build_view(
     if resolution.asset_class == "etf":
         notes.append(ETF_FUNDAMENTALS_NOTE)
 
-    price_figure = rsi_figure = None
-    if candles:
-        series = indicator_series(candles)
-        label = f"{resolution.identifier}  {resolution.name}  ({as_of})"
-        price_figure = price_chart(candles, series, label)
-        rsi_figure = rsi_chart(candles, series)
+    chart_title = f"{resolution.identifier}  {resolution.name}  ({as_of})" if candles else ""
 
     specialists = tuple(
         SpecialistRow(name, out["signal"], out["confidence"], out["data_coverage"], out["reasoning"], tuple(out["missing"]))
@@ -164,5 +155,5 @@ def build_view(
     return DashboardView(
         result.status, result.query, resolution.identifier, resolution.name, resolution.asset_class,
         resolution.resolution_path, result.verdict, specialists, dict(result.skipped), tuple(panels),
-        price_figure, rsi_figure, (), tuple(notes),
+        tuple(candles), chart_title, (), tuple(notes),
     )

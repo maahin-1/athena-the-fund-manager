@@ -22,9 +22,9 @@ def rows(panel):
 
 def test_live_stock_view_has_verdict_charts_and_complete_panels(service):
     view = service.view("SBIN")
-    technical, risk = view.panels
+    technical, risk = view.panels[:2]  # the fundamentals panels follow
     print("\nSBIN", view.verdict, {k: rows(technical)[k] for k in ("last_close", "rsi_14", "trend_alignment")}, rows(risk))
-    assert view.status == OK and view.price_figure is not None and view.rsi_figure is not None
+    assert view.status == OK and view.candles and view.chart_title
     assert technical.coverage == "full" and not technical.missing
     assert {"volatility_annualized", "max_drawdown", "beta", "alpha_annualized", "sharpe"} <= set(rows(risk))
     assert "tracking_error" in risk.missing  # a stock has no tracking index
@@ -40,7 +40,7 @@ def test_live_etf_view_adds_tracking_error_against_the_index(service):
 
 def test_live_ambiguous_name_asks_instead_of_guessing(service):
     view = service.view("SBI")
-    assert view.candidates and view.price_figure is None
+    assert view.candidates and view.candles == ()
 
 
 def test_live_page_renders_end_to_end():
@@ -52,4 +52,4 @@ def test_live_page_renders_end_to_end():
     app = AppTest.from_function(script, default_timeout=180).run()
     app.text_input[0].set_value("SBIN").run()
     assert not app.exception, app.exception
-    assert len(app.get("plotly_chart")) == 2 and {m.label for m in app.metric} == {"Verdict", "Conviction"}
+    assert len(app.get("plotly_chart")) == 1 and {m.label for m in app.metric} == {"Verdict", "Conviction"}
