@@ -145,3 +145,49 @@ def test_an_ambiguous_backtest_query_prints_ten_candidates_and_says_how_many_mor
     text, code = analyze(many, "alpha", ["trend"])
     assert code == 2 and "ALPHA09" in text and "ALPHA10" not in text
     assert "...and 15 more; type the exact symbol." in text
+
+
+def write_strategy(tmp_path, data):
+    import json
+
+    path = tmp_path / "strategy.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return str(path)
+
+
+MINE = {"name": "Mine", "entry": {"op": "gt", "left": {"price": "close"}, "right": {"const": 1}}, "exit": {"op": "lt", "left": {"price": "close"}, "right": {"const": 1}}}
+
+
+def test_with_no_flags_both_built_in_rules_run_and_a_preset_replaces_them(capsys):
+    assert main(["SBIN"], factory=lambda years: world()) == 0
+    out = capsys.readouterr().out
+    assert "rule: trend" in out and "rule: persona" in out
+    assert main(["SBIN", "--preset", "rsi_reversion"], factory=lambda years: world()) == 0
+    out = capsys.readouterr().out
+    assert "rule: RSI mean reversion" in out and "rule: trend" not in out and "Buy when the RSI (length 14) is below 30." in out
+
+
+def test_a_built_in_rule_can_be_asked_for_alongside_a_preset_and_a_strategy_file(capsys, tmp_path):
+    argv = ["SBIN", "--rule", "trend", "--preset", "golden_cross", "--strategy", write_strategy(tmp_path, MINE)]
+    assert main(argv, factory=lambda years: world()) == 0
+    out = capsys.readouterr().out
+    for expected in ("rule: trend", "rule: Golden cross", "rule: Mine", "Buy when the close is above 1."):
+        assert expected in out
+    assert "rule: persona" not in out
+
+
+def test_a_bad_strategy_file_is_reported_without_a_traceback(capsys, tmp_path):
+    assert main(["SBIN", "--strategy", str(tmp_path / "missing.json")], factory=lambda years: world()) == 1
+    assert "error: cannot read" in capsys.readouterr().out
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    assert main(["SBIN", "--strategy", str(broken)], factory=lambda years: world()) == 1
+    assert "is not valid JSON" in capsys.readouterr().out
+    bad = write_strategy(tmp_path, {**MINE, "entry": {"op": "gt", "left": {"ind": "nope"}, "right": {"const": 1}}})
+    assert main(["SBIN", "--strategy", bad], factory=lambda years: world()) == 1
+    assert "error: entry.left.ind: unknown indicator 'nope'" in capsys.readouterr().out
+
+
+def test_an_unknown_preset_is_refused_by_the_argument_parser():
+    with pytest.raises(SystemExit):
+        main(["SBIN", "--preset", "magic"], factory=lambda years: world())

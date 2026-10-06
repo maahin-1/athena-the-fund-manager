@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
+from athena.technicals.candles import Candle
+
+ENTRY, EXIT = "enter", "exit"
 ALIGNED_UP = "aligned_up"
 MIN_REWARD_RISK = 2.0  # the persona's minimum reward:risk (TRD 2.3)
 
@@ -22,6 +25,24 @@ class Rule:
     description: str
     enter: Callable[[Mapping[str, Any]], bool]
     leave: Callable[[Mapping[str, Any]], bool]
+
+
+class Signals(Protocol):
+    def decide(self, index: int, holding: bool) -> tuple[str | None, float | None]:
+        """ENTRY, EXIT or None after the close of bar `index`, and the ATR to size a protective stop with (or None)."""
+
+
+@dataclass(frozen=True)
+class SeriesRule:
+    """A long-only rule computed once over the whole history and read at each close. `prepare` must build signals in
+    which the value at bar t uses only bars up to t (every indicator and rolling window the strategy format allows is
+    causal), so reading index t is as safe as rebuilding the packet from the bars up to t. `stop_atr` is the
+    protective stop in ATR multiples (None for no stop) and replaces the run's default."""
+
+    name: str
+    description: str
+    prepare: Callable[[Sequence[Candle]], Signals]
+    stop_atr: float | None = None
 
 
 def _trend_lost(packet: Mapping[str, Any]) -> bool:

@@ -5,6 +5,8 @@ from dash_fakes import FUNDAMENTALS, INDEX, RATE, TREND_BARS, ambiguous_result, 
 from athena.contracts import AthenaError, EmptyRefreshError
 from athena.dashboard.risk import RiskWorld
 from athena.dashboard.service import DashboardService
+from athena.strategies.compile import strategy_rule
+from athena.strategies.presets import PRESETS
 from athena.orchestrator.builders import RequestCache
 from athena.orchestrator.orchestrator import OK, OrchestrationResult
 
@@ -147,3 +149,15 @@ def test_a_backtest_replays_both_rules_on_the_long_history_of_the_identifier():
     assert asked == ["SBIN"] and view.identifier == "SBIN"
     assert [panel.rule for panel in view.panels] == ["trend", "persona"]
     assert "15 bps per side" in view.assumptions and all(panel.blinded_identical for panel in view.panels)
+
+
+def test_a_backtest_can_run_a_strategy_instead_of_the_built_in_rules_and_describes_it():
+    cache = RequestCache(CountingFetch())
+    service = DashboardService(
+        FakeOrchestrator(cache), cache, RiskWorld(INDEX, RATE, {}), clock=lambda: NOW, long_history=lambda symbol: TREND_BARS
+    )
+    view = service.backtest("SBIN", [strategy_rule(PRESETS["rsi_reversion"]), "trend"])
+    assert [panel.rule for panel in view.panels] == ["RSI mean reversion", "trend"]
+    assert view.panels[0].description.startswith("Buy when the RSI (length 14) is below 30.")
+    assert "a stop that depends on the rule" not in view.assumptions  # both use a 2 x ATR stop
+    assert [panel.rule for panel in service.backtest("SBIN").panels] == ["trend", "persona"]  # the default is unchanged

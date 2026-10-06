@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from athena.backtest.adjust import require_positive_prices
-from athena.backtest.rules import Rule
+from athena.backtest.rules import ENTRY, EXIT, Rule, SeriesRule
 from athena.contracts import Bar, InsufficientData
 from athena.technicals.candles import candles_from_bars
 from athena.technicals.packet import build_technical_packet
 
 WINDOW_BARS = 520  # about 760 calendar days: the same history the live specialist sees (orchestrator HISTORY_DAYS)
 WARMUP_BARS = 330  # roughly 15 months, the least the monthly trend needs
-ENTRY, EXIT = "enter", "exit"
 
 
 @dataclass(frozen=True)
@@ -54,10 +53,12 @@ def decide(bars: Sequence[Bar], index: int, rule: Rule, holding: bool, window: i
     return (EXIT if holding else ENTRY) if wants else None, (atr["value"] if atr else None)
 
 
-def run_backtest(bars: Sequence[Bar], rule: Rule, config: Config = Config()) -> BacktestResult:
+def run_backtest(bars: Sequence[Bar], rule: Rule | SeriesRule, config: Config = Config()) -> BacktestResult:
     """Long-only, one position, all in. Decisions use only information up to a bar's close and are filled at the next
     bar's open, so nothing can see the future; a protective stop fills at the stop price, or at the open if the bar
     gaps through it."""
+    if isinstance(rule, SeriesRule):
+        config = replace(config, stop_atr_multiple=rule.stop_atr)  # the strategy decides its own stop
     ordered = sorted(bars, key=lambda bar: bar.timestamp)
     require_positive_prices(ordered)
     candles = candles_from_bars(ordered)
@@ -65,6 +66,12 @@ def run_backtest(bars: Sequence[Bar], rule: Rule, config: Config = Config()) -> 
         raise InsufficientData("the bars contain repeated trading days")
     if len(ordered) <= config.warmup_bars + 1:
         raise InsufficientData(f"a backtest needs more than {config.warmup_bars + 1} daily bars, got {len(ordered)}")
+
+    if isinstance(rule, SeriesRule):
+        decider = rule.prepare(candles).decide
+    else:
+        def decider(index: int, holding: bool) -> tuple[str | None, float | None]:
+            return decide(ordered, index, rule, holding, config.window_bars)
 
     cost = config.cost_bps_per_side / 10_000.0
     cash, shares, stop = config.initial_cash, 0.0, None
@@ -99,7 +106,7 @@ def run_backtest(bars: Sequence[Bar], rule: Rule, config: Config = Config()) -> 
         equity.append(cash + shares * bar.close)
         in_market.append(shares > 0)
         if i < len(candles) - 1:  # no point deciding after the last bar: there is no next open to fill at
-            pending, pending_atr = decide(ordered, i, rule, shares > 0, config.window_bars)
+            pending, pending_atr = decider(i, shares > 0)
 
     first = candles[config.warmup_bars]
     bought = config.initial_cash / (first.open * (1 + cost))

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import lru_cache
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from athena.backtest.cli import assumptions, run_rules
-from athena.backtest.rules import RULES
+from athena.backtest.cli import assumptions_for, run_rules
+from athena.backtest.rules import RULES, Rule, SeriesRule
 from athena.clock import utc_now
 from athena.cli import build_orchestrator, live_sources
 from athena.contracts import AthenaError, Bar
@@ -67,12 +67,15 @@ class DashboardService:
         return build_view(result, bars, technical, risk, fundamentals, note)
 
 
-    def backtest(self, identifier: str) -> BacktestView:
-        """Both technical rules over the long history, each against buy and hold, with the blinding check."""
+    def backtest(self, identifier: str, rules: Sequence[str | Rule | SeriesRule] | None = None) -> BacktestView:
+        """The given rules (the two built-in technical rules by default) over the long history, each against buy and hold,
+        with the blinding check."""
         if self._long_history is None:
             raise AthenaError("backtests are not available in this session")
-        runs = run_rules(self._long_history(identifier), list(RULES), self._risk_world.rate, self._risk_world.price_index)
-        return build_backtest_view(identifier, runs, assumptions())
+        runs = run_rules(
+            self._long_history(identifier), list(RULES) if rules is None else list(rules), self._risk_world.rate, self._risk_world.price_index
+        )
+        return build_backtest_view(identifier, runs, assumptions_for(runs))
 
 
 def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
