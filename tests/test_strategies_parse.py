@@ -148,3 +148,24 @@ def test_the_line_names_match_what_the_registry_computes_for_every_indicator():
 def test_a_rolling_value_can_be_built_over_another_value_such_as_an_indicator():
     strategy = parse_strategy({**BASIC, "entry": {"op": "gt", "left": CLOSE, "right": {"rolling": "max", "of": {"ind": "rsi"}, "window": 5}}})
     assert isinstance(strategy.entry.right, Rolling) and isinstance(strategy.entry.right.of, IndicatorRef)
+
+
+HUGE = 10**400  # an integer no float can hold
+
+
+@pytest.mark.parametrize(
+    "data, where",
+    [
+        (broken(["entry", "left"], {"ind": []}), "entry.left.ind"),
+        (broken(["entry", "left"], {"ind": {}}), "entry.left.ind"),
+        (broken(["entry", "right"], {"const": HUGE}), "entry.right.const"),
+        (broken(["entry", "left"], {"price": "close", "shift": HUGE}), "entry.left.shift"),
+        (broken(["entry", "left"], {"rolling": "max", "of": CLOSE, "window": HUGE}), "entry.left.window"),
+        (broken(["entry", "left"], {"ind": "macd", "line": HUGE}), "entry.left.line"),
+        (broken(["entry", "left"], {"ind": "sma", "params": {"length": HUGE}}), "entry.left.params"),
+        ({**BASIC, "stop_atr": HUGE}, "strategy.stop_atr"),
+    ],
+)
+def test_input_no_float_can_hold_or_no_name_can_be_is_refused_with_a_message_naming_the_part(data, where):
+    with pytest.raises(StrategyError, match=where):
+        parse_strategy(data)

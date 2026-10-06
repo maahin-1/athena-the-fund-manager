@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 
 import pytest
@@ -191,3 +192,29 @@ def test_a_bad_strategy_file_is_reported_without_a_traceback(capsys, tmp_path):
 def test_an_unknown_preset_is_refused_by_the_argument_parser():
     with pytest.raises(SystemExit):
         main(["SBIN", "--preset", "magic"], factory=lambda years: world())
+
+
+def deep_strategy_file(tmp_path, text):
+    path = tmp_path / "text.json"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+@pytest.mark.parametrize("text", ["[" * 100000, "1" * 5000], ids=["nested", "digits"])
+def test_a_strategy_file_json_cannot_parse_is_reported_without_a_traceback(capsys, tmp_path, text):
+    assert main(["SBIN", "--strategy", deep_strategy_file(tmp_path, text)], factory=lambda years: world()) == 1
+    assert capsys.readouterr().out.startswith("error: ")
+
+
+def test_a_strategy_file_with_an_oversized_number_is_reported_without_a_traceback(capsys, tmp_path):
+    bad = write_strategy(tmp_path, {**MINE, "stop_atr": 10**400})
+    assert main(["SBIN", "--strategy", bad], factory=lambda years: world()) == 1
+    assert "error: strategy.stop_atr" in capsys.readouterr().out
+
+
+def test_two_rules_with_the_same_name_are_refused_before_anything_runs(capsys, tmp_path):
+    first = write_strategy(tmp_path, MINE)
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({**MINE, "stop_atr": 3}), encoding="utf-8")
+    assert main(["SBIN", "--strategy", first, "--strategy", str(other)], factory=lambda years: world()) == 1
+    assert "error: two rules are named 'Mine'; give each a different name" in capsys.readouterr().out

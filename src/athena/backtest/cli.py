@@ -74,6 +74,10 @@ def run_rules(
     if unknown:
         raise ValueError(f"unknown rule {unknown[0]!r}; choose from {sorted(RULES)}")
     resolved = [RULES[rule] if isinstance(rule, str) else rule for rule in rules]
+    names = [rule.name for rule in resolved]
+    repeated = [name for name in names if names.count(name) > 1]
+    if repeated:
+        raise ValueError(f"two rules are named {repeated[0]!r}; give each a different name")
     adjusted, adjustments = adjust_for_splits(bars)
     blinded = blind_bars(adjusted)
     runs = []
@@ -155,6 +159,10 @@ def load_strategy_rule(path: str) -> SeriesRule:
     except OSError as exc:
         raise ValueError(f"cannot read {path}: {exc.strerror}") from exc
     except json.JSONDecodeError as exc:
+        raise ValueError(f"{path} is not valid JSON: {exc}") from exc
+    except RecursionError as exc:
+        raise ValueError(f"{path} is not valid JSON: it is nested too deeply") from exc
+    except ValueError as exc:  # for example an integer with more than 4300 digits
         raise ValueError(f"{path} is not valid JSON: {exc}") from exc
     return strategy_rule(parse_strategy(data))
 

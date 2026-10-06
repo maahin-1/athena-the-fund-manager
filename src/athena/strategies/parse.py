@@ -59,7 +59,13 @@ class _Parser:
             raise StrategyError(f"{path}: nested more than {MAX_DEPTH} levels deep")
 
     def number(self, value: Any, path: str) -> float:
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise StrategyError(f"{path}: must be a number")
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:  # an integer too large for a float
+            finite = False
+        if not finite:
             raise StrategyError(f"{path}: must be a number")
         return value
 
@@ -142,9 +148,12 @@ class _Parser:
 
     def indicator(self, data: Mapping, path: str, shift: int) -> IndicatorRef:
         key = data["ind"]
-        if key not in REGISTRY:
+        if not isinstance(key, str) or key not in REGISTRY:
             raise StrategyError(f"{path}.ind: unknown indicator {key!r}; choose from {', '.join(REGISTRY)}")
         params = self.mapping(data.get("params", {}), f"{path}.params")
+        for name, value in params.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                self.number(value, f"{path}.params.{name}")
         full = {**default_params(key), **params}
         reason = problem(Selected("s-1", key, full))
         if reason:
@@ -162,6 +171,13 @@ class _Parser:
 
 def parse_strategy(data: Any) -> Strategy:
     """A strategy from plain data (for example JSON), or a `StrategyError` that names what is wrong."""
+    try:
+        return _parse(data)
+    except (TypeError, OverflowError, RecursionError) as exc:  # a last-resort net; the checks above should catch these first
+        raise StrategyError(f"this strategy is not valid ({type(exc).__name__})") from exc
+
+
+def _parse(data: Any) -> Strategy:
     parser = _Parser()
     top = parser.mapping(data, "strategy")
     extra = sorted(set(top) - {"version", "name", "entry", "exit", "stop_atr"})

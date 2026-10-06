@@ -6,7 +6,7 @@ from typing import Protocol
 import streamlit as st
 
 from athena.contracts import AthenaError
-from athena.backtest.rules import Rule, SeriesRule
+from athena.backtest.rules import RULES, Rule, SeriesRule
 from athena.dashboard.backtest_view import BacktestView
 from athena.dashboard.strategy_form import strategy_controls
 from athena.dashboard.view import DashboardView, Panel
@@ -172,7 +172,8 @@ def render_backtest(view: BacktestView) -> None:
     for note in view.notes:
         st.warning(note)
     for panel in view.panels:
-        st.markdown(f"**{panel.rule} rule**: {panel.description}")
+        title = f"{panel.rule} rule" if panel.rule in RULES else panel.rule
+        st.markdown(f"**{title}**: {panel.description}")
         st.dataframe(
             [{"measure": measure, "strategy": strategy, "buy and hold": hold} for measure, strategy, hold in panel.rows],
             hide_index=True, width="stretch",
@@ -201,7 +202,7 @@ def _remembered(key: str, token: str, compute):
 
 def _backtest_section(service: ViewService, identifier: str) -> None:
     if not st.checkbox(
-        "Backtest the technical rules (up to 8 years of history)",
+        "Backtest rules and strategies (up to 8 years of history)",
         key=f"backtest-{identifier}",
         help="Replays each rule day by day on this instrument's price history and compares it with buy and hold.",
     ):

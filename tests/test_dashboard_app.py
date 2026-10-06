@@ -1,6 +1,8 @@
 import json
+from dataclasses import replace
 
 import dash_fakes
+import pytest
 from dash_fakes import FakeService, RoutingService, ambiguous_result, athena_error, full_view, sample_backtest_view
 from streamlit.testing.v1 import AppTest
 
@@ -192,7 +194,7 @@ def test_a_backtest_that_cannot_run_shows_the_reason_and_keeps_the_analysis():
 
 def test_the_box_says_how_much_history_is_replayed():
     app = open_app(FakeService(full_view()), "sbin")
-    assert backtest_box(app).label == "Backtest the technical rules (up to 8 years of history)"
+    assert backtest_box(app).label == "Backtest rules and strategies (up to 8 years of history)"
 
 
 def test_each_backtest_note_is_shown_as_a_warning_and_none_without_notes():
@@ -422,3 +424,44 @@ def test_switching_back_to_the_built_in_rules_shows_them_again():
     choose(app, "A preset strategy")
     choose(app, "Built-in rules")
     assert service.rule_sets[-1] is None and not app.exception
+
+
+@pytest.mark.parametrize("text", ["[" * 100000, "1" * 5000], ids=["nested", "digits"])
+def test_json_that_cannot_be_read_is_explained_on_the_page_and_cannot_be_run(text):
+    service, app = start_backtest()
+    choose(app, "Paste JSON")
+    app.text_area(key="strategy_json").set_value(text).run()
+    assert not app.exception and "This is not valid JSON" in app.error[0].value and app.button(key="run_strategy").disabled
+    assert len(service.rule_sets) == 1
+
+
+def test_an_oversized_number_in_pasted_json_is_explained_and_cannot_be_run():
+    import json
+
+    service, app = start_backtest()
+    choose(app, "Paste JSON")
+    huge = {"name": "x", "stop_atr": 10**400, "entry": {"op": "gt", "left": {"price": "close"}, "right": {"const": 1}}, "exit": {"op": "lt", "left": {"price": "close"}, "right": {"const": 1}}}
+    app.text_area(key="strategy_json").set_value(json.dumps(huge)).run()
+    assert not app.exception and "strategy.stop_atr" in app.error[0].value and app.button(key="run_strategy").disabled
+
+
+def test_coming_back_to_my_own_strategy_does_not_run_the_last_one_again():
+    service, app = start_backtest()
+    choose(app, "Build my own")
+    app.button(key="run_strategy").click().run()
+    choose(app, "A preset strategy")
+    runs = len(service.rule_sets)
+    choose(app, "Build my own")
+    assert len(service.rule_sets) == runs and not app.exception
+    assert any("Build or paste a strategy above" in c for c in texts(app.caption))
+    choose(app, "Paste JSON")
+    assert len(service.rule_sets) == runs
+
+
+def test_a_strategy_panel_is_headed_by_its_name_alone_and_a_built_in_one_keeps_the_word_rule():
+    runs = list(dash_fakes.trend_runs())
+    runs[1] = replace(runs[1], summary=replace(runs[1].summary, rule="Golden cross"))
+    view = dash_fakes.build_backtest_view("SBIN", runs, dash_fakes.assumptions())
+    _, app = start_backtest(FakeService(full_view(), backtest=view))
+    headings = [m for m in texts(app.markdown) if m.startswith("**trend") or m.startswith("**Golden")]
+    assert headings[0].startswith("**trend rule**:") and headings[1].startswith("**Golden cross**:")

@@ -15,6 +15,7 @@ from athena.technicals.indicators import REGISTRY
 
 MODES = ("Built-in rules", "A preset strategy", "Build my own", "Paste JSON")
 RUN_KEY = "strategy_to_run"  # the strategy last run, as canonical JSON
+MODE_KEY = "strategy_mode_seen"  # the mode of the previous run of the page
 OPERATORS = {
     "is above": "gt", "is at or above": "ge", "is below": "lt", "is at or below": "le",
     "crosses above": "crosses_above", "crosses below": "crosses_below",
@@ -127,13 +128,20 @@ def _json_box() -> dict | None:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         st.error(f"This is not valid JSON: {exc}")
-        return None
+    except RecursionError:
+        st.error("This is not valid JSON: it is nested too deeply.")
+    except ValueError as exc:  # for example an integer with more than 4300 digits
+        st.error(f"This is not valid JSON: {exc}")
+    return None
 
 
 def strategy_controls() -> tuple[bool, list[SeriesRule] | None, str]:
     """Ask what to test. Returns (ready, rules, token): `rules` is None for the built-in rules, and `token` names the
     choice so the page can remember its result. A strategy of the person's own waits for the Run button."""
     mode = st.radio("Rules to test", MODES, horizontal=True, key="strategy_mode")
+    if st.session_state.get(MODE_KEY) != mode:  # a strategy run earlier must not run again when the person comes back
+        st.session_state.pop(RUN_KEY, None)
+        st.session_state[MODE_KEY] = mode
     if mode == MODES[0]:
         return True, None, "builtin"
     if mode == MODES[1]:
