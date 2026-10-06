@@ -15,9 +15,28 @@ _JUGAAD_COLUMNS = ("DATE", "OPEN", "HIGH", "LOW", "CLOSE", "VOLUME")
 _YAHOO_COLUMNS = ("Date", "Open", "High", "Low", "Close", "Volume")
 
 
+# jugaad-data returns every NSE series for a symbol, not only equity: SBIN also trades bond series (N2, N5, N6) at
+# prices near 10,000, plus block-deal (BL) and other rows on the same day. Only equity series are price history, and
+# plain EQ wins when a day has more than one.
+EQUITY_SERIES_RANK = {"EQ": 0, "BE": 1, "BZ": 2, "SM": 3, "ST": 4}
+
+
+def equity_rows(rows: list[dict]) -> list[dict]:
+    """One equity-series row per trading day, preferring EQ; rows from other series (bonds, block deals) are dropped.
+    Rows without a SERIES column (an older shape, or tests) pass through unchanged."""
+    if not rows or "SERIES" not in rows[0]:
+        return rows
+    best: dict[Any, tuple[int, dict]] = {}
+    for row in rows:
+        rank = EQUITY_SERIES_RANK.get(row["SERIES"])
+        if rank is not None and (row["DATE"] not in best or rank < best[row["DATE"]][0]):
+            best[row["DATE"]] = (rank, row)
+    return [row for _, row in best.values()]
+
+
 def bars_from_jugaad(rows: list[dict], symbol: str, as_of: datetime) -> list[Bar]:
     bars = []
-    for row in rows:
+    for row in equity_rows(rows):
         missing = [c for c in _JUGAAD_COLUMNS if c not in row]
         if missing:
             raise SchemaChangedError(f"jugaad row missing columns {missing}")

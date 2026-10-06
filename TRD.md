@@ -286,7 +286,7 @@ Checked against the live sources; re-checked by `pytest --live`.
 | --- | --- |
 | NSE holiday list (`NSELive().holiday_list()`) | Works; segment `CM`; current year only; 2 Oct 2026 is a holiday |
 | NSE `EQUITY_L.csv`, `eq_etfseclist.csv` | Work with a browser `User-Agent`; ETF list gives each ETF's underlying index |
-| jugaad-data `stock_df` | Works; dates are IST midnight stored as naive UTC (18:30 the previous day); unadjusted prices |
+| jugaad-data `stock_df` | Works; dates are IST midnight stored as naive UTC (18:30 the previous day); unadjusted prices. Returns every NSE series for the symbol despite `series="EQ"` (SBIN: EQ 1948 rows plus bond series N2/N5/N6/T0 near 10,000 and BL block deals, 612 duplicated days over 8 years); the adapter keeps one equity-series row per day, preferring EQ |
 | jugaad-data `index_tri_raw(name, index_name, from, to)` | Works; returns TRI and NTR |
 | Yahoo `.NS` history | Works but invents flat zero-volume rows on market holidays; use `auto_adjust=False`; statements returned 4 years for SBIN |
 | AMFI `NAVAll.txt` | Works; scheme code, ISINs, NAV, date in one file (mutual funds on hold) |
@@ -427,5 +427,6 @@ Every persona file additionally opens with a disclaimer, following ai-hedge-fund
 - **Oct 5, 2026 (Phase 1c)** — Orchestrator skeleton and command line implemented (see docs/superpowers/plans/2026-10-05-phase-1c-orchestrator-skeleton.md).
 - **Oct 5, 2026 (Phase 1d)** — Stocks and ETF dashboard implemented (see docs/superpowers/plans/2026-10-05-phase-1d-dashboard.md).
 - **Oct 5, 2026 (Phase 1e)** — Fundamentals data and metrics implemented and shown on the dashboard (see docs/superpowers/plans/2026-10-05-phase-1e-fundamentals-data-and-metrics.md).
+- **Oct 6, 2026 (price series fix)** — The jugaad price adapter now keeps only equity-series rows (EQ preferred; BE, BZ, SM, ST as fallback) and drops bond and block-deal rows that jugaad returns for the same symbol. Found while preparing the stock backtest: long histories carried repeated days and prices near 10,000; the recent 760-day window was affected only in the 4th decimal of RSI and ATR.
 - **Oct 6, 2026 (Phase 1f)** — Valuation, Moat & Quality and Earnings Intelligence specialists implemented and routed (see docs/superpowers/plans/2026-10-06-phase-1f-fundamentals-specialists.md).
 - **Oct 3, 2026** — Gap closure after review against the PRD, a check of free data sources, and a review of karpathy/llm-council and Jev. Added: free-only data decision and coverage matrix (§6.1); data layer with batch loaders and local store (§2.11); instrument resolver and routing table (§2.12, §3); metrics engine (§2.13); evaluation harness (§2.14); arbitration protocol detail (§2.15); `data_coverage` in the specialist contract; per-dataset staleness table, fallback chains, and adapter canary (§5); Phase 0 in the roadmap; five new open decisions (6–10); llm-council and Jev entries in §4 and §7; refreshed data source table (§6) with confirmed and unverified sources.
