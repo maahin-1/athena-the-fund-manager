@@ -319,3 +319,106 @@ def test_the_chosen_indicators_stay_when_another_instrument_is_looked_up():
     app.number_input(key="ind-sma-1-length").set_value(30).run()
     app.text_input[0].set_value("tcs").run()
     assert service.queries == ["sbin", "tcs"] and "SMA 30" in chart_names(app)
+
+
+def start_backtest(service=None):
+    service = service or FakeService(full_view())
+    app = open_app(service, "sbin")
+    backtest_box(app).check().run()
+    return service, app
+
+
+def choose(app, mode):
+    app.radio(key="strategy_mode").set_value(mode).run()
+
+
+def test_the_backtest_starts_on_the_built_in_rules():
+    service, app = start_backtest()
+    assert app.radio(key="strategy_mode").value == "Built-in rules"
+    assert service.rule_sets == [None] and not app.exception
+
+
+def test_choosing_a_preset_runs_it_straight_away_and_says_what_it_does():
+    service, app = start_backtest()
+    choose(app, "A preset strategy")
+    assert [rule.name for rule in service.rule_sets[-1]] == ["52-week high breakout"]
+    app.selectbox(key="preset_choice").select("golden_cross").run()
+    assert [rule.name for rule in service.rule_sets[-1]] == ["Golden cross"] and not app.exception
+    assert any("crosses above" in c and "simple moving average (length 50)" in c for c in texts(app.caption))
+
+
+def test_my_own_strategy_waits_for_the_run_button_and_shows_its_description_first():
+    service, app = start_backtest()
+    choose(app, "Build my own")
+    assert service.rule_sets == [None]  # nothing new has run
+    assert any("Build or paste a strategy above" in c for c in texts(app.caption))
+    assert any(c.startswith("Buy when the close is at or above the highest close over the last 252 bars") and "Stop out if the price falls 2 x ATR" in c for c in texts(app.caption))
+    app.button(key="run_strategy").click().run()
+    (rule,) = service.rule_sets[-1]
+    assert rule.name == "My strategy" and rule.stop_atr == 2.0 and not app.exception
+    assert len(service.rule_sets) == 2
+
+
+def test_the_builder_turns_the_boxes_into_the_strategy_that_runs():
+    service, app = start_backtest()
+    choose(app, "Build my own")
+    app.text_input(key="builder_name").set_value("Cheap and oversold").run()
+    app.selectbox(key="entry-0-left-kind").select("Indicator").run()
+    app.selectbox(key="entry-0-left-ind").select("rsi").run()
+    app.number_input(key="entry-0-left-rsi-length").set_value(10).run()
+    app.selectbox(key="entry-0-op").select("is below").run()
+    app.selectbox(key="entry-0-right-kind").select("Number").run()
+    app.number_input(key="entry-0-right-number").set_value(30).run()
+    app.number_input(key="builder_stop").set_value(0).run()
+    app.button(key="run_strategy").click().run()
+    (rule,) = service.rule_sets[-1]
+    assert rule.name == "Cheap and oversold" and rule.stop_atr is None
+    assert rule.description.startswith("Buy when the RSI (length 10) is below 30. Sell when the close is at or below the lowest close")
+    assert rule.description.endswith("No protective stop.")
+
+
+def test_several_conditions_can_be_required_all_together_or_any_one_of_them():
+    service, app = start_backtest()
+    choose(app, "Build my own")
+    app.number_input(key="entry-count").set_value(2).run()
+    assert app.radio(key="entry-combine").value == "all of them"
+    app.button(key="run_strategy").click().run()
+    assert " and the close is above 0." in service.rule_sets[-1][0].description
+    app.radio(key="entry-combine").set_value("any of them").run()
+    app.button(key="run_strategy").click().run()
+    assert " or the close is above 0." in service.rule_sets[-1][0].description
+
+
+def test_pasted_json_runs_and_a_bad_one_is_explained_and_cannot_be_run():
+    import json
+
+    service, app = start_backtest()
+    choose(app, "Paste JSON")
+    assert not app.exception and app.button(key="run_strategy").disabled is False
+    app.text_area(key="strategy_json").set_value("{not json").run()
+    assert "This is not valid JSON" in app.error[0].value and app.button(key="run_strategy").disabled
+    unknown = {"name": "x", "entry": {"op": "gt", "left": {"ind": "nope"}, "right": {"const": 1}}, "exit": {"op": "lt", "left": {"price": "close"}, "right": {"const": 1}}}
+    app.text_area(key="strategy_json").set_value(json.dumps(unknown)).run()
+    assert "entry.left.ind: unknown indicator 'nope'" in app.error[0].value and app.button(key="run_strategy").disabled
+    assert len(service.rule_sets) == 1  # nothing was run
+    good = {**unknown, "name": "From JSON", "entry": {"op": "gt", "left": {"price": "close"}, "right": {"const": 1}}}
+    app.text_area(key="strategy_json").set_value(json.dumps(good)).run()
+    app.button(key="run_strategy").click().run()
+    assert service.rule_sets[-1][0].name == "From JSON" and not app.error
+
+
+def test_a_strategy_that_was_run_is_remembered_and_not_run_again_on_other_clicks():
+    service, app = start_backtest()
+    choose(app, "Build my own")
+    app.button(key="run_strategy").click().run()
+    runs = len(service.rule_sets)
+    app.checkbox(key="show_volume").uncheck().run()
+    app.number_input(key="ind-sma-1-length").set_value(30).run()
+    assert len(service.rule_sets) == runs and service.queries == ["sbin"]
+
+
+def test_switching_back_to_the_built_in_rules_shows_them_again():
+    service, app = start_backtest()
+    choose(app, "A preset strategy")
+    choose(app, "Built-in rules")
+    assert service.rule_sets[-1] is None and not app.exception

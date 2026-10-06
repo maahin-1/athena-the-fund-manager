@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
 import streamlit as st
 
 from athena.contracts import AthenaError
+from athena.backtest.rules import Rule, SeriesRule
 from athena.dashboard.backtest_view import BacktestView
+from athena.dashboard.strategy_form import strategy_controls
 from athena.dashboard.view import DashboardView, Panel
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 from athena.orchestrator.report import DISCLAIMER
@@ -31,7 +34,7 @@ BACKTEST_NOTE = "Past results do not predict future ones."
 class ViewService(Protocol):
     def view(self, query: str) -> DashboardView: ...
 
-    def backtest(self, identifier: str) -> BacktestView: ...
+    def backtest(self, identifier: str, rules: Sequence[str | Rule | SeriesRule] | None = None) -> BacktestView: ...
 
 
 def _show(value: str | float) -> str:
@@ -203,9 +206,13 @@ def _backtest_section(service: ViewService, identifier: str) -> None:
         help="Replays each rule day by day on this instrument's price history and compares it with buy and hold.",
     ):
         return
+    ready, rules, token = strategy_controls()
+    if not ready:
+        st.caption("Build or paste a strategy above, then press Run this strategy.")
+        return
     try:
         with st.spinner("Downloading history and replaying every trading day..."):
-            result = _remembered("backtest", identifier, lambda: service.backtest(identifier))
+            result = _remembered("backtest", f"{identifier}|{token}", lambda: service.backtest(identifier, rules))
     except (AthenaError, ValueError) as exc:
         st.error(str(exc))
         return

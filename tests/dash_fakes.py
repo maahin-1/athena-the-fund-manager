@@ -77,10 +77,11 @@ class FakeService:
 
     def __init__(self, view=None, error=None, backtest=None, backtest_error=None):
         self.canned, self.error, self.queries = view, error, []
-        self.canned_backtest, self.backtest_error, self.backtests = backtest, backtest_error, []
+        self.canned_backtest, self.backtest_error, self.backtests, self.rule_sets = backtest, backtest_error, [], []
 
-    def backtest(self, identifier):
+    def backtest(self, identifier, rules=None):
         self.backtests.append(identifier)
+        self.rule_sets.append(rules)
         if self.backtest_error:
             raise self.backtest_error
         return self.canned_backtest or sample_backtest_view()
