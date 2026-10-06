@@ -11,6 +11,8 @@ from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 from athena.orchestrator.report import DISCLAIMER
 
 PLACEHOLDER = "SBIN"
+QUERY_KEY = "query"  # the search box
+PICK_KEY = "picked_instrument"  # a table click waiting to be moved into the search box
 BACKTESTABLE = ("equity", "etf")
 BACKTEST_NOTE = "Past results do not predict future ones."
 
@@ -44,10 +46,14 @@ def render(view: DashboardView) -> None:
     """Draw one `DashboardView`: verdict, specialist views, charts, then each metric panel with its as-of and coverage."""
     if view.status == NEEDS_CLARIFICATION:
         st.warning(f"{view.query!r} could be more than one instrument ({' '.join(view.notes)}). Type the exact symbol.")
-        st.dataframe(
+        st.caption(f"{len(view.candidates)} matches. Click a row to analyse it.")
+        event = st.dataframe(
             [{"symbol": c.identifier, "name": c.name, "class": c.asset_class, "match": round(c.score, 2)} for c in view.candidates],
-            hide_index=True, width="stretch",
+            hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row", key="candidate_table",
         )
+        if event.selection.rows:
+            st.session_state[PICK_KEY] = view.candidates[event.selection.rows[0]].identifier
+            st.rerun()
         return
 
     st.subheader(f"{view.identifier}  {view.name}")
@@ -136,7 +142,10 @@ def _backtest_section(service: ViewService, identifier: str) -> None:
 def run(service: ViewService) -> None:
     st.set_page_config(page_title="Athena", layout="wide")
     st.title("Athena")
-    query = st.text_input("Ticker, ISIN or name", placeholder=PLACEHOLDER).strip()
+    picked = st.session_state.pop(PICK_KEY, None)  # applied before the box exists: Streamlit forbids changing it after
+    if picked:
+        st.session_state[QUERY_KEY] = picked
+    query = st.text_input("Ticker, ISIN or name", placeholder=PLACEHOLDER, key=QUERY_KEY).strip()
     if not query:
         st.info("Type an NSE ticker, an ISIN or a name to analyze it.")
         return

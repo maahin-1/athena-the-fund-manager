@@ -1,5 +1,5 @@
 import dash_fakes
-from dash_fakes import FakeService, ambiguous_result, athena_error, full_view, sample_backtest_view
+from dash_fakes import FakeService, RoutingService, ambiguous_result, athena_error, full_view, sample_backtest_view
 from streamlit.testing.v1 import AppTest
 
 from athena.dashboard.view import build_view
@@ -190,3 +190,37 @@ def test_each_backtest_note_is_shown_as_a_warning_and_none_without_notes():
     plain = open_app(FakeService(full_view()), "sbin")
     plain.checkbox[0].check().run()
     assert texts(plain.warning) == []
+
+
+def many():
+    return build_view(ambiguous_result(12))
+
+
+def click(app, row):
+    app.session_state["candidate_table"] = {"selection": {"rows": [row], "columns": [], "cells": []}}
+    app.run()
+
+
+def test_every_candidate_is_listed_and_the_page_says_to_click_a_row():
+    app = open_app(FakeService(many()), "sbi")
+    assert not app.exception and len(app.dataframe[0].value) == 12
+    assert any("12 matches. Click a row to analyse it." in c for c in texts(app.caption))
+
+
+def test_clicking_a_candidate_fills_the_search_box_and_analyses_that_instrument():
+    service = RoutingService({"sbi": many(), "SBI02": full_view()})
+    app = open_app(service, "sbi")
+    click(app, 2)
+    assert not app.exception and app.text_input[0].value == "SBI02"
+    assert service.queries == ["sbi", "SBI02"]
+    assert len(app.metric) == 2 and not app.warning  # the verdict page replaced the ambiguity warning and list
+
+
+def test_a_later_ambiguous_search_does_not_repeat_the_old_click():
+    service = RoutingService({"sbi": many(), "SBIN": full_view(), "tat": many()})
+    app = open_app(service, "sbi")
+    click(app, 0)
+    assert service.queries == ["sbi", "SBIN"]
+    app.text_input[0].set_value("tat").run()
+    assert not app.exception and service.queries == ["sbi", "SBIN", "tat"]
+    assert len(app.dataframe) == 1 and not app.metric  # the list is shown again and nothing was picked for the user

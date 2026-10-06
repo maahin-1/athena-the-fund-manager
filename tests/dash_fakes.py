@@ -43,8 +43,11 @@ def ok_result(asset_class="equity", status=OK, specialists=None, verdict=None):
     )
 
 
-def ambiguous_result():
-    ambiguity = Ambiguity("sbi", (Candidate("equity", "SBIN", "State Bank of India", 0.81),), "several matches")
+def ambiguous_result(count=1):
+    candidates = (Candidate("equity", "SBIN", "State Bank of India", 0.81),) + tuple(
+        Candidate("equity", f"SBI{n:02d}", f"SBI Holding {n}", 0.7) for n in range(1, count)
+    )
+    ambiguity = Ambiguity("sbi", candidates, "several matches")
     return OrchestrationResult(NEEDS_CLARIFICATION, "sbi", None, ambiguity, {}, {}, None, None, None, ())
 
 
@@ -87,6 +90,18 @@ class FakeService:
         if self.error:
             raise self.error
         return self.canned
+
+
+class RoutingService(FakeService):
+    """A FakeService with one canned view per query, so a page can be driven through several searches."""
+
+    def __init__(self, views):
+        super().__init__()
+        self.views = views
+
+    def view(self, query):
+        self.queries.append(query)
+        return self.views[query]
 
 
 CURRENT = {"service": FakeService(full_view())}
