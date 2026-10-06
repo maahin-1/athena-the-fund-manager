@@ -43,7 +43,7 @@ def test_total_return_excess_over_buy_and_hold_and_drawdown_come_from_the_curves
     assert s.total_return == pytest.approx(0.05) and s.benchmark_total_return == pytest.approx(0.04)
     assert s.excess_return == pytest.approx(0.01)
     assert s.max_drawdown == pytest.approx(99 / 110 - 1)  # the fall from the 110 peak to 99
-    assert s.benchmark_max_drawdown == pytest.approx(0.0, abs=1e-12) or s.benchmark_max_drawdown < 0
+    assert s.benchmark_max_drawdown == pytest.approx(101 / 102 - 1)
 
 
 def test_the_drawdown_counts_from_the_starting_cash_not_just_the_first_close():

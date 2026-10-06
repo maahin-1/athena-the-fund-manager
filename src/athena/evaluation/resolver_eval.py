@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import random
-import string
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from athena.contracts import UnknownInstrument
-from athena.resolver import Ambiguity, InstrumentIndex, InstrumentResolver, Resolution
+from athena.resolver import InstrumentIndex, InstrumentResolver, Resolution
 
 CORRECT = "correct"  # right answer, no hedging
 SAFE = "safe"  # asked the user and the right answer was in the candidates
