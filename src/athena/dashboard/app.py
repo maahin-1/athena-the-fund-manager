@@ -45,7 +45,7 @@ def _panel(panel: Panel) -> None:
 def render(view: DashboardView) -> None:
     """Draw one `DashboardView`: verdict, specialist views, charts, then each metric panel with its as-of and coverage."""
     if view.status == NEEDS_CLARIFICATION:
-        st.warning(f"{view.query!r} could be more than one instrument ({' '.join(view.notes)}). Type the exact symbol.")
+        st.warning(f"{view.query!r} could be more than one instrument ({' '.join(view.notes)}). Click a row below, or type the exact symbol.")
         st.caption(f"{len(view.candidates)} matches. Click a row to analyse it.")
         event = st.dataframe(
             [{"symbol": c.identifier, "name": c.name, "class": c.asset_class, "match": round(c.score, 2)} for c in view.candidates],
