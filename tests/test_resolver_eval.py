@@ -120,3 +120,13 @@ def test_simple_synthetic_categories_are_all_correct_and_nothing_is_wrong():
     for category in ("ticker_lower", "ticker_suffix", "exact_name"):
         assert report.category_rate(category, CORRECT) == 1.0, category
     assert report.count(WRONG) == 0, report.wrong_cases
+
+
+def test_the_evaluation_credits_a_safe_answer_only_when_it_is_near_the_top_of_the_ranking():
+    twelve = make_resolver([(f"ALPHA{n:02d}", f"Alpha Industries {n:02d} Limited") for n in range(12)])
+
+    def judged(symbol):
+        return judge_case(twelve, ResolverCase("alpha", "t", RESOLVE, "equity", symbol))[0]
+
+    assert judged("ALPHA00") == SAFE  # in the top five
+    assert judged("ALPHA11") == MISSED  # the person would see it on the long list, but the ranking did not put it near the top

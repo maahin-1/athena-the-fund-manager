@@ -23,11 +23,18 @@ ACCEPT_SCORE = 0.90  # proposed defaults; tune on the labeled resolver set
 ACCEPT_MARGIN = 0.05
 CANDIDATE_FLOOR = 0.55
 MODEL_THRESHOLD = 0.85
-MAX_CANDIDATES = 5
+MAX_CANDIDATES = 5  # what the model classifier and `Resolution.candidates` see
+MAX_LISTED = 50  # the most candidates a person is shown when a query is ambiguous
+CLI_SHOWN = 10  # how many a text report prints before saying how many more there are
 MIN_PREFIX_LENGTH = 3
 PREFIX_BASE = 0.70  # a prefix match scores 0.70-0.89: it ranks first but can never reach ACCEPT_SCORE on its own
 PREFIX_SPAN = 0.19
 _NAME_STOPWORDS = {"limited", "ltd"}
+
+
+def more_candidates_line(total: int, shown: int) -> str | None:
+    """The closing line of a text list that was cut short, or None when everything was shown."""
+    return f"  ...and {total - shown} more; type the exact symbol." if total > shown else None
 
 
 def normalize_input(text: str) -> str:
@@ -166,7 +173,7 @@ class InstrumentResolver:
         if len(matches) == 1:
             return self._resolved(matches[0], "name", "exact", 1.0)
         if len(matches) > 1:
-            candidates = tuple(self._candidate(m, 1.0) for m in matches[:MAX_CANDIDATES])
+            candidates = tuple(self._candidate(m, 1.0) for m in matches[:MAX_LISTED])
             return Ambiguity(query, candidates, "the name matches more than one instrument")
 
         return self._resolve_fuzzy(query, text, name_key)
@@ -203,7 +210,8 @@ class InstrumentResolver:
             raise UnknownInstrument(f"no instrument matches {query!r}")
 
         ranked = sorted(scored, key=lambda i: (not i[2], -i[1], i[4].asset_class != "etf", i[4].symbol))
-        candidates = tuple(self._candidate(i[4], i[1]) for i in ranked[:MAX_CANDIDATES])
+        listed = tuple(self._candidate(i[4], i[1]) for i in ranked[:MAX_LISTED])
+        candidates = listed[:MAX_CANDIDATES]
 
         by_edit = sorted(scored, key=lambda i: (-i[0], i[4].asset_class != "etf", i[4].symbol))
         top_edit, _, _, top_kind, top_entry = by_edit[0]
@@ -220,7 +228,7 @@ class InstrumentResolver:
                 if probability >= MODEL_THRESHOLD and 0 <= index < len(candidates):
                     entry = self._index.by_symbol[candidates[index].identifier]
                     return self._resolved(entry, "name", "model", probability, candidates)
-        return Ambiguity(query, candidates, "no single instrument is a clear match")
+        return Ambiguity(query, listed, "no single instrument is a clear match")
 
     @staticmethod
     def _candidate(entry: _Entry, score: float) -> Candidate:

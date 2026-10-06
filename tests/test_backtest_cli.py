@@ -132,3 +132,16 @@ def test_the_assumptions_state_costs_stop_timing_cash_adjustment_index_and_open_
     unstopped = assumptions(Config(stop_atr_multiple=None, cost_bps_per_side=10.0))
     assert "None" not in unstopped and "ATR" not in unstopped and "no protective stop" in unstopped
     assert "10 bps per side" in unstopped
+
+
+def test_an_ambiguous_backtest_query_prints_ten_candidates_and_says_how_many_more():
+    from dataclasses import replace
+
+    store = DataStore()
+    for n in range(25):
+        store.put(Record(EQUITY_DATASET, f"ALPHA{n:02d}", NOW, "x", {"name": f"Alpha Industries {n:02d} Limited", "isin": "INE000000000"}))
+    store.put(Record(ETF_DATASET, "NIFTYBEES", NOW, "x", {"name": "NIPINDETFNIFTYBEES", "isin": "INF000000000"}))
+    many = replace(world(), resolver=InstrumentResolver(InstrumentIndex.from_store(store, now=NOW)))
+    text, code = analyze(many, "alpha", ["trend"])
+    assert code == 2 and "ALPHA09" in text and "ALPHA10" not in text
+    assert "...and 15 more; type the exact symbol." in text

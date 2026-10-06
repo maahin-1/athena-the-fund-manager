@@ -19,7 +19,7 @@ from athena.loaders.nse_holidays import NseHolidayLoader, load_calendar
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET, NseMasterLoader
 from athena.metrics.series import Series
 from athena.orchestrator.builders import history_fetcher
-from athena.resolver import Ambiguity, InstrumentIndex, InstrumentResolver
+from athena.resolver import CLI_SHOWN, Ambiguity, InstrumentIndex, InstrumentResolver, more_candidates_line
 from athena.store import DataStore
 from athena.trading_calendar import TradingCalendar, ist_date
 
@@ -113,7 +113,11 @@ def analyze(world: BacktestWorld, query: str, rule_names: list[str]) -> tuple[st
     resolved = world.resolver.resolve(query)
     if isinstance(resolved, Ambiguity):
         lines = [f"{query!r} could be more than one instrument ({resolved.reason}):"]
-        lines += [f"  {c.identifier}  {c.name}  ({c.asset_class})" for c in resolved.candidates]
+        shown = resolved.candidates[:CLI_SHOWN]
+        lines += [f"  {c.identifier}  {c.name}  ({c.asset_class})" for c in shown]
+        more = more_candidates_line(len(resolved.candidates), len(shown))
+        if more:
+            lines.append(more)
         return "\n".join(lines + ["Re-run with the exact symbol."]), 2
     if resolved.asset_class not in ("equity", "etf"):
         raise ValueError(f"backtests cover stocks and ETFs, not {resolved.asset_class}")

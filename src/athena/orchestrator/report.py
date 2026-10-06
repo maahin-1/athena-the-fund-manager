@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW, OrchestrationResult
+from athena.resolver import CLI_SHOWN, more_candidates_line
 
 DISCLAIMER = "A stylized analytical framework, not financial advice; not a registered investment adviser."
 
@@ -9,10 +10,13 @@ def format_result(result: OrchestrationResult) -> str:
     """Plain-text summary of an orchestration result."""
     if result.status == NEEDS_CLARIFICATION and result.ambiguity:
         lines = [f"{result.query!r} could be more than one instrument ({result.ambiguity.reason}):"]
+        shown = result.ambiguity.candidates[:CLI_SHOWN]
         lines += [
-            f"  {i}. {c.identifier}  {c.name}  ({c.asset_class}, match {c.score:.2f})"
-            for i, c in enumerate(result.ambiguity.candidates, 1)
+            f"  {i}. {c.identifier}  {c.name}  ({c.asset_class}, match {c.score:.2f})" for i, c in enumerate(shown, 1)
         ]
+        more = more_candidates_line(len(result.ambiguity.candidates), len(shown))
+        if more:
+            lines.append(more)
         lines.append("Re-run with the exact symbol.")
         return "\n".join(lines)
 

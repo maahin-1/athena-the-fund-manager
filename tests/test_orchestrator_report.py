@@ -42,3 +42,18 @@ def test_report_lists_candidates_for_an_ambiguous_query():
     text = format_result(OrchestrationResult(NEEDS_CLARIFICATION, "sbi", None, ambiguity, {}, {}, None, None, None, ()))
     assert "could be more than one instrument (several matches)" in text
     assert "1. SBIN  State Bank of India  (equity, match 0.81)" in text and "Re-run with the exact symbol." in text
+
+
+def test_the_report_shows_ten_candidates_and_says_how_many_more():
+    candidates = tuple(Candidate("equity", f"SYM{n:02d}", f"Name {n}", 0.8) for n in range(25))
+    ambiguity = Ambiguity("sy", candidates, "several matches")
+    text = format_result(OrchestrationResult(NEEDS_CLARIFICATION, "sy", None, ambiguity, {}, {}, None, None, None, ()))
+    assert "10. SYM09" in text and "11. SYM10" not in text
+    assert "  ...and 15 more; type the exact symbol." in text and "Re-run with the exact symbol." in text
+
+
+def test_the_report_has_no_more_line_when_everything_fits():
+    candidates = tuple(Candidate("equity", f"SYM{n:02d}", f"Name {n}", 0.8) for n in range(10))
+    ambiguity = Ambiguity("sy", candidates, "several matches")
+    text = format_result(OrchestrationResult(NEEDS_CLARIFICATION, "sy", None, ambiguity, {}, {}, None, None, None, ()))
+    assert "10. SYM09" in text and "...and" not in text

@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from athena.contracts import UnknownInstrument
-from athena.resolver import InstrumentIndex, InstrumentResolver, Resolution
+from athena.resolver import MAX_CANDIDATES, InstrumentIndex, InstrumentResolver, Resolution
 
 CORRECT = "correct"  # right answer, no hedging
 SAFE = "safe"  # asked the user and the right answer was in the candidates
@@ -60,7 +60,7 @@ def judge_case(resolver: InstrumentResolver, case: ResolverCase) -> tuple[str, s
             return (CORRECT if right else WRONG), got
         return WRONG, got
 
-    candidates = [(c.asset_class, c.identifier) for c in result.candidates]
+    candidates = [(c.asset_class, c.identifier) for c in result.candidates[:MAX_CANDIDATES]]  # the top of the ranking
     got = f"asked: {[ident for _, ident in candidates]}"
     if case.kind == AMBIGUOUS:
         return CORRECT, got

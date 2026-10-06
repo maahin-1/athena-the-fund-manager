@@ -6,11 +6,14 @@ from athena.contracts import EmptyRefreshError, Record, StaleDataError, UnknownI
 from athena.isin import isin_check_digit
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET
 from athena.resolver import (
+    MAX_CANDIDATES,
+    MAX_LISTED,
     Ambiguity,
     Candidate,
     InstrumentIndex,
     InstrumentResolver,
     Resolution,
+    more_candidates_line,
     normalize_input,
     normalize_name,
 )
@@ -222,3 +225,47 @@ def test_name_prefix_surfaces_the_group_for_a_short_ambiguous_query():
 
 def resolver_for_tata():
     return InstrumentResolver(InstrumentIndex.from_store(make_store(), now=NOW))
+
+
+def many_listings(count, name="Alpha Industries {n:03d} Limited"):
+    """A master list where `count` equities share a name stem, plus the one ETF the index requires."""
+    store = DataStore()
+    for n in range(count):
+        store.put(Record(EQUITY_DATASET, f"ALPHA{n:03d}", NOW, "nse.archives", {"name": name.format(n=n), "series": "EQ", "isin": "INE000000000", "listing_date": "x"}))
+    store.put(Record(ETF_DATASET, "NIFTYBEES", NOW, "nse.archives", {"name": "NIPINDETFNIFTYBEES", "isin": "INF204KB14I2", "underlying": "u", "underlying_class": "EQUITY", "underlying_key": "k"}))
+    return store
+
+
+def test_a_short_query_lists_every_match_up_to_the_listing_limit():
+    twelve = InstrumentResolver(InstrumentIndex.from_store(many_listings(12), now=NOW)).resolve("alpha")
+    assert isinstance(twelve, Ambiguity) and len(twelve.candidates) == 12 > MAX_CANDIDATES
+    sixty = InstrumentResolver(InstrumentIndex.from_store(many_listings(60), now=NOW)).resolve("alpha")
+    assert isinstance(sixty, Ambiguity) and len(sixty.candidates) == MAX_LISTED == 50
+    scores = [c.score for c in sixty.candidates]
+    assert scores == sorted(scores, reverse=True)  # still ranked, best first
+
+
+def test_a_name_shared_by_many_listings_lists_them_all_up_to_the_limit():
+    shared = InstrumentResolver(InstrumentIndex.from_store(many_listings(55, name="Shared Name Limited"), now=NOW))
+    result = shared.resolve("Shared Name Limited")
+    assert isinstance(result, Ambiguity) and len(result.candidates) == MAX_LISTED
+    assert result.reason == "the name matches more than one instrument"
+
+
+def test_the_model_classifier_and_a_resolution_still_see_only_the_top_five():
+    fake = FakeClassifier(index=0, probability=0.9)
+    result = InstrumentResolver(InstrumentIndex.from_store(many_listings(60), now=NOW), fake).resolve("alpha")
+    assert isinstance(result, Resolution) and result.resolution_path == "model"
+    assert len(fake.seen[0][1]) == MAX_CANDIDATES and len(result.candidates) == MAX_CANDIDATES
+
+
+def test_confirm_accepts_any_candidate_on_the_long_list():
+    resolver = InstrumentResolver(InstrumentIndex.from_store(many_listings(60), now=NOW))
+    ambiguity = resolver.resolve("alpha")
+    chosen = resolver.confirm(ambiguity, 30)
+    assert chosen.identifier == ambiguity.candidates[30].identifier and chosen.resolution_path == "user_confirmed"
+
+
+def test_a_text_list_says_how_many_more_there_are():
+    assert more_candidates_line(25, 10) == "  ...and 15 more; type the exact symbol."
+    assert more_candidates_line(10, 10) is None and more_candidates_line(3, 3) is None
