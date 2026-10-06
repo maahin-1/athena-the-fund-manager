@@ -34,3 +34,9 @@ def test_live_backtest_of_an_etf_runs(world):
 
 def test_live_market_series_cover_the_backtest_window(world):
     assert len(world.index) > 1500 and len(world.riskfree) > 1500
+
+
+def test_live_backtest_adjusts_the_reliance_bonus_issue(world):
+    text, code = analyze(world, "RELIANCE", ["trend"])
+    print("\n" + text)
+    assert code == 0 and "Prices adjusted for 1 split or bonus event" in text and "2024-10-28" in text

@@ -173,3 +173,20 @@ def test_a_backtest_that_cannot_run_shows_the_reason_and_keeps_the_analysis():
     app.checkbox[0].check().run()
     assert not app.exception and app.error[0].value == "not enough price history for SBIN"
     assert len(app.metric) == 2 and len(app.get("plotly_chart")) == 2
+
+
+def test_the_box_says_how_much_history_is_replayed():
+    app = open_app(FakeService(full_view()), "sbin")
+    assert app.checkbox[0].label == "Backtest the technical rules (up to 8 years of history)"
+
+
+def test_each_backtest_note_is_shown_as_a_warning_and_none_without_notes():
+    from dataclasses import replace
+
+    notes = ("Prices adjusted for 1 split or bonus event(s) ...", "second note")
+    app = open_app(FakeService(full_view(), backtest=replace(sample_backtest_view(), notes=notes)), "sbin")
+    app.checkbox[0].check().run()
+    assert not app.exception and texts(app.warning) == list(notes)
+    plain = open_app(FakeService(full_view()), "sbin")
+    plain.checkbox[0].check().run()
+    assert texts(plain.warning) == []

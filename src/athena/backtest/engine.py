@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from athena.backtest.adjust import require_positive_prices
 from athena.backtest.rules import Rule
 from athena.contracts import Bar, InsufficientData
 from athena.technicals.candles import candles_from_bars
@@ -58,6 +59,7 @@ def run_backtest(bars: Sequence[Bar], rule: Rule, config: Config = Config()) -> 
     bar's open, so nothing can see the future; a protective stop fills at the stop price, or at the open if the bar
     gaps through it."""
     ordered = sorted(bars, key=lambda bar: bar.timestamp)
+    require_positive_prices(ordered)
     candles = candles_from_bars(ordered)
     if len(candles) != len(ordered):
         raise InsufficientData("the bars contain repeated trading days")

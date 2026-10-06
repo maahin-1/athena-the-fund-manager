@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -5,7 +6,7 @@ from bar_factory import make_bars
 
 from athena.backtest.blinding import BLIND_BASE, BLIND_SYMBOL, blind_bars
 from athena.backtest.rules import MIN_REWARD_RISK, PERSONA, RULES, TREND
-from athena.contracts import Bar
+from athena.contracts import Bar, InsufficientData
 from athena.trading_calendar import ist_date
 
 CLOSES = [250.0 + i * 0.3 + (4 if i % 9 == 0 else 0) for i in range(120)]
@@ -40,6 +41,14 @@ def test_blinding_survives_a_leap_day_and_sorts_its_output():
     blind = blind_bars([bar(date(2024, 3, 1), 12.0), bar(date(2024, 2, 29), 10.0)])  # given out of order
     assert [ist_date(b.timestamp) for b in blind] == [date(1996, 2, 29), date(1996, 3, 1)]
     assert [b.close for b in blind] == pytest.approx([100.0, 120.0]) and blind_bars([]) == []
+
+
+@pytest.mark.parametrize("index,field", [(0, "close"), (5, "open"), (7, "close")])
+def test_blinding_refuses_non_positive_prices(index, field):
+    bars = list(REAL)
+    bars[index] = replace(bars[index], **{field: 0.0})
+    with pytest.raises(InsufficientData, match="non-positive prices"):
+        blind_bars(bars)
 
 
 def packet(**values):

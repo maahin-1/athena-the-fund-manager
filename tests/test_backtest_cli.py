@@ -1,7 +1,10 @@
+from dataclasses import replace
+
 import pytest
 from bar_factory import NOW, make_bars
 
-from athena.backtest.cli import BacktestWorld, analyze, main, run_rules
+from athena.backtest.adjust import Adjustment
+from athena.backtest.cli import BacktestWorld, analyze, assumptions, format_runs, main, run_rules
 from athena.backtest.engine import Config
 from athena.backtest.rules import RULES, Rule
 from athena.contracts import AthenaError, Record
@@ -12,6 +15,13 @@ from athena.trading_calendar import ist_date
 
 CLOSES = [100.0 + i * 0.3 + (3 if i % 13 == 0 else 0) - (4 if i % 31 == 0 else 0) for i in range(520)]
 BARS = make_bars(CLOSES, symbol="SBIN")
+BREAK = 450  # inside the evaluation window, while the trend rule holds
+# The same history as unadjusted exchange prices with a 1:1 bonus on bar BREAK: every earlier price is twice as high.
+BONUS_BARS = [
+    replace(bar, open=bar.open * 2, high=bar.high * 2, low=bar.low * 2, close=bar.close * 2, volume=bar.volume / 2)
+    if i < BREAK else bar
+    for i, bar in enumerate(BARS)
+]
 
 
 def make_resolver():
@@ -22,7 +32,7 @@ def make_resolver():
     return InstrumentResolver(InstrumentIndex.from_store(store, now=NOW))
 
 
-def world(fetched=None):
+def world(fetched=None, bars=BARS):
     days = [ist_date(bar.timestamp) for bar in BARS]
     rate = {day: 100.0 * 1.0002 ** i for i, day in enumerate(days)}
     index = {day: 1000.0 + i for i, day in enumerate(days)}
@@ -30,7 +40,7 @@ def world(fetched=None):
     def fetch_bars(symbol):
         if fetched is not None:
             fetched.append(symbol)
-        return BARS
+        return bars
 
     return BacktestWorld(make_resolver(), fetch_bars, rate, index)
 
@@ -84,3 +94,41 @@ def test_main_reports_errors_without_a_traceback(capsys):
         raise AthenaError("no price data")
 
     assert main(["SBIN"], factory=broken) == 1 and "error: no price data" in capsys.readouterr().out
+
+
+def test_a_bonus_issue_is_adjusted_before_either_replay_so_buy_and_hold_sees_the_true_move():
+    market = world()
+    true = run_rules(BARS, ["trend", "persona"], market.riskfree, market.index)
+    runs = run_rules(BONUS_BARS, ["trend", "persona"], market.riskfree, market.index)
+    expected = (Adjustment(ist_date(BARS[BREAK].timestamp), 0.5),)
+    assert [run.adjustments for run in runs] == [expected, expected] and [run.adjustments for run in true] == [(), ()]
+    for adjusted, real in zip(runs, true):
+        assert adjusted.summary.benchmark_total_return == pytest.approx(real.summary.benchmark_total_return)
+    assert runs[0].summary.benchmark_total_return > 0.2  # unadjusted, the halving would show as a loss
+    assert runs[0].result.trades == () and runs[0].result.in_market[-1]  # no stop fired on a gap that never happened
+    assert all(run.blinded_identical for run in runs)  # the blinded replay sees the adjusted bars too
+
+
+def test_the_report_names_the_adjustments_on_the_line_before_the_blinding_check_only_when_there_were_any():
+    text, _ = analyze(world(bars=BONUS_BARS), "SBIN", ["trend"])
+    lines = text.splitlines()
+    at = next(i for i, line in enumerate(lines) if line.startswith("Blinding check"))
+    assert lines[at - 1] == (
+        "Prices adjusted for 1 split or bonus event(s) found from an overnight price break, not from corporate-action "
+        f"data: {ist_date(BARS[BREAK].timestamp)} (x0.5)."
+    )
+    plain, _ = analyze(world(), "SBIN", ["trend"])
+    assert "Prices adjusted" not in plain and "Prices adjusted" not in format_runs("SBIN", [])
+
+
+def test_the_assumptions_state_costs_stop_timing_cash_adjustment_index_and_open_positions():
+    text = assumptions(Config())
+    for expected in ("15 bps per side", "2 x ATR below the entry fill", "decisions at the close", "fills at the next open",
+                     "cash earns nothing", "overnight rate", "penalises time in cash", "splits and bonuses",
+                     "large overnight breaks", "never for dividends", "NIFTY 50 comparison is a price index",
+                     "open at the end counts in the total return but not in the trade statistics"):
+        assert expected in text
+    assert text.count(". ") <= 1  # one or two sentences
+    unstopped = assumptions(Config(stop_atr_multiple=None, cost_bps_per_side=10.0))
+    assert "None" not in unstopped and "ATR" not in unstopped and "no protective stop" in unstopped
+    assert "10 bps per side" in unstopped

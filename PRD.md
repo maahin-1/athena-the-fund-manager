@@ -63,7 +63,7 @@ Sep 26, 2026 · @maahin · Revised Oct 3, 2026 (gap closure — see Revision his
 
 **FR-10: Risk & compliance overlay.** Portfolio-level VaR, drawdown, and position-size/concentration checks applied uniformly across all four asset classes, capable of overriding an individual specialist's enthusiasm. *Acceptance:* a risk-limit breach is surfaced even when every specialist individually says buy.
 
-**FR-11: Backtesting.** Any specialist-derived signal can be run against historical data with point-in-time correctness (no lookahead), "blinded" of identifying tickers/dates. *Acceptance:* Sharpe, drawdown, and benchmark-relative return are reported per backtest run.
+**FR-11: Backtesting.** Any specialist-derived signal can be run against historical data with point-in-time correctness (no lookahead), "blinded" of identifying tickers/dates. *Acceptance:* Sharpe, drawdown, and benchmark-relative return are reported per backtest run. *Status (Oct 6, 2026): implemented for the deterministic technical rules only; see TRD section 2.10.*
 
 **FR-12: Paper trading.** A simulated broker executes orders derived from agent verdicts against live or near-live prices, carrying a persistent book, with a single toggle to switch to a real (but still confirmation-gated) broker later. *Acceptance:* a paper position, once opened, persists and marks to market across sessions.
 

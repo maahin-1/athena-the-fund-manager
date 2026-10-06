@@ -115,6 +115,14 @@ def test_too_few_bars_and_repeated_days_are_rejected():
         run_backtest(doubled, ALWAYS_IN, SMALL)
 
 
+@pytest.mark.parametrize("index,field", [(SMALL.warmup_bars, "open"), (SMALL.warmup_bars + 5, "open"), (3, "close"), (40, "close")])
+def test_a_non_positive_price_is_refused_instead_of_dividing_by_it(index, field):
+    bars = climbing()
+    bars[index] = replace(bars[index], **{field: 0.0})
+    with pytest.raises(InsufficientData, match="non-positive prices"):
+        run_backtest(bars, ALWAYS_IN, SMALL)
+
+
 def test_the_result_carries_the_rule_name_config_and_window():
     bars = climbing()
     result = run_backtest(bars, NEVER, SMALL)

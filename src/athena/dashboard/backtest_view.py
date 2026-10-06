@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import plotly.graph_objects as go
 
+from athena.backtest.adjust import adjustment_note
 from athena.backtest.cli import RuleRun
 from athena.backtest.rules import RULES
 from athena.backtest.summary import num, pct
@@ -26,6 +27,7 @@ class BacktestView:
     identifier: str
     panels: tuple[BacktestPanel, ...]
     assumptions: str
+    notes: tuple[str, ...] = ()  # warnings about the data, such as prices adjusted for a split
 
 
 def build_backtest_view(identifier: str, runs: Sequence[RuleRun], assumptions: str) -> BacktestView:
@@ -51,4 +53,5 @@ def build_backtest_view(identifier: str, runs: Sequence[RuleRun], assumptions: s
                 equity_chart(run.result, f"{identifier}: {s.rule} rule against buy and hold"),
             )
         )
-    return BacktestView(identifier, tuple(panels), assumptions)
+    note = adjustment_note(runs[0].adjustments) if runs else None
+    return BacktestView(identifier, tuple(panels), assumptions, (note,) if note else ())

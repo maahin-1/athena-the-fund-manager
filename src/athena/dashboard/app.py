@@ -87,6 +87,8 @@ def render(view: DashboardView) -> None:
 def render_backtest(view: BacktestView) -> None:
     """Draw a `BacktestView`: per rule a comparison table, the facts that do not fit it, the blinding check and the curve."""
     st.markdown(f"**Backtest {view.identifier}**")
+    for note in view.notes:
+        st.warning(note)
     for panel in view.panels:
         st.markdown(f"**{panel.rule} rule**: {panel.description}")
         st.dataframe(
@@ -117,7 +119,7 @@ def _remembered(key: str, token: str, compute):
 
 def _backtest_section(service: ViewService, identifier: str) -> None:
     if not st.checkbox(
-        "Backtest the technical rules over 8 years",
+        "Backtest the technical rules (up to 8 years of history)",
         key=f"backtest-{identifier}",
         help="Replays each rule day by day on this instrument's price history and compares it with buy and hold.",
     ):

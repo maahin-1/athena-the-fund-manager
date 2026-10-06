@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from athena.adapters.prices import JugaadPriceAdapter, YahooPriceAdapter, ohlcv_chain
+from athena.backtest.adjust import Adjustment, adjust_for_splits, adjustment_note
 from athena.backtest.blinding import blind_bars
 from athena.backtest.engine import BacktestResult, Config, run_backtest, same_decisions
 from athena.backtest.rules import RULES
@@ -56,41 +57,53 @@ class RuleRun:
     summary: Summary
     blinded_identical: bool
     result: BacktestResult
+    adjustments: tuple[Adjustment, ...] = ()  # splits and bonuses found in the bars, the same on every run
 
 
 def run_rules(
     bars: list[Bar], rule_names: list[str], riskfree: Series, index: Series, config: Config = Config()
 ) -> list[RuleRun]:
-    """Each named rule on the real bars and again on blinded bars (ticker removed, dates shifted, prices rescaled)."""
+    """Each named rule on the real bars and again on blinded bars (ticker removed, dates shifted, prices rescaled),
+    both after adjusting the prices for the splits and bonus issues found in them."""
     unknown = [name for name in rule_names if name not in RULES]
     if unknown:
         raise ValueError(f"unknown rule {unknown[0]!r}; choose from {sorted(RULES)}")
-    blinded = blind_bars(bars)
+    adjusted, adjustments = adjust_for_splits(bars)
+    blinded = blind_bars(adjusted)
     runs = []
     for name in rule_names:
-        real = run_backtest(bars, RULES[name], config)
+        real = run_backtest(adjusted, RULES[name], config)
         runs.append(
             RuleRun(
                 summarize(real, riskfree, index),
                 same_decisions(real, run_backtest(blinded, RULES[name], config)),
                 real,
+                adjustments,
             )
         )
     return runs
 
 
 def assumptions(config: Config = Config()) -> str:
+    stop = (
+        f"a stop {config.stop_atr_multiple:g} x ATR below the entry fill" if config.stop_atr_multiple is not None
+        else "no protective stop"
+    )
     return (
-        f"Assumed costs {config.cost_bps_per_side:g} bps per side, stop {config.stop_atr_multiple} x ATR below the fill, "
-        "decisions at the close and fills at the next open, cash earns nothing."
+        f"Assumed costs {config.cost_bps_per_side:g} bps per side and {stop}; decisions at the close, fills at the next "
+        "open; cash earns nothing, while the Sharpe ratio still subtracts the overnight rate, which penalises time in "
+        "cash. Prices are adjusted only for splits and bonuses detected from large overnight breaks, never for "
+        "dividends; the NIFTY 50 comparison is a price index; and a position still open at the end counts in the total "
+        "return but not in the trade statistics."
     )
 
 
 def format_runs(symbol: str, runs: list[RuleRun], config: Config = Config()) -> str:
     blocks = [format_summary(run.summary, symbol, RULES[run.summary.rule].description) for run in runs]
     checks = ", ".join(f"{run.summary.rule}: {'same trades' if run.blinded_identical else 'DIFFERENT'}" for run in runs)
-    return "\n\n".join(blocks) + (
-        f"\n\nBlinding check (ticker removed, dates shifted 28 years, prices rescaled to 100): {checks}."
+    note = adjustment_note(runs[0].adjustments) if runs else None
+    return "\n\n".join(blocks) + "\n\n" + (f"{note}\n" if note else "") + (
+        f"Blinding check (ticker removed, dates shifted 28 years, prices rescaled to 100): {checks}."
         f"\n{assumptions(config)}\n{DISCLAIMER}"
     )
 

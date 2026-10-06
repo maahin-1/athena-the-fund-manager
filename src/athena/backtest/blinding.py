@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import replace
 
+from athena.backtest.adjust import require_positive_prices
 from athena.contracts import Bar
 
 BLIND_SYMBOL = "ASSET"
@@ -18,6 +19,7 @@ def blind_bars(bars: Sequence[Bar], base: float = BLIND_BASE, years: int = BLIND
     ordered = sorted(bars, key=lambda bar: bar.timestamp)
     if not ordered:
         return []
+    require_positive_prices(ordered)
     factor = base / ordered[0].close
     return [
         replace(

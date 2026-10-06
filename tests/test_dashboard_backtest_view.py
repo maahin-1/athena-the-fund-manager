@@ -1,7 +1,9 @@
 from dataclasses import replace
+from datetime import date
 
 from dash_fakes import trend_runs
 
+from athena.backtest.adjust import Adjustment, adjustment_note
 from athena.backtest.rules import RULES
 from athena.backtest.summary import num, pct
 from athena.dashboard.backtest_view import build_backtest_view
@@ -50,3 +52,11 @@ def test_the_market_comparison_is_left_out_when_the_market_series_is_missing():
 def test_the_blinding_result_is_carried_through_per_rule():
     runs = [RUNS[0], replace(RUNS[1], blinded_identical=False)]
     assert [panel.blinded_identical for panel in build_backtest_view("SBIN", runs, "").panels] == [True, False]
+
+
+def test_detected_splits_become_one_note_worded_as_in_the_command_line_report():
+    events = (Adjustment(date(2024, 10, 28), 0.5),)
+    adjusted = [replace(run, adjustments=events) for run in RUNS]
+    view = build_backtest_view("SBIN", adjusted, "")
+    assert view.notes == (adjustment_note(events),) and "2024-10-28 (x0.5)" in view.notes[0]
+    assert build_backtest_view("SBIN", RUNS, "").notes == ()
