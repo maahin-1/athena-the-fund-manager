@@ -6,6 +6,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from athena.backtest.engine import BacktestResult
+from athena.dashboard.view import SpecialistRow
+from athena.orchestrator.blend import COVERAGE_WEIGHT, SIGNAL_SIGN
 from athena.technicals.candles import Candle
 from athena.technicals.indicators import OVERLAY, PANE, REGISTRY, Line, Selected, compute
 
@@ -15,6 +17,8 @@ PANE_COLORS = ("#3b7dd8", "#e0a030", "#7a5ccf")
 GREY = "#8a8f98"
 PRICE_WEIGHT, VOLUME_WEIGHT, PANE_WEIGHT = 3.0, 1.0, 1.4
 ROW_HEIGHT = 120
+SIGNAL_COLORS = {"bullish": UP, "neutral": GREY, "bearish": DOWN}
+RETURN_HORIZONS = (("1M", 21), ("3M", 63), ("6M", 126), ("1Y", 252))  # trading days back from the last close
 
 
 def _trace(line: Line, color: str, days: Sequence) -> go.BaseTraceType:
@@ -91,4 +95,54 @@ def equity_chart(result: BacktestResult, title: str) -> go.Figure:
     figure.add_trace(go.Scatter(x=[d for d, _ in entries], y=[v for _, v in entries], name="Entry", mode="markers", marker=dict(symbol="triangle-up", color=UP, size=8)))
     figure.add_trace(go.Scatter(x=[d for d, _ in exits], y=[v for _, v in exits], name="Exit", mode="markers", marker=dict(symbol="triangle-down", color=DOWN, size=8)))
     figure.update_layout(title=title, height=320, margin=dict(l=40, r=20, t=50, b=30), legend=dict(orientation="h"), yaxis_title="value of 100 invested")
+    return figure
+
+
+def specialist_chart(specialists: Sequence[SpecialistRow]) -> go.Figure | None:
+    """One bar per specialist that formed a view: confidence pointing right when bullish, left when bearish, none when
+    neutral. None when nobody took part (an `insufficient` specialist has no view to draw)."""
+    taking_part = [row for row in specialists if row.coverage != "insufficient"]
+    if not taking_part:
+        return None
+    figure = go.Figure(
+        go.Bar(
+            y=[row.name for row in taking_part], x=[SIGNAL_SIGN[row.signal] * row.confidence for row in taking_part],
+            orientation="h", marker_color=[SIGNAL_COLORS[row.signal] for row in taking_part],
+            text=[f"{row.signal} {row.confidence}" for row in taking_part], textposition="auto", hoverinfo="text",
+        )
+    )
+    figure.update_xaxes(range=[-100, 100], zeroline=True, title_text="bearish  <  confidence  >  bullish")
+    figure.update_layout(title="Specialist views", height=120 + 50 * len(taking_part), margin=dict(l=160, r=20, t=50, b=40))
+    return figure
+
+
+def signal_share_chart(specialists: Sequence[SpecialistRow]) -> go.Figure | None:
+    """How the verdict's weight splits between bullish, neutral and bearish: each specialist counts its confidence,
+    scaled down when its data coverage is partial (the same weights the blend uses). None when nothing has weight."""
+    weight: dict[str, float] = {signal: 0.0 for signal in SIGNAL_COLORS}
+    for row in specialists:
+        weight[row.signal] += row.confidence * COVERAGE_WEIGHT.get(row.coverage, 0.0)
+    shown = [signal for signal, value in weight.items() if value > 0]
+    if not shown:
+        return None
+    figure = go.Figure(
+        go.Pie(labels=shown, values=[weight[s] for s in shown], hole=0.5, marker=dict(colors=[SIGNAL_COLORS[s] for s in shown]), sort=False)
+    )
+    figure.update_layout(title="Where the weight sits", height=300, margin=dict(l=20, r=20, t=50, b=20), legend=dict(orientation="h"))
+    return figure
+
+
+def returns_chart(candles: Sequence[Candle]) -> go.Figure | None:
+    """Percent change of the close over the last month, quarter, half-year and year, for the horizons the history
+    covers. None when it covers none of them."""
+    points = [(label, (candles[-1].close / candles[-1 - days].close - 1) * 100) for label, days in RETURN_HORIZONS if len(candles) > days]
+    if not points:
+        return None
+    figure = go.Figure(
+        go.Bar(
+            x=[label for label, _ in points], y=[value for _, value in points], marker_color=[UP if value >= 0 else DOWN for _, value in points],
+            text=[f"{value:+.1f}%" for _, value in points], textposition="outside",
+        )
+    )
+    figure.update_layout(title="Return by horizon", height=300, margin=dict(l=40, r=20, t=50, b=30), yaxis_title="% change")
     return figure

@@ -39,6 +39,9 @@ def backtest_boxes(app):
     return [box for box in app.checkbox if str(box.key).startswith("backtest-")]
 
 
+GLANCE = 3  # the specialist bars, the weight donut and the return bars that sit under the price chart
+
+
 def chart_names(app):
     """The names of the traces on the first chart on the page (the price chart)."""
     return [trace.get("name") for trace in json.loads(app.get("plotly_chart")[0].proto.spec)["data"]]
@@ -69,7 +72,7 @@ def test_the_page_shows_instrument_verdict_conviction_and_specialists():
 
 def test_the_page_draws_the_chart_and_each_panel_with_as_of_and_coverage():
     app = open_app(FakeService(full_view()), "sbin")
-    assert len(app.get("plotly_chart")) == 1
+    assert len(app.get("plotly_chart")) == 1 + GLANCE
     captions = texts(app.caption)
     assert any("coverage: full" in c and "as of 2026-10-02" in c for c in captions)  # technical panel
     assert any("coverage: partial" in c for c in captions)  # risk panel
@@ -135,7 +138,7 @@ def test_the_page_offers_a_backtest_for_stocks_and_etfs_only():
 def test_nothing_is_replayed_until_the_box_is_ticked():
     service = FakeService(full_view())
     app = open_app(service, "sbin")
-    assert service.backtests == [] and len(app.get("plotly_chart")) == 1
+    assert service.backtests == [] and len(app.get("plotly_chart")) == 1 + GLANCE
 
 
 def test_ticking_the_box_replays_the_rules_without_asking_the_specialists_again():
@@ -143,7 +146,7 @@ def test_ticking_the_box_replays_the_rules_without_asking_the_specialists_again(
     app = open_app(service, "sbin")
     backtest_box(app).check().run()
     assert not app.exception and service.backtests == ["SBIN"] and service.queries == ["sbin"]
-    assert len(app.get("plotly_chart")) == 3  # the price chart, plus one equity curve per rule
+    assert len(app.get("plotly_chart")) == 3 + GLANCE  # the price chart, plus one equity curve per rule
     assert any("trend rule" in m for m in texts(app.markdown)) and any("persona rule" in m for m in texts(app.markdown))
     captions = texts(app.caption)
     assert any("same trades" in c and "Blinding check" in c for c in captions)
@@ -166,9 +169,9 @@ def test_redrawing_the_page_does_not_replay_the_same_backtest_twice():
     app = open_app(service, "sbin")
     backtest_box(app).check().run()
     backtest_box(app).uncheck().run()
-    assert len(app.get("plotly_chart")) == 1  # unticked: the curves go away
+    assert len(app.get("plotly_chart")) == 1 + GLANCE  # unticked: the curves go away
     backtest_box(app).check().run()
-    assert service.backtests == ["SBIN"] and service.queries == ["sbin"] and len(app.get("plotly_chart")) == 3
+    assert service.backtests == ["SBIN"] and service.queries == ["sbin"] and len(app.get("plotly_chart")) == 3 + GLANCE
 
 
 def test_a_rule_whose_blinded_run_differs_is_flagged_on_the_page():
@@ -189,7 +192,7 @@ def test_a_backtest_that_cannot_run_shows_the_reason_and_keeps_the_analysis():
     app = open_app(service, "sbin")
     backtest_box(app).check().run()
     assert not app.exception and app.error[0].value == "not enough price history for SBIN"
-    assert len(app.metric) == 2 and len(app.get("plotly_chart")) == 1
+    assert len(app.metric) == 2 and len(app.get("plotly_chart")) == 1 + GLANCE
 
 
 def test_the_box_says_how_much_history_is_replayed():

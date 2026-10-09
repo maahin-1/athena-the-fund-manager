@@ -3,7 +3,8 @@ import pytest
 from dash_fakes import trend_runs
 
 from athena.backtest.engine import BacktestResult, Config
-from athena.dashboard.charts import build_chart, equity_chart
+from athena.dashboard.charts import build_chart, equity_chart, returns_chart, signal_share_chart, specialist_chart
+from athena.dashboard.view import SpecialistRow
 from athena.technicals.candles import candles_from_bars
 from athena.technicals.indicators import Selected, compute, default_params, default_selection
 from bar_factory import make_bars
@@ -99,3 +100,41 @@ def test_equity_chart_for_a_rule_that_never_trades_has_empty_marker_traces():
 def test_equity_chart_refuses_a_result_without_days():
     with pytest.raises(ValueError, match="no days"):
         equity_chart(BacktestResult("x", Config(), (), (), (), (), ()), "x")
+
+
+def specialist_row(name="quant_technical", signal="bullish", confidence=72, coverage="full"):
+    return SpecialistRow(name, signal, confidence, coverage, "because", ())
+
+
+def test_specialist_bars_point_right_for_bullish_left_for_bearish_and_skip_the_ones_without_a_view():
+    rows = [specialist_row("a", "bullish", 70), specialist_row("b", "bearish", 40), specialist_row("c", "neutral", 55), specialist_row("d", "bullish", 90, "insufficient")]
+    bars = specialist_chart(rows).data[0]
+    assert list(bars.y) == ["a", "b", "c"] and list(bars.x) == [70, -40, 0]
+    assert list(bars.marker.color) == ["#2e9e6b", "#d8574b", "#8a8f98"]
+
+
+def test_there_is_no_specialist_chart_when_nobody_formed_a_view():
+    assert specialist_chart([]) is None
+    assert specialist_chart([specialist_row(coverage="insufficient")]) is None
+
+
+def test_the_donut_splits_weight_by_confidence_scaled_by_coverage_and_leaves_out_empty_sides():
+    rows = [specialist_row("a", "bullish", 60), specialist_row("b", "bullish", 50, "partial"), specialist_row("c", "bearish", 40)]
+    pie = signal_share_chart(rows).data[0]
+    assert list(pie.labels) == ["bullish", "bearish"]
+    assert list(pie.values) == pytest.approx([60 + 50 * 0.7, 40])
+    assert signal_share_chart([specialist_row(coverage="insufficient")]) is None
+
+
+def test_return_bars_use_the_close_that_many_trading_days_back_and_skip_horizons_the_history_lacks():
+    bars = returns_chart(CANDLES).data[0]
+    assert list(bars.x) == ["1M", "3M", "6M", "1Y"]
+    assert bars.y[0] == pytest.approx((CANDLES[-1].close / CANDLES[-22].close - 1) * 100)
+    assert bars.y[3] == pytest.approx((CANDLES[-1].close / CANDLES[-253].close - 1) * 100)
+    assert list(returns_chart(CANDLES[-100:]).data[0].x) == ["1M", "3M"]
+    assert returns_chart(CANDLES[-10:]) is None
+
+
+def test_a_fall_is_drawn_in_the_down_colour():
+    falling = candles_from_bars(make_bars([300.0 - i for i in range(100)]))
+    assert list(returns_chart(falling).data[0].marker.color) == ["#d8574b", "#d8574b"]

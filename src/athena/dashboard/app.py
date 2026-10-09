@@ -15,7 +15,7 @@ from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 from athena.orchestrator.report import DISCLAIMER
 from athena.risk_overlay.model import LABELS, Overlay
 from athena.risk_overlay.parse import overlay_token
-from athena.dashboard.charts import build_chart
+from athena.dashboard.charts import build_chart, returns_chart, signal_share_chart, specialist_chart
 from athena.technicals.indicators import (
     MAX_INDICATORS, REGISTRY, Selected, default_params, default_selection, next_id, short_history, validate,
 )
@@ -137,6 +137,20 @@ def _chart_section(view: DashboardView) -> None:
     st.caption(CHART_NOTE)
 
 
+def _at_a_glance(view: DashboardView) -> None:
+    """The same figures the page already holds, drawn as bars and a donut: who says what, where the weight sits, and
+    how the price moved over each horizon."""
+    bars = specialist_chart(view.specialists)
+    others = [figure for figure in (signal_share_chart(view.specialists), returns_chart(view.candles)) if figure is not None]
+    if bars is None and not others:
+        return
+    st.markdown("**At a glance**")
+    if bars is not None:
+        st.plotly_chart(bars, width="stretch")
+    for column, figure in zip(st.columns(len(others)) if others else [], others):
+        column.plotly_chart(figure, width="stretch")
+
+
 def render(view: DashboardView) -> None:
     """Draw one `DashboardView`: verdict, specialist views, charts, then each metric panel with its as-of and coverage."""
     if view.status == NEEDS_CLARIFICATION:
@@ -175,6 +189,7 @@ def render(view: DashboardView) -> None:
 
     if view.candles:
         _chart_section(view)
+    _at_a_glance(view)
     for panel in view.panels:
         _panel(panel)
     _risk_overlay(verdict)
