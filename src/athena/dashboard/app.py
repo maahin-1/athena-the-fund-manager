@@ -15,7 +15,7 @@ from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 from athena.orchestrator.report import DISCLAIMER
 from athena.risk_overlay.model import LABELS, Overlay
 from athena.risk_overlay.parse import overlay_token
-from athena.dashboard.charts import build_chart, returns_chart, signal_share_chart, specialist_chart
+from athena.dashboard.charts import build_chart, quality_chart, returns_chart, signal_share_chart, specialist_chart, yields_chart
 from athena.technicals.indicators import (
     MAX_INDICATORS, REGISTRY, Selected, default_params, default_selection, next_id, short_history, validate,
 )
@@ -142,13 +142,15 @@ def _at_a_glance(view: DashboardView) -> None:
     how the price moved over each horizon."""
     bars = specialist_chart(view.specialists)
     others = [figure for figure in (signal_share_chart(view.specialists), returns_chart(view.candles)) if figure is not None]
-    if bars is None and not others:
+    business = [figure for figure in (yields_chart(view.panels), quality_chart(view.panels)) if figure is not None]
+    if bars is None and not others and not business:
         return
     st.markdown("**At a glance**")
     if bars is not None:
         st.plotly_chart(bars, width="stretch")
-    for column, figure in zip(st.columns(len(others)) if others else [], others):
-        column.plotly_chart(figure, width="stretch")
+    for figures in (others, business):
+        for column, figure in zip(st.columns(len(figures)) if figures else [], figures):
+            column.plotly_chart(figure, width="stretch")
 
 
 def render(view: DashboardView) -> None:

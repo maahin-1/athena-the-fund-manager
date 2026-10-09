@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from athena.backtest.engine import BacktestResult
-from athena.dashboard.view import SpecialistRow
+from athena.dashboard.view import Panel, SpecialistRow
 from athena.orchestrator.blend import COVERAGE_WEIGHT, SIGNAL_SIGN
 from athena.technicals.candles import Candle
 from athena.technicals.indicators import OVERLAY, PANE, REGISTRY, Line, Selected, compute
@@ -18,6 +18,12 @@ GREY = "#8a8f98"
 PRICE_WEIGHT, VOLUME_WEIGHT, PANE_WEIGHT = 3.0, 1.0, 1.4
 ROW_HEIGHT = 120
 SIGNAL_COLORS = {"bullish": UP, "neutral": GREY, "bearish": DOWN}
+YIELD_ROWS = (("earnings_yield", "Earnings yield"), ("fcf_yield", "FCF yield"), ("owner_earnings_yield", "Owner earnings yield"), ("dividend_yield", "Dividend yield"))
+QUALITY_ROWS = (
+    ("roe_latest", "ROE (latest)"), ("roe_average", "ROE (average)"), ("gross_margin_latest", "Gross margin"),
+    ("operating_margin_latest", "Operating margin"), ("net_margin_latest", "Net margin"),
+    ("revenue_cagr", "Revenue CAGR"), ("earnings_cagr", "Earnings CAGR"),
+)
 RETURN_HORIZONS = (("1M", 21), ("3M", 63), ("6M", 126), ("1Y", 252))  # trading days back from the last close
 
 
@@ -146,3 +152,29 @@ def returns_chart(candles: Sequence[Candle]) -> go.Figure | None:
     )
     figure.update_layout(title="Return by horizon", height=300, margin=dict(l=40, r=20, t=50, b=30), yaxis_title="% change")
     return figure
+
+
+def _fraction_bars(panels: Sequence[Panel], rows: Sequence[tuple[str, str]], title: str) -> go.Figure | None:
+    """Bars for the listed metrics that were computed as fractions, shown as percent; None when none were."""
+    values = {row.name: row.value for panel in panels for row in panel.rows if row.unit == "fraction" and isinstance(row.value, (int, float))}
+    shown = [(label, values[name] * 100) for name, label in rows if name in values]
+    if not shown:
+        return None
+    figure = go.Figure(
+        go.Bar(
+            x=[label for label, _ in shown], y=[value for _, value in shown], marker_color=[UP if value >= 0 else DOWN for _, value in shown],
+            text=[f"{value:.1f}%" for _, value in shown], textposition="outside",
+        )
+    )
+    figure.update_layout(title=title, height=320, margin=dict(l=40, r=20, t=50, b=60), yaxis_title="%")
+    return figure
+
+
+def yields_chart(panels: Sequence[Panel]) -> go.Figure | None:
+    """What a rupee of price earns: earnings, free cash flow, owner earnings and dividend yield side by side."""
+    return _fraction_bars(panels, YIELD_ROWS, "What the price earns")
+
+
+def quality_chart(panels: Sequence[Panel]) -> go.Figure | None:
+    """Returns, margins and growth: the business-quality figures that are fractions, side by side."""
+    return _fraction_bars(panels, QUALITY_ROWS, "Returns, margins and growth")

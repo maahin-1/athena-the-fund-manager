@@ -11,6 +11,7 @@ from athena.trading_calendar import ist_date
 
 FINANCIAL_SECTORS = frozenset({"Financial Services"})
 LENDER_REASON = "not meaningful for banks and lenders"
+PRICE_CURRENCY = "INR"  # NSE prices; a statement in another currency cannot be set against them without an exchange rate
 CRORE = 1e7
 SOURCE = "computed from Yahoo statements (INR)"
 GRAHAM_MULTIPLIER = 22.5  # Graham's ceiling: P/E 15 x P/B 1.5
@@ -122,6 +123,10 @@ def build_fundamentals_packet(
     def non_lender() -> None:
         _need(not st.is_financial, LENDER_REASON)
 
+    def same_currency() -> None:
+        reported = st.info.get("financialCurrency")
+        _need(not reported or reported == PRICE_CURRENCY, f"statements are in {reported} but the price is in {PRICE_CURRENCY}, and no exchange rate is applied")
+
     def have_price() -> float:
         _need(price is not None and price > 0, "no current price")
         return price  # type: ignore[return-value]
@@ -135,6 +140,7 @@ def build_fundamentals_packet(
         return counted[-1][1]
 
     def eps_ttm() -> tuple[float, str, str | None]:
+        same_currency()
         quarters = st.quarterly_series("Diluted EPS")[-4:]
         if len(quarters) == 4 and (quarters[-1][0] - quarters[0][0]).days <= QUARTER_SPAN_DAYS:
             return sum(value for _, value in quarters), f"last 4 quarters to {quarters[-1][0].isoformat()}", None
@@ -143,6 +149,7 @@ def build_fundamentals_packet(
         return annual[-1][1], f"fiscal year to {annual[-1][0].isoformat()}", "annual EPS used because four consecutive quarters were not available"
 
     def book_value_per_share() -> float:
+        same_currency()
         equity = st.annual_series("balance", "Stockholders Equity")
         _need(bool(equity), "no stockholders' equity")
         return equity[-1][1] / shares()
@@ -176,6 +183,7 @@ def build_fundamentals_packet(
 
     def cash_yield(owner: bool) -> R:
         non_lender()
+        same_currency()
         if owner:
             profit_and_depreciation = _aligned(st.annual_series("income", "Net Income"), st.annual_series("cashflow", "Depreciation And Amortization"))
             earned = [(day, profit + depreciation) for day, profit, depreciation in profit_and_depreciation]

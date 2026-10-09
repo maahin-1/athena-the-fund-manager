@@ -1,9 +1,11 @@
 import plotly.graph_objects as go
 import pytest
-from dash_fakes import trend_runs
+from dataclasses import replace
+
+from dash_fakes import FUNDAMENTALS, full_view, trend_runs
 
 from athena.backtest.engine import BacktestResult, Config
-from athena.dashboard.charts import build_chart, equity_chart, returns_chart, signal_share_chart, specialist_chart
+from athena.dashboard.charts import build_chart, equity_chart, quality_chart, returns_chart, signal_share_chart, specialist_chart, yields_chart
 from athena.dashboard.view import SpecialistRow
 from athena.technicals.candles import candles_from_bars
 from athena.technicals.indicators import Selected, compute, default_params, default_selection
@@ -138,3 +140,26 @@ def test_return_bars_use_the_close_that_many_trading_days_back_and_skip_horizons
 def test_a_fall_is_drawn_in_the_down_colour():
     falling = candles_from_bars(make_bars([300.0 - i for i in range(100)]))
     assert list(returns_chart(falling).data[0].marker.color) == ["#d8574b", "#d8574b"]
+
+
+def fundamentals_panels():
+    return full_view(fundamentals=FUNDAMENTALS).panels
+
+
+def test_the_yield_bars_show_the_fractions_as_percent_in_a_fixed_order():
+    bars = yields_chart(fundamentals_panels()).data[0]
+    assert list(bars.x) == ["Earnings yield", "FCF yield", "Owner earnings yield", "Dividend yield"]
+    assert list(bars.y) == pytest.approx([5.0, 3.76, 4.25, 1.88])
+
+
+def test_the_quality_bars_skip_metrics_that_are_not_fractions_or_were_not_computed():
+    bars = quality_chart(fundamentals_panels()).data[0]
+    assert list(bars.x) == ["ROE (latest)", "ROE (average)", "Gross margin", "Operating margin", "Net margin", "Revenue CAGR", "Earnings CAGR"]
+    assert bars.y[0] == pytest.approx(17.75)
+    no_dividend = [replace(panel, rows=tuple(r for r in panel.rows if r.name != "dividend_yield")) for panel in fundamentals_panels()]
+    assert "Dividend yield" not in list(yields_chart(no_dividend).data[0].x)
+
+
+def test_there_are_no_business_charts_without_fundamentals_panels():
+    panels = full_view().panels
+    assert yields_chart(panels) is None and quality_chart(panels) is None

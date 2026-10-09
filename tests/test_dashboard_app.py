@@ -88,6 +88,11 @@ def test_the_page_lists_key_risks_notes_and_the_disclaimer():
     assert "Note: risk overlay missing" in captions and DISCLAIMER in captions
 
 
+def test_an_equity_with_fundamentals_also_gets_the_yield_and_quality_bars():
+    app = open_app(FakeService(full_view(fundamentals=dash_fakes.FUNDAMENTALS)), "sbin")
+    assert not app.exception and len(app.get("plotly_chart")) == 1 + GLANCE + 2
+
+
 def test_an_ambiguous_name_shows_candidates_and_no_charts():
     app = open_app(FakeService(build_view(ambiguous_result())), "sbi")
     assert "could be more than one instrument" in app.warning[0].value

@@ -157,3 +157,19 @@ def test_an_empty_payload_is_all_missing_not_an_error_and_flags_travel_with_the_
     flagged = copy.deepcopy(ACME)
     flagged["quality_flags"] = ["quarterly periods x, y carry identical figures (possible duplicate); treated as missing"]
     assert packet(flagged)["data_quality_flags"] == flagged["quality_flags"]
+
+
+def test_statements_in_another_currency_are_never_divided_into_an_inr_price():
+    usd = copy.deepcopy(ACME)
+    usd["info"]["financialCurrency"] = "USD"
+    p = packet(usd)
+    for name in ("pe_trailing", "pb", "earnings_yield", "fcf_yield", "owner_earnings_yield", "peg", "graham_number_premium"):
+        assert "statements are in USD but the price is in INR" in p["missing_reasons"][name], name
+    for name in ("market_cap", "dividend_yield", "roe_latest", "net_margin_latest", "revenue_cagr"):
+        assert name in p["metrics"], name  # none of these sets a statement against the price
+
+
+def test_statements_reported_in_inr_are_used_as_before():
+    inr = copy.deepcopy(ACME)
+    inr["info"]["financialCurrency"] = "INR"
+    assert packet(inr)["metrics"]["pe_trailing"]["value"] == packet()["metrics"]["pe_trailing"]["value"]
