@@ -57,3 +57,32 @@ def test_the_report_has_no_more_line_when_everything_fits():
     ambiguity = Ambiguity("sy", candidates, "several matches")
     text = format_result(OrchestrationResult(NEEDS_CLARIFICATION, "sy", None, ambiguity, {}, {}, None, None, None, ()))
     assert "10. SYM09" in text and "...and" not in text
+
+
+def test_report_lists_the_risk_overlay_and_says_when_a_verdict_was_held_back():
+    findings = [
+        {"check": "volatility", "status": "breach", "value": 0.8, "warn": 0.3, "hard": 0.6, "message": "Volatility 80.0% is at or above your hard limit of 60.0%."},
+        {"check": "position", "status": "unchecked", "value": None, "warn": 0.1, "hard": 0.2, "message": "Position size not checked: no amount to invest was given."},
+        {"check": "drawdown", "status": "ok", "value": 0.1, "warn": 0.3, "hard": 0.4, "message": "Worst drawdown 10.0% is within your limits (warning at 30.0%)."},
+        {"check": "var_95", "status": "warn", "value": 0.04, "warn": 0.03, "hard": 0.06, "message": "1-day VaR (95%) 4.0% is at or above your warning level of 3.0% (hard limit 6.0%)."},
+    ]
+    verdict = {
+        "verdict": "Hold", "conviction": 35, "key_risks": ["a risk"], "resolution_path": "blend",
+        "pre_overlay_verdict": "Buy", "risk_findings": findings,
+    }
+    text = format_result(result(verdict=verdict))
+    assert "Verdict: Hold  conviction 35  (blend)  [held back from Buy by your risk limits]" in text
+    assert "Risk overlay:" in text
+    for expected in (
+        "  [BREACH] Volatility 80.0% is at or above your hard limit of 60.0%.",
+        "  [not checked] Position size not checked: no amount to invest was given.",
+        "  [ok] Worst drawdown 10.0% is within your limits (warning at 30.0%).",
+        "  [WARN] 1-day VaR (95%) 4.0% is at or above your warning level of 3.0% (hard limit 6.0%).",
+    ):
+        assert expected in text, expected
+    assert text.index("Risk overlay:") < text.index("Key risks:")
+
+
+def test_report_without_an_overlay_has_no_overlay_block_or_held_back_mark():
+    text = format_result(result())
+    assert "Risk overlay:" not in text and "held back" not in text

@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from athena.agents.base import Specialist
-from athena.contracts import AthenaError
+from athena.contracts import AthenaError, Bar
 from athena.orchestrator.blend import CONFLICT_MIN_CONFIDENCE, Conflict, blend_signals
 from athena.resolver import Ambiguity, InstrumentResolver, Resolution
+from athena.risk_overlay.apply import UNCALIBRATED_NOTE, apply_overlay
+from athena.risk_overlay.checks import figures_from_bars, run_checks
+from athena.risk_overlay.model import Overlay
 
 OK = "ok"
 NO_VIEW = "no_view"
 NEEDS_CLARIFICATION = "needs_clarification"
 NOT_BUILT = "not built yet"
-RISK_OVERLAY_NOTE = "the risk overlay (TRD 2.7) is not built, so no position or concentration limits were applied"
+RISK_OVERLAY_NOTE = "no risk profile was given, so the risk overlay applied no limits (--profile on the command line, or switch on the risk profile in the dashboard)"
 
 PacketBuilder = Callable[[Resolution], dict[str, Any]]
 
@@ -45,19 +48,23 @@ class Orchestrator:
         specialists: Mapping[str, Specialist],
         packet_builders: Mapping[str, PacketBuilder],
         conflict_min_confidence: int = CONFLICT_MIN_CONFIDENCE,
+        bars: Callable[[str], Sequence[Bar]] | None = None,
     ):
         self._resolver = resolver
+        self._bars = bars  # the price history the risk overlay measures; shared with whoever else reads it
         self._specialists = dict(specialists)
         self._packet_builders = dict(packet_builders)
         self._conflict_min_confidence = conflict_min_confidence
 
-    def analyze(self, query: str) -> OrchestrationResult:
+    def analyze(self, query: str, overlay: Overlay | None = None) -> OrchestrationResult:
         resolved = self._resolver.resolve(query)
         if isinstance(resolved, Ambiguity):
             return OrchestrationResult(NEEDS_CLARIFICATION, query, None, resolved, {}, {}, None, None, None, ())
-        return self.analyze_resolved(resolved, query)
+        return self.analyze_resolved(resolved, query, overlay)
 
-    def analyze_resolved(self, resolution: Resolution, query: str | None = None) -> OrchestrationResult:
+    def analyze_resolved(
+        self, resolution: Resolution, query: str | None = None, overlay: Overlay | None = None
+    ) -> OrchestrationResult:
         outputs: dict[str, dict[str, Any]] = {}
         skipped: dict[str, str] = {}
         for name in resolution.routed_specialists:
@@ -76,7 +83,12 @@ class Orchestrator:
                 f"only {len(outputs)} of {len(resolution.routed_specialists)} routed specialists ran, "
                 "so the verdict reflects just those"
             )
-        notes.append(RISK_OVERLAY_NOTE)
+        verdict = blended.verdict
+        if overlay is None:
+            notes.append(RISK_OVERLAY_NOTE)
+        else:
+            verdict, note = self._apply_overlay(resolution, verdict, overlay)
+            notes.append(note)
         return OrchestrationResult(
             status=OK if blended.participants else NO_VIEW,
             query=query if query is not None else resolution.identifier,
@@ -86,6 +98,20 @@ class Orchestrator:
             skipped=skipped,
             conflict=blended.conflict,
             net=blended.net,
-            verdict=blended.verdict,
+            verdict=verdict,
             notes=tuple(notes),
         )
+
+    def _apply_overlay(
+        self, resolution: Resolution, verdict: dict[str, Any], overlay: Overlay
+    ) -> tuple[dict[str, Any], str]:
+        """The verdict after the person's risk limits, and the note that says so. Without prices the verdict stands and the
+        note says the limits could not be checked."""
+        if self._bars is None:
+            raise AthenaError("the risk overlay needs a price source")
+        try:
+            bars = self._bars(resolution.identifier)
+        except AthenaError as exc:
+            return verdict, f"risk limits could not be checked: {exc}"
+        findings = run_checks(figures_from_bars(bars), overlay, resolution.identifier)
+        return apply_overlay(verdict, findings), f"risk profile '{overlay.profile.name}' applied: {UNCALIBRATED_NOTE}"

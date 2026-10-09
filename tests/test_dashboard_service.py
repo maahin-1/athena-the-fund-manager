@@ -27,10 +27,11 @@ class FakeOrchestrator:
     """Like the real one, it pulls the bars through the shared cache while it works."""
 
     def __init__(self, cache, result=None):
-        self.cache, self.result, self.queries = cache, result, []
+        self.cache, self.result, self.queries, self.overlays = cache, result, [], []
 
-    def analyze(self, query):
+    def analyze(self, query, overlay=None):
         self.queries.append(query)
+        self.overlays.append(overlay)
         result = self.result or OrchestrationResult(OK, query, resolution(), None, {}, {}, None, 0.0, VERDICT, ())
         if result.resolution:
             self.cache(result.resolution.identifier)
@@ -161,3 +162,13 @@ def test_a_backtest_can_run_a_strategy_instead_of_the_built_in_rules_and_describ
     assert view.panels[0].description.startswith("Buy when the RSI (length 14) is below 30.")
     assert "a stop that depends on the rule" not in view.assumptions  # both use a 2 x ATR stop
     assert [panel.rule for panel in service.backtest("SBIN").panels] == ["trend", "persona"]  # the default is unchanged
+
+
+def test_a_view_passes_the_risk_overlay_to_the_orchestrator_only_when_there_is_one():
+    from athena.risk_overlay.model import PRESETS, Overlay
+
+    service, _, orchestrator = make_service()
+    service.view("sbin")
+    overlay = Overlay(PRESETS["moderate"], (), 5000.0)
+    service.view("sbin", overlay)
+    assert orchestrator.overlays == [None, overlay]

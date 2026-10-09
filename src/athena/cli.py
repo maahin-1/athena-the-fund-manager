@@ -27,6 +27,7 @@ from athena.orchestrator.fundamentals_source import LiveFundamentals
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
 from athena.orchestrator.report import format_result
 from athena.resolver import InstrumentIndex, InstrumentResolver, Resolution
+from athena.risk_overlay.parse import build_overlay
 from athena.store import DataStore
 from athena.trading_calendar import TradingCalendar, ist_date
 
@@ -57,7 +58,7 @@ def build_orchestrator(
         for name, spec in FUNDAMENTAL_SPECIALISTS.items():
             specialists[name] = Specialist(spec, client)
             builders[name] = fundamentals
-    return Orchestrator(resolver, specialists, builders)
+    return Orchestrator(resolver, specialists, builders, bars=fetch)
 
 
 @dataclass(frozen=True)
@@ -101,9 +102,15 @@ def main(argv: list[str] | None = None, factory: Callable[..., Orchestrator] = l
     parser = argparse.ArgumentParser(prog="python -m athena.cli", description="Analyze one instrument.")
     parser.add_argument("query", nargs="+", help="ticker, ISIN or name, for example SBIN")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_FILE))
+    parser.add_argument("--profile", help="your risk limits: conservative, moderate, aggressive, or a JSON file")
+    parser.add_argument("--holdings", metavar="FILE.csv", help="what you own now: a CSV with the columns symbol,value (rupees)")
+    parser.add_argument("--amount", type=float, help="rupees you are thinking of putting into this instrument")
     args = parser.parse_args(argv)
     try:
-        result = factory(env_file=args.env_file).analyze(" ".join(args.query))
+        overlay = build_overlay(args.profile, args.holdings, args.amount)
+        orchestrator = factory(env_file=args.env_file)
+        query = " ".join(args.query)
+        result = orchestrator.analyze(query) if overlay is None else orchestrator.analyze(query, overlay)
     except (AthenaError, ValueError) as exc:
         print(f"error: {exc}")
         return 1

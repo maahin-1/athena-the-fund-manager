@@ -110,3 +110,50 @@ def test_main_reports_athena_errors_and_bad_input_without_a_traceback(capsys):
     assert main(["sbin"], factory=lambda env_file: (_ for _ in ()).throw(AthenaError("no LLM provider key is set"))) == 1
     assert "error: no LLM provider key is set" in capsys.readouterr().out
     assert main(["sbin"], factory=lambda env_file: StubOrchestrator(error=ValueError("empty query"))) == 1
+
+
+class OverlayStub:
+    def __init__(self, result):
+        self.result, self.calls = result, []
+
+    def analyze(self, query, overlay=None):
+        self.calls.append((query, overlay))
+        return self.result
+
+
+def test_main_without_a_profile_calls_analyze_with_just_the_query(capsys):
+    stub = StubOrchestrator(ok_result())
+    assert main(["sbin"], factory=lambda env_file: stub) == 0 and stub.queries == ["sbin"]
+
+
+def test_main_passes_a_profile_holdings_and_an_amount_on(capsys, tmp_path):
+    path = tmp_path / "h.csv"
+    path.write_text("symbol,value\nSBIN,1000\n", encoding="utf-8")
+    stub = OverlayStub(ok_result())
+    argv = ["sbin", "--profile", "conservative", "--holdings", str(path), "--amount", "2500"]
+    assert main(argv, factory=lambda env_file: stub) == 0
+    ((query, overlay),) = stub.calls
+    assert query == "sbin" and overlay.profile.name == "conservative" and overlay.amount == 2500.0
+    assert [(h.symbol, h.value) for h in overlay.holdings] == [("SBIN", 1000.0)]
+
+
+def test_main_reports_a_bad_profile_holdings_or_amount_without_a_traceback(capsys, tmp_path):
+    stub = OverlayStub(ok_result())
+    assert main(["sbin", "--holdings", "h.csv"], factory=lambda env_file: stub) == 1
+    assert "error: --holdings and --amount need --profile" in capsys.readouterr().out
+    assert main(["sbin", "--profile", "reckless"], factory=lambda env_file: stub) == 1
+    assert "is not a preset" in capsys.readouterr().out
+    assert main(["sbin", "--profile", "moderate", "--holdings", str(tmp_path / "none.csv")], factory=lambda env_file: stub) == 1
+    assert "holdings: cannot read" in capsys.readouterr().out
+    assert main(["sbin", "--profile", "moderate", "--amount", "-5"], factory=lambda env_file: stub) == 1
+    assert "--amount must be a number above zero" in capsys.readouterr().out
+    assert stub.calls == []
+
+
+def test_offline_end_to_end_a_purchase_too_big_for_the_traded_value_is_held_back_and_printed(capsys):
+    orchestrator = build_orchestrator(make_resolver(), FakeLLMRouter(), FakeChain(), clock=lambda: NOW)
+    assert main(["sbin", "--profile", "moderate", "--amount", "5000000"], factory=lambda env_file: orchestrator) == 0
+    out = capsys.readouterr().out
+    assert "Verdict: Hold" in out and "[held back from Buy by your risk limits]" in out
+    assert "[BREACH] Amount against daily traded value" in out and "[not checked] Position size not checked: no holdings were given." in out
+    assert "risk profile 'moderate' applied" in out

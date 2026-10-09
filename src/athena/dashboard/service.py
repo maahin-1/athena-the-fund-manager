@@ -17,6 +17,7 @@ from athena.llm.envfile import DEFAULT_ENV_FILE
 from athena.orchestrator.builders import RequestCache, history_fetcher
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
 from athena.resolver import Resolution
+from athena.risk_overlay.model import Overlay
 from athena.technicals.packet import build_technical_packet
 from athena.trading_calendar import ist_date
 
@@ -46,11 +47,11 @@ class DashboardService:
         self._fundamentals = fundamentals
         self._long_history = long_history
 
-    def view(self, query: str) -> DashboardView:
+    def view(self, query: str, overlay: Overlay | None = None) -> DashboardView:
         self._bars.clear()
         if hasattr(self._fundamentals, "clear"):
             self._fundamentals.clear()
-        result = self._orchestrator.analyze(query)
+        result = self._orchestrator.analyze(query) if overlay is None else self._orchestrator.analyze(query, overlay)
         if result.status == NEEDS_CLARIFICATION:
             return build_view(result)
         assert result.resolution is not None

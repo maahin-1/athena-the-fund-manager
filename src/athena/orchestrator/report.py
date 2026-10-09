@@ -4,6 +4,7 @@ from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW, Orche
 from athena.resolver import CLI_SHOWN, more_candidates_line
 
 DISCLAIMER = "A stylized analytical framework, not financial advice; not a registered investment adviser."
+STATUS_WORDS = {"ok": "ok", "warn": "WARN", "breach": "BREACH", "unchecked": "not checked"}
 
 
 def format_result(result: OrchestrationResult) -> str:
@@ -26,6 +27,7 @@ def format_result(result: OrchestrationResult) -> str:
     lines = [
         f"{resolution.identifier}  {resolution.name}  ({resolution.asset_class}, {resolution.resolution_path} match)",
         f"Verdict: {verdict['verdict']}  conviction {verdict['conviction']}  ({verdict['resolution_path']})"
+        + (f"  [held back from {verdict['pre_overlay_verdict']} by your risk limits]" if "pre_overlay_verdict" in verdict else "")
         + ("  [no specialist had enough data]" if result.status == NO_VIEW else ""),
     ]
     if result.specialists:
@@ -35,6 +37,9 @@ def format_result(result: OrchestrationResult) -> str:
             lines.append(f"    {out['reasoning']}")
     if result.skipped:
         lines.append("Not run: " + "; ".join(f"{name} ({why})" for name, why in result.skipped.items()))
+    if verdict.get("risk_findings"):
+        lines.append("Risk overlay:")
+        lines += [f"  [{STATUS_WORDS[item['status']]}] {item['message']}" for item in verdict["risk_findings"]]
     if verdict["key_risks"]:
         lines.append("Key risks:")
         lines += [f"  - {risk}" for risk in verdict["key_risks"]]

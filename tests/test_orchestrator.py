@@ -1,16 +1,19 @@
 import pytest
+from bar_factory import make_bars
 
 from athena.agents.base import SpecialistError
-from athena.contracts import AllSourcesFailed, InsufficientData
+from athena.contracts import AllSourcesFailed, AthenaError, InsufficientData
 from athena.evaluation.schema import validate_judge_verdict, validate_specialist_output
 from athena.orchestrator.orchestrator import (
     NEEDS_CLARIFICATION,
     NO_VIEW,
     NOT_BUILT,
     OK,
+    RISK_OVERLAY_NOTE,
     Orchestrator,
 )
 from athena.resolver import Ambiguity, Candidate, Resolution
+from athena.risk_overlay.model import Holding, Limit, Overlay, RiskProfile
 
 
 def resolution(asset_class="equity", routed=("quant_technical", "valuation")):
@@ -143,3 +146,93 @@ def test_no_coverage_note_when_every_routed_specialist_ran():
     )
     notes = orchestrator.analyze("sbin").notes
     assert not any("routed specialists ran" in note for note in notes) and any("risk overlay" in note for note in notes)
+
+
+def wild_bars():
+    closes, level = [], 100.0
+    for i in range(300):
+        level *= 1.05 if i % 2 == 0 else 0.95
+        closes.append(level)
+    return make_bars(closes, volume=1000.0, symbol="SBIN")
+
+
+class Prices:
+    def __init__(self, bars=None, error=None):
+        self.bars, self.error, self.symbols = bars if bars is not None else wild_bars(), error, []
+
+    def __call__(self, symbol):
+        self.symbols.append(symbol)
+        if self.error:
+            raise self.error
+        return self.bars
+
+
+CAUTIOUS = Overlay(RiskProfile("cautious", {"volatility": Limit(0.3, 0.6)}))
+
+
+def with_prices(prices, specialists=None):
+    specialists = specialists or {"quant_technical": FakeSpecialist(out("bullish", 80))}
+    builders = {name: (lambda res: {}) for name in specialists}
+    return Orchestrator(FakeResolver(resolution()), specialists, builders, bars=prices)
+
+
+def test_a_breached_limit_holds_a_buy_back_to_hold_and_keeps_the_specialists_call():
+    prices = Prices()
+    result = with_prices(prices).analyze("sbin", CAUTIOUS)
+    assert result.verdict["verdict"] == "Hold" and result.verdict["pre_overlay_verdict"] == "Buy"
+    assert [f["status"] for f in result.verdict["risk_findings"]] == ["breach"]
+    assert result.verdict["key_risks"][0].startswith("Held back by your risk limits")
+    assert validate_judge_verdict(result.verdict) == [] and prices.symbols == ["SBIN"]
+    assert "risk profile 'cautious' applied" in " ".join(result.notes) and RISK_OVERLAY_NOTE not in result.notes
+    assert result.specialists["quant_technical"]["signal"] == "bullish"  # the specialists are untouched
+
+
+def test_without_an_overlay_the_verdict_has_no_overlay_keys_and_the_note_says_no_limits_were_applied():
+    prices = Prices()
+    result = with_prices(prices).analyze("sbin")
+    assert result.verdict["verdict"] == "Buy" and set(result.verdict) == {"verdict", "conviction", "key_risks", "resolution_path"}
+    assert RISK_OVERLAY_NOTE in result.notes and prices.symbols == []
+
+
+def test_the_overlay_also_applies_when_the_instrument_is_already_resolved():
+    result = with_prices(Prices()).analyze_resolved(resolution(), None, CAUTIOUS)
+    assert result.verdict["verdict"] == "Hold" and result.verdict["pre_overlay_verdict"] == "Buy"
+
+
+def test_a_calm_stock_within_its_limits_keeps_its_verdict_and_still_shows_every_check():
+    calm = Prices(make_bars([100.0 + 0.1 * (i % 3) for i in range(300)], symbol="SBIN"))
+    result = with_prices(calm).analyze("sbin", CAUTIOUS)
+    assert result.verdict["verdict"] == "Buy" and "pre_overlay_verdict" not in result.verdict
+    assert [f["status"] for f in result.verdict["risk_findings"]] == ["ok"]
+
+
+def test_the_checks_that_need_holdings_and_an_amount_use_them():
+    overlay = Overlay(RiskProfile("p", {"position": Limit(0.05, 0.10)}), (Holding("INFY", 90_000.0),), 30_000.0)
+    result = with_prices(Prices()).analyze("sbin", overlay)
+    (finding,) = result.verdict["risk_findings"]
+    assert finding["status"] == "breach" and finding["value"] == 0.25 and result.verdict["verdict"] == "Hold"
+
+
+def test_when_prices_cannot_be_fetched_the_verdict_stands_and_the_note_says_the_limits_were_not_checked():
+    result = with_prices(Prices(error=AllSourcesFailed("no prices"))).analyze("sbin", CAUTIOUS)
+    assert result.verdict["verdict"] == "Buy" and "risk_findings" not in result.verdict
+    assert any(note.startswith("risk limits could not be checked") for note in result.notes)
+
+
+def test_asking_for_an_overlay_with_no_price_source_is_an_error_not_a_silent_skip():
+    orchestrator = Orchestrator(FakeResolver(resolution()), {"quant_technical": FakeSpecialist(out())}, {"quant_technical": lambda res: {}})
+    with pytest.raises(AthenaError, match="needs a price source"):
+        orchestrator.analyze("sbin", CAUTIOUS)
+
+
+def test_an_ambiguous_query_asks_which_instrument_before_any_limit_is_checked():
+    prices = Prices()
+    ambiguity = Ambiguity("sbi", (Candidate("equity", "SBIN", "State Bank of India", 0.8),), "several")
+    orchestrator = Orchestrator(FakeResolver(ambiguity), {}, {}, bars=prices)
+    assert orchestrator.analyze("sbi", CAUTIOUS).status == NEEDS_CLARIFICATION and prices.symbols == []
+
+
+def test_with_no_specialist_view_the_hold_stands_and_the_findings_are_still_listed():
+    result = with_prices(Prices(), {"quant_technical": FakeSpecialist(out("neutral", 0, "insufficient", ["x"]))}).analyze("sbin", CAUTIOUS)
+    assert result.status == NO_VIEW and result.verdict["verdict"] == "Hold" and "pre_overlay_verdict" not in result.verdict
+    assert result.verdict["risk_findings"][0]["status"] == "breach"
