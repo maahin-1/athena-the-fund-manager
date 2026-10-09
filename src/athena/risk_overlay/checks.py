@@ -59,7 +59,7 @@ def figures_from_bars(bars: Sequence[Bar]) -> Figures:
     returns = [later / earlier - 1.0 for earlier, later in zip(closes, closes[1:])]
     if len(returns) < MIN_RETURNS:
         for name in STOCK_MEASURES:
-            reasons[name] = f"only {len(returns)} daily prices; at least {MIN_RETURNS} are needed for a risk check"
+            reasons[name] = f"only {len(returns)} daily returns; at least {MIN_RETURNS} are needed for a risk check"
     else:
         for name, compute, data in (
             ("volatility", stats.annualized_volatility, returns),

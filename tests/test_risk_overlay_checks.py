@@ -42,10 +42,10 @@ def test_fewer_than_126_daily_returns_leave_every_stock_figure_unchecked_with_th
     assert (figures.volatility, figures.drawdown, figures.var_95, figures.cvar_95) == (None, None, None, None)
     assert figures.returns == 100
     for check in STOCK_CHECKS:
-        assert figures.reasons[check] == "only 100 daily prices; at least 126 are needed for a risk check"
+        assert figures.reasons[check] == "only 100 daily returns; at least 126 are needed for a risk check"
     found = findings_for(figures, Overlay(PRESETS["moderate"]))
     assert {found[check].status for check in STOCK_CHECKS} == {"unchecked"}
-    assert found["volatility"].message == "Volatility not checked: only 100 daily prices; at least 126 are needed for a risk check."
+    assert found["volatility"].message == "Volatility not checked: only 100 daily returns; at least 126 are needed for a risk check."
     assert figures_from_bars(make_bars(alternating(125))).volatility is None
     assert figures_from_bars(make_bars(alternating(126))).volatility is not None
 
@@ -109,7 +109,7 @@ def test_a_zero_close_and_a_missing_volume_never_raise():
     bars = make_bars(calm())
     figures = figures_from_bars([replace(bars[0], close=0.0, open=0.0)] + bars[1:-1] + [replace(bars[-1], volume=float("nan"))])
     assert figures.volatility is not None and math.isfinite(figures.traded_value)
-    assert figures_from_bars([replace(bar, close=0.0) for bar in bars]).reasons["volatility"].startswith("only 0 daily prices")
+    assert figures_from_bars([replace(bar, close=0.0) for bar in bars]).reasons["volatility"].startswith("only 0 daily returns")
 
 
 def test_a_figure_that_is_not_a_number_is_unchecked_never_within_the_limits():
