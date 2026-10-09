@@ -8,7 +8,10 @@ SIGNALS = ("bullish", "bearish", "neutral")
 VERDICTS = ("Buy", "Overweight", "Hold", "Underweight", "Sell")
 RESOLUTION_PATHS = ("debate", "blend")
 _SPECIALIST_KEYS = {"signal", "confidence", "reasoning", "data_coverage", "missing"}
-_VERDICT_KEYS = {"verdict", "conviction", "key_risks", "resolution_path", "debate_transcript_ref", "panel_agreement", "contested"}
+_VERDICT_KEYS = {
+    "verdict", "conviction", "key_risks", "resolution_path", "debate_transcript_ref", "panel_agreement", "contested",
+    "pre_overlay_verdict", "risk_findings",
+}
 _VERDICT_REQUIRED = {"verdict", "conviction", "key_risks", "resolution_path"}
 
 
@@ -82,4 +85,10 @@ def validate_judge_verdict(verdict: Any) -> list[str]:
             errors.append("panel_agreement must be a number between 0 and 1")
     if "contested" in verdict and not isinstance(verdict["contested"], bool):
         errors.append("contested must be a boolean")
+    if "pre_overlay_verdict" in verdict and verdict["pre_overlay_verdict"] not in VERDICTS:
+        errors.append(f"pre_overlay_verdict must be one of {list(VERDICTS)}, got {verdict['pre_overlay_verdict']!r}")
+    if "risk_findings" in verdict and not (
+        isinstance(verdict["risk_findings"], list) and all(isinstance(item, dict) for item in verdict["risk_findings"])
+    ):
+        errors.append("risk_findings must be a list of objects")
     return errors
