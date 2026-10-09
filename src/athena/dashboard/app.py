@@ -23,6 +23,8 @@ from athena.technicals.indicators import (
 PLACEHOLDER = "SBIN"
 QUERY_KEY = "query"  # the search box
 PICK_KEY = "picked_instrument"  # a table click waiting to be moved into the search box
+PICK_COUNT_KEY = "picks_made"
+CHOSEN_KEY = "chosen_instrument"  # the row last clicked; while the box still holds it, it is analysed without a list
 INDICATORS_KEY = "indicators"  # the chosen indicators, as a list of plain dicts
 VOLUME_KEY = "show_volume"
 ADD_KEY = "add_indicator"
@@ -36,7 +38,7 @@ BACKTEST_NOTE = "Past results do not predict future ones."
 
 
 class ViewService(Protocol):
-    def view(self, query: str, overlay: Overlay | None = None) -> DashboardView: ...
+    def view(self, query: str, overlay: Overlay | None = None, list_relatives: bool = False) -> DashboardView: ...
 
     def backtest(self, identifier: str, rules: Sequence[str | Rule | SeriesRule] | None = None) -> BacktestView: ...
 
@@ -140,12 +142,14 @@ def render(view: DashboardView) -> None:
     if view.status == NEEDS_CLARIFICATION:
         st.warning(f"{view.query!r} could be more than one instrument ({' '.join(view.notes)}). Click a row below, or type the exact symbol.")
         st.caption(f"{len(view.candidates)} matches. Click a row to analyse it.")
+        picks = st.session_state.get(PICK_COUNT_KEY, 0)  # a new key per pick, so an old row selection never comes back
         event = st.dataframe(
             [{"symbol": c.identifier, "name": c.name, "class": c.asset_class, "match": round(c.score, 2)} for c in view.candidates],
-            hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row", key="candidate_table",
+            hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row", key=f"candidate_table-{picks}",
         )
         if event.selection.rows:
             st.session_state[PICK_KEY] = view.candidates[event.selection.rows[0]].identifier
+            st.session_state[PICK_COUNT_KEY] = picks + 1
             st.rerun()
         return
 
@@ -246,7 +250,11 @@ def run(service: ViewService) -> None:
     picked = st.session_state.pop(PICK_KEY, None)  # applied before the box exists: Streamlit forbids changing it after
     if picked:
         st.session_state[QUERY_KEY] = picked
+        st.session_state[CHOSEN_KEY] = picked
     query = st.text_input("Ticker, ISIN or name", placeholder=PLACEHOLDER, key=QUERY_KEY).strip()
+    if st.session_state.get(CHOSEN_KEY) != query:
+        st.session_state.pop(CHOSEN_KEY, None)
+    list_relatives = CHOSEN_KEY not in st.session_state  # a typed ticker lists its relatives; a chosen row is analysed
     if problem:  # shown even with an empty box, and nothing is analysed until it is fixed
         st.error(problem)
         return
@@ -255,7 +263,9 @@ def run(service: ViewService) -> None:
         return
     try:
         with st.spinner("Resolving, fetching data and asking the specialists..."):
-            view = _remembered("view", f"{query}|{overlay_token(overlay)}", lambda: service.view(query, overlay))
+            view = _remembered(
+                "view", f"{query}|{overlay_token(overlay)}|{list_relatives}", lambda: service.view(query, overlay, list_relatives)
+            )
     except (AthenaError, ValueError) as exc:
         st.error(str(exc))
         return

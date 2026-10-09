@@ -27,10 +27,11 @@ class FakeOrchestrator:
     """Like the real one, it pulls the bars through the shared cache while it works."""
 
     def __init__(self, cache, result=None):
-        self.cache, self.result, self.queries, self.overlays = cache, result, [], []
+        self.cache, self.result, self.queries, self.overlays, self.relatives = cache, result, [], [], []
 
-    def analyze(self, query, overlay=None):
+    def analyze(self, query, overlay=None, list_relatives=False):
         self.queries.append(query)
+        self.relatives.append(list_relatives)
         self.overlays.append(overlay)
         result = self.result or OrchestrationResult(OK, query, resolution(), None, {}, {}, None, 0.0, VERDICT, ())
         if result.resolution:

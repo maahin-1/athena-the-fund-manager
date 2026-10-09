@@ -214,7 +214,8 @@ def many():
 
 
 def click(app, row):
-    app.session_state["candidate_table"] = {"selection": {"rows": [row], "columns": [], "cells": []}}
+    picks = app.session_state["picks_made"] if "picks_made" in app.session_state else 0
+    app.session_state[f"candidate_table-{picks}"] = {"selection": {"rows": [row], "columns": [], "cells": []}}
     app.run()
 
 
@@ -241,6 +242,26 @@ def test_a_later_ambiguous_search_does_not_repeat_the_old_click():
     app.text_input[0].set_value("tat").run()
     assert not app.exception and service.queries == ["sbi", "SBIN", "tat"]
     assert len(app.dataframe) == 1 and not app.metric  # the list is shown again and nothing was picked for the user
+
+
+def test_searching_the_same_words_again_after_a_pick_lists_the_candidates_again():
+    service = RoutingService({"sbi": many(), "SBI02": full_view()})
+    app = open_app(service, "sbi")
+    click(app, 2)
+    app.text_input[0].set_value("sbi").run()
+    assert not app.exception and app.text_input[0].value == "sbi"
+    assert len(app.dataframe) == 1 and not app.metric  # the old row is not picked again
+    click(app, 2)
+    assert app.text_input[0].value == "SBI02" and service.queries == ["sbi", "SBI02", "sbi", "SBI02"]
+
+
+def test_a_typed_search_asks_for_relatives_and_a_clicked_row_does_not():
+    service = RoutingService({"sbi": many(), "SBI02": full_view()})
+    app = open_app(service, "sbi")
+    click(app, 2)
+    assert service.relatives == [True, False]
+    app.text_input[0].set_value("sbi").run()
+    assert service.relatives == [True, False, True]
 
 
 DEFAULT_TRACES = ["Price", "SMA 50", "SMA 200", "Bollinger upper (20, 2)", "Bollinger lower (20, 2)", "Volume", "RSI 14"]

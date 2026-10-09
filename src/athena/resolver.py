@@ -161,13 +161,20 @@ class InstrumentResolver:
         self._classifier = classifier
         self._confirm_related = confirm_related
 
-    def resolve(self, query: str) -> Resolution | Ambiguity:
+    def resolve(self, query: str, list_relatives: bool = False) -> Resolution | Ambiguity:
+        """`list_relatives` (with `confirm_related`) also lists what else is related to a typed ticker instead of taking
+        it as is: for a person typing in a box. Choosing a listed row must resolve without it."""
         text = normalize_input(query)
         if not text:
             raise ValueError("empty query")
 
         entry = self._index.by_symbol.get(text)
         if entry:
+            if list_relatives and self._confirm_related:
+                related = self._related(text, normalize_name(query), exclude=entry)
+                if related:
+                    listed = (self._candidate(entry, 1.0), *related)[:MAX_LISTED]
+                    return Ambiguity(query, listed, "other instruments are related to this ticker")
             return self._resolved(entry, "ticker", "exact", 1.0)
 
         if looks_like_isin(text):

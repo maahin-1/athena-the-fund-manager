@@ -289,6 +289,20 @@ def test_a_typed_ticker_or_isin_is_still_taken_as_it_is_when_the_person_confirms
     assert careful().resolve("INE062A01020").identifier == "SBIN"
 
 
+def test_a_typed_ticker_with_relatives_is_listed_with_itself_first_when_asked():
+    result = careful(RPOWER).resolve("reliance", list_relatives=True)
+    assert isinstance(result, Ambiguity) and result.candidates[0].identifier == "RELIANCE"
+    assert result.reason == "other instruments are related to this ticker"
+    assert len({c.identifier for c in result.candidates}) == len(result.candidates)
+    chosen = careful(RPOWER).resolve("RELIANCE")  # a clicked row is resolved without the list
+    assert isinstance(chosen, Resolution) and chosen.identifier == "RELIANCE"
+
+
+def test_a_typed_ticker_nothing_else_resembles_is_taken_as_it_is_even_when_asked():
+    result = careful().resolve("INFY", list_relatives=True)
+    assert isinstance(result, Resolution) and (result.identifier, result.resolution_path) == ("INFY", "exact")
+
+
 def test_a_typo_is_listed_with_its_relatives_not_picked_for_the_person():
     result = careful().resolve("Tata Steal")
     assert isinstance(result, Ambiguity)

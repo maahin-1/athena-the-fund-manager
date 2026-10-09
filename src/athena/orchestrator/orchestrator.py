@@ -56,8 +56,8 @@ class Orchestrator:
         self._packet_builders = dict(packet_builders)
         self._conflict_min_confidence = conflict_min_confidence
 
-    def analyze(self, query: str, overlay: Overlay | None = None) -> OrchestrationResult:
-        resolved = self._resolver.resolve(query)
+    def analyze(self, query: str, overlay: Overlay | None = None, list_relatives: bool = False) -> OrchestrationResult:
+        resolved = self._resolver.resolve(query, list_relatives) if list_relatives else self._resolver.resolve(query)
         if isinstance(resolved, Ambiguity):
             return OrchestrationResult(NEEDS_CLARIFICATION, query, None, resolved, {}, {}, None, None, None, ())
         return self.analyze_resolved(resolved, query, overlay)
