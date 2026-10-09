@@ -8,10 +8,13 @@ import streamlit as st
 from athena.contracts import AthenaError
 from athena.backtest.rules import RULES, Rule, SeriesRule
 from athena.dashboard.backtest_view import BacktestView
+from athena.dashboard.risk_form import risk_controls
 from athena.dashboard.strategy_form import strategy_controls
 from athena.dashboard.view import DashboardView, Panel
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, NO_VIEW
 from athena.orchestrator.report import DISCLAIMER
+from athena.risk_overlay.model import LABELS, Overlay
+from athena.risk_overlay.parse import overlay_token
 from athena.dashboard.charts import build_chart
 from athena.technicals.indicators import (
     MAX_INDICATORS, REGISTRY, Selected, default_params, default_selection, next_id, short_history, validate,
@@ -28,11 +31,12 @@ CHART_NOTE = (
     "so changing them here never changes a verdict."
 )
 BACKTESTABLE = ("equity", "etf")
+STATUS_WORDS = {"ok": "ok", "warn": "warning", "breach": "BREACH", "unchecked": "not checked"}
 BACKTEST_NOTE = "Past results do not predict future ones."
 
 
 class ViewService(Protocol):
-    def view(self, query: str) -> DashboardView: ...
+    def view(self, query: str, overlay: Overlay | None = None) -> DashboardView: ...
 
     def backtest(self, identifier: str, rules: Sequence[str | Rule | SeriesRule] | None = None) -> BacktestView: ...
 
@@ -54,6 +58,18 @@ def _panel(panel: Panel) -> None:
         with st.expander(f"{len(panel.missing)} figure(s) not available"):
             for name, why in panel.missing.items():
                 st.write(f"{name}: {why}")
+
+
+def _risk_overlay(verdict: dict) -> None:
+    """The risk limits the person set, one row per check, and what they did to the verdict."""
+    findings = verdict.get("risk_findings")
+    if not findings:
+        return
+    st.markdown("**Risk overlay**")
+    st.dataframe(
+        [{"check": LABELS[item["check"]], "status": STATUS_WORDS[item["status"]], "detail": item["message"]} for item in findings],
+        hide_index=True, width="stretch",
+    )
 
 
 def _chosen() -> list[dict]:
@@ -139,6 +155,8 @@ def render(view: DashboardView) -> None:
     left, right = st.columns(2)
     left.metric("Verdict", verdict.get("verdict", "-"))
     right.metric("Conviction", verdict.get("conviction", 0))
+    if "pre_overlay_verdict" in verdict:
+        st.warning(f"Held back from {verdict['pre_overlay_verdict']} by your risk limits: the specialists said {verdict['pre_overlay_verdict']}.")
     if view.status == NO_VIEW:
         st.warning("No specialist had enough data to form a view.")
 
@@ -155,6 +173,7 @@ def render(view: DashboardView) -> None:
         _chart_section(view)
     for panel in view.panels:
         _panel(panel)
+    _risk_overlay(verdict)
 
     risks = (view.verdict or {}).get("key_risks", [])
     if risks:
@@ -223,6 +242,7 @@ def _backtest_section(service: ViewService, identifier: str) -> None:
 def run(service: ViewService) -> None:
     st.set_page_config(page_title="Athena", layout="wide")
     st.title("Athena")
+    overlay, problem = risk_controls()
     picked = st.session_state.pop(PICK_KEY, None)  # applied before the box exists: Streamlit forbids changing it after
     if picked:
         st.session_state[QUERY_KEY] = picked
@@ -230,9 +250,12 @@ def run(service: ViewService) -> None:
     if not query:
         st.info("Type an NSE ticker, an ISIN or a name to analyze it.")
         return
+    if problem:
+        st.error(problem)
+        return
     try:
         with st.spinner("Resolving, fetching data and asking the specialists..."):
-            view = _remembered("view", query, lambda: service.view(query))
+            view = _remembered("view", f"{query}|{overlay_token(overlay)}", lambda: service.view(query, overlay))
     except (AthenaError, ValueError) as exc:
         st.error(str(exc))
         return

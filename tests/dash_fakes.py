@@ -76,7 +76,7 @@ class FakeService:
     """Stands in for DashboardService: returns canned views, raises canned errors, and records the queries."""
 
     def __init__(self, view=None, error=None, backtest=None, backtest_error=None):
-        self.canned, self.error, self.queries = view, error, []
+        self.canned, self.error, self.queries, self.overlays = view, error, [], []
         self.canned_backtest, self.backtest_error, self.backtests, self.rule_sets = backtest, backtest_error, [], []
 
     def backtest(self, identifier, rules=None):
@@ -86,8 +86,9 @@ class FakeService:
             raise self.backtest_error
         return self.canned_backtest or sample_backtest_view()
 
-    def view(self, query):
+    def view(self, query, overlay=None):
         self.queries.append(query)
+        self.overlays.append(overlay)
         if self.error:
             raise self.error
         return self.canned
@@ -100,8 +101,9 @@ class RoutingService(FakeService):
         super().__init__()
         self.views = views
 
-    def view(self, query):
+    def view(self, query, overlay=None):
         self.queries.append(query)
+        self.overlays.append(overlay)
         return self.views[query]
 
 

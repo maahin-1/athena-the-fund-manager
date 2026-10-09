@@ -465,3 +465,109 @@ def test_a_strategy_panel_is_headed_by_its_name_alone_and_a_built_in_one_keeps_t
     _, app = start_backtest(FakeService(full_view(), backtest=view))
     headings = [m for m in texts(app.markdown) if m.startswith("**trend") or m.startswith("**Golden")]
     assert headings[0].startswith("**trend rule**:") and headings[1].startswith("**Golden cross**:")
+
+
+from athena.risk_overlay.model import PRESETS
+
+
+def risk_on(app):
+    app.sidebar.checkbox(key="risk_on").check().run()
+
+
+FINDINGS = [
+    {"check": "volatility", "status": "breach", "value": 0.8, "warn": 0.3, "hard": 0.6, "message": "Volatility 80.0% is at or above your hard limit of 60.0%."},
+    {"check": "position", "status": "unchecked", "value": None, "warn": 0.1, "hard": 0.2, "message": "Position size not checked: no amount to invest was given."},
+]
+
+
+def test_the_risk_profile_is_off_until_it_is_switched_on_and_nothing_extra_is_asked_of_the_service():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    assert not app.exception and service.overlays == [None]
+    assert app.sidebar.checkbox(key="risk_on").value is False and len(app.sidebar.number_input) == 0
+
+
+def test_switching_it_on_applies_the_moderate_preset_untouched_with_no_holdings_and_no_amount():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    risk_on(app)
+    overlay = service.overlays[-1]
+    assert not app.exception and overlay.profile == PRESETS["moderate"] and overlay.holdings == () and overlay.amount is None
+
+
+def test_choosing_another_starting_point_changes_every_limit_to_that_presets():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    risk_on(app)
+    app.sidebar.selectbox(key="risk_preset").select("conservative").run()
+    assert not app.exception and service.overlays[-1].profile == PRESETS["conservative"]
+    assert app.sidebar.number_input(key="risk-conservative-volatility-hard").value == 35.0
+
+
+def test_a_limit_can_be_edited_and_a_check_switched_off():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    risk_on(app)
+    app.sidebar.number_input(key="risk-moderate-volatility-hard").set_value(55.0).run()
+    app.sidebar.checkbox(key="risk-moderate-liquidity-on").uncheck().run()
+    limits = service.overlays[-1].profile.limits
+    assert limits["volatility"].hard == 0.55 and limits["volatility"].warn == 0.35 and "liquidity" not in limits
+    assert limits["concentration"] == PRESETS["moderate"].limits["concentration"]
+
+
+def test_holdings_and_the_amount_reach_the_service_and_change_what_is_asked():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    risk_on(app)
+    asked = len(service.overlays)
+    app.sidebar.text_area(key="risk_holdings").set_value("symbol,value\nINFY,90000\nsbin,10000").run()
+    app.sidebar.number_input(key="risk_amount").set_value(25000.0).run()
+    overlay = service.overlays[-1]
+    assert [(h.symbol, h.value) for h in overlay.holdings] == [("INFY", 90000.0), ("SBIN", 10000.0)] and overlay.amount == 25000.0
+    assert len(service.overlays) == asked + 2 and not app.exception
+
+
+def test_a_bad_holdings_list_or_limit_is_explained_and_nothing_is_analysed_until_it_is_fixed():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    risk_on(app)
+    asked = len(service.overlays)
+    app.sidebar.text_area(key="risk_holdings").set_value("symbol,value\nSBIN,lots").run()
+    assert not app.exception and "holdings row 2: 'lots' is not a number" in app.error[0].value
+    app.sidebar.text_area(key="risk_holdings").set_value("").run()
+    app.sidebar.number_input(key="risk-moderate-volatility-warn").set_value(60.0).run()
+    assert "limits.volatility: 'warn' must be below 'hard'" in app.error[0].value
+    assert len(service.overlays) == asked  # nothing was analysed with a profile that could not be used
+    app.sidebar.number_input(key="risk-moderate-volatility-warn").set_value(35.0).run()
+    assert not app.error and app.metric[0].value == "Buy"  # the same request as before, so the page reuses its answer
+    assert len(service.overlays) == asked
+
+
+def test_an_unrelated_click_does_not_ask_the_service_again_but_a_new_amount_does():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    risk_on(app)
+    asked = len(service.overlays)
+    app.checkbox(key="show_volume").uncheck().run()
+    assert len(service.overlays) == asked
+    app.sidebar.number_input(key="risk_amount").set_value(1000.0).run()
+    assert len(service.overlays) == asked + 1
+
+
+def test_a_held_back_verdict_is_flagged_and_every_check_is_listed_with_its_status():
+    verdict = {
+        "verdict": "Hold", "conviction": 60, "key_risks": ["Held back by your risk limits: the specialists said Buy."],
+        "resolution_path": "blend", "pre_overlay_verdict": "Buy", "risk_findings": FINDINGS,
+    }
+    app = open_app(FakeService(replace(full_view(), verdict=verdict)), "sbin")
+    assert not app.exception
+    assert any("Held back from Buy by your risk limits" in w.value for w in app.warning)
+    table = next(frame for frame in app.dataframe if "check" in frame.value.columns).value
+    assert list(table["check"]) == ["Volatility", "Position size"] and list(table["status"]) == ["BREACH", "not checked"]
+    assert "Volatility 80.0%" in table["detail"][0] and app.metric[0].value == "Hold"
+
+
+def test_a_verdict_without_findings_shows_no_risk_overlay_and_no_held_back_warning():
+    app = open_app(FakeService(full_view()), "sbin")
+    assert not any("Held back" in w.value for w in app.warning)
+    assert not any("check" in frame.value.columns for frame in app.dataframe)
