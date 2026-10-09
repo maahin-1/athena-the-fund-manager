@@ -99,6 +99,12 @@ def test_value_at_risk_and_shortfall_are_zero_when_the_whole_tail_was_a_gain():
     assert stats.value_at_risk(gains) == 0.0 and stats.expected_shortfall(gains) == 0.0
 
 
+def test_value_at_risk_and_shortfall_of_a_series_with_a_missing_value_are_nan_never_a_zero_loss():
+    holed = [0.01] * 30 + [float("nan")]
+    assert math.isnan(stats.value_at_risk(holed)) and math.isnan(stats.expected_shortfall(holed))
+    assert math.isnan(stats.value_at_risk(TAIL[:50] + [float("nan")] + TAIL[50:]))
+
+
 def test_value_at_risk_and_shortfall_need_enough_observations():
     for function in (stats.value_at_risk, stats.expected_shortfall):
         with pytest.raises(InsufficientData, match="at least 20"):

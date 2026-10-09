@@ -9,7 +9,7 @@ from athena.contracts import AthenaError, Bar
 from athena.orchestrator.blend import CONFLICT_MIN_CONFIDENCE, Conflict, blend_signals
 from athena.resolver import Ambiguity, InstrumentResolver, Resolution
 from athena.risk_overlay.apply import UNCALIBRATED_NOTE, apply_overlay
-from athena.risk_overlay.checks import figures_from_bars, run_checks
+from athena.risk_overlay.checks import PRICE_MEASURES, Figures, figures_from_bars, run_checks
 from athena.risk_overlay.model import Overlay
 
 OK = "ok"
@@ -105,13 +105,18 @@ class Orchestrator:
     def _apply_overlay(
         self, resolution: Resolution, verdict: dict[str, Any], overlay: Overlay
     ) -> tuple[dict[str, Any], str]:
-        """The verdict after the person's risk limits, and the note that says so. Without prices the verdict stands and the
-        note says the limits could not be checked."""
+        """The verdict after the person's risk limits, and the note that says so. Without prices the price checks are
+        listed as not checked with the reason, and the checks that need only money (position, concentration) still run."""
         if self._bars is None:
             raise AthenaError("the risk overlay needs a price source")
         try:
-            bars = self._bars(resolution.identifier)
+            figures = figures_from_bars(self._bars(resolution.identifier))
         except AthenaError as exc:
-            return verdict, f"risk limits could not be checked: {exc}"
-        findings = run_checks(figures_from_bars(bars), overlay, resolution.identifier)
-        return apply_overlay(verdict, findings), f"risk profile '{overlay.profile.name}' applied: {UNCALIBRATED_NOTE}"
+            figures = Figures(reasons={measure: f"prices could not be fetched: {exc}" for measure in PRICE_MEASURES})
+            note = f"risk limits could not be fully checked: {exc}"
+        else:
+            note = f"risk profile '{overlay.profile.name}' applied: {UNCALIBRATED_NOTE}"
+            if figures.adjustment_note:
+                note += f". {figures.adjustment_note}"
+        findings = run_checks(figures, overlay, resolution.identifier)
+        return apply_overlay(verdict, findings), note

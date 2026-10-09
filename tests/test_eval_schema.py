@@ -77,6 +77,29 @@ def test_verdict_errors(changes, fragment):
     assert any(fragment in error for error in errors), errors
 
 
+FINDING = {"check": "volatility", "status": "ok", "value": 0.1, "warn": 0.2, "hard": 0.3, "message": "fine"}
+
+
+def test_a_held_back_verdict_with_findings_is_valid():
+    held = {**GOOD_VERDICT, "verdict": "Hold", "pre_overlay_verdict": "Buy", "risk_findings": [{**FINDING, "status": "breach"}, FINDING]}
+    assert validate_judge_verdict(held) == []
+    assert validate_judge_verdict({**GOOD_VERDICT, "risk_findings": []}) == []
+
+
+@pytest.mark.parametrize(
+    "changes, fragment",
+    [
+        ({"risk_findings": [{"check": "volatility", "status": "ok"}]}, "risk_findings[0] missing keys: ['message']"),
+        ({"risk_findings": [FINDING, {**FINDING, "status": "fine"}]}, "risk_findings[1].status must be one of ['ok', 'warn', 'breach', 'unchecked'], got 'fine'"),
+        ({"verdict": "Hold", "pre_overlay_verdict": "Sell"}, "pre_overlay_verdict must be Buy or Overweight, got 'Sell'"),
+        ({"verdict": "Buy", "pre_overlay_verdict": "Buy"}, "a verdict held back from Buy must be Hold, got 'Buy'"),
+    ],
+)
+def test_risk_overlay_errors(changes, fragment):
+    errors = validate_judge_verdict({**GOOD_VERDICT, **changes})
+    assert fragment in errors, errors
+
+
 def test_verdict_missing_key():
     bad = {k: v for k, v in GOOD_VERDICT.items() if k != "conviction"}
     assert "missing keys: ['conviction']" in validate_judge_verdict(bad)

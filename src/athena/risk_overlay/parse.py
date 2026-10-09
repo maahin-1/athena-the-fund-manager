@@ -13,6 +13,11 @@ from athena.risk_overlay.model import MAX_HOLDINGS, MEASURES, PRESETS, Holding, 
 NAME_LIMIT = 60
 PROFILE_KEYS = {"preset", "name", "limits"}
 HOLDINGS_HEADER = ("symbol", "value")
+MAX_RUPEES = 1e15  # far above any real portfolio, far below where adding up loses meaning
+MAX_HOLDINGS_CHARS = 1_000_000
+MAX_HOLDINGS_ROWS = 5000
+MAX_HOLDINGS_BYTES = 1024 * 1024  # 1 MB
+MAX_PROFILE_BYTES = 100 * 1024  # 100 KB
 
 
 class ProfileError(ValueError):
@@ -93,6 +98,8 @@ def parse_holdings(text: str) -> tuple[Holding, ...]:
 
 
 def _parse_holdings(text: str) -> tuple[Holding, ...]:
+    if len(text) > MAX_HOLDINGS_CHARS:
+        raise ProfileError(f"holdings: the text is longer than {MAX_HOLDINGS_CHARS:,} characters")
     if not text.strip():
         return ()
     reader = csv.reader(io.StringIO(text.lstrip("﻿")))
@@ -100,7 +107,10 @@ def _parse_holdings(text: str) -> tuple[Holding, ...]:
     if tuple(header) != HOLDINGS_HEADER:
         raise ProfileError("holdings: the first row must be the header 'symbol,value'")
     totals: dict[str, float] = {}
+    total = 0.0
     for number, row in enumerate(reader, start=2):
+        if number > MAX_HOLDINGS_ROWS + 1:
+            raise ProfileError(f"holdings: at most {MAX_HOLDINGS_ROWS} rows")
         if not any(cell.strip() for cell in row):
             continue
         if len(row) != 2:
@@ -115,6 +125,9 @@ def _parse_holdings(text: str) -> tuple[Holding, ...]:
         if not math.isfinite(value) or value <= 0:
             raise ProfileError(f"holdings row {number}: the value must be a number above zero")
         totals[symbol] = totals.get(symbol, 0.0) + value
+        total += value
+        if not total <= MAX_RUPEES:  # the grand total bounds every symbol's total too
+            raise ProfileError("holdings: the values add up to more than 1e15 rupees")
         if len(totals) > MAX_HOLDINGS:
             raise ProfileError(f"holdings: at most {MAX_HOLDINGS} different symbols")
     return tuple(Holding(symbol, value) for symbol, value in totals.items())
@@ -138,9 +151,13 @@ def load_profile(spec: str) -> RiskProfile:
     if spec in PRESETS:
         return PRESETS[spec]
     try:
-        text = Path(spec).read_text(encoding="utf-8")
+        raw = _read_capped(spec, MAX_PROFILE_BYTES)
     except OSError:
         raise ProfileError(f"profile: {spec!r} is not a preset ({', '.join(PRESETS)}) and cannot be read as a file") from None
+    if raw is None:
+        raise ProfileError(f"profile: {spec} is larger than 100 KB")
+    try:
+        text = raw.decode("utf-8")
     except UnicodeDecodeError:
         raise ProfileError(f"profile: {spec} is not a text file") from None
     try:
@@ -150,11 +167,22 @@ def load_profile(spec: str) -> RiskProfile:
     return parse_profile(data)
 
 
+def _read_capped(path: str, limit: int) -> bytes | None:
+    """The file's bytes, or None when it is larger than `limit` (never more than `limit + 1` bytes are read)."""
+    with Path(path).open("rb") as handle:
+        raw = handle.read(limit + 1)
+    return None if len(raw) > limit else raw
+
+
 def load_holdings(path: str) -> tuple[Holding, ...]:
     try:
-        text = Path(path).read_text(encoding="utf-8")
+        raw = _read_capped(path, MAX_HOLDINGS_BYTES)
     except OSError:
         raise ProfileError(f"holdings: cannot read {path}") from None
+    if raw is None:
+        raise ProfileError(f"holdings: {path} is larger than 1 MB")
+    try:
+        text = raw.decode("utf-8")
     except UnicodeDecodeError:
         raise ProfileError(f"holdings: {path} is not a text file") from None
     return parse_holdings(text)
@@ -168,4 +196,6 @@ def build_overlay(profile: str | None, holdings: str | None, amount: float | Non
         return None
     if amount is not None and (not math.isfinite(amount) or amount <= 0):
         raise ProfileError("--amount must be a number above zero")
+    if amount is not None and amount > MAX_RUPEES:
+        raise ProfileError("--amount must be at most 1e15 rupees")
     return Overlay(load_profile(profile), load_holdings(holdings) if holdings else (), amount)

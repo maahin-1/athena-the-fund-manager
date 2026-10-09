@@ -213,10 +213,35 @@ def test_the_checks_that_need_holdings_and_an_amount_use_them():
     assert finding["status"] == "breach" and finding["value"] == 0.25 and result.verdict["verdict"] == "Hold"
 
 
-def test_when_prices_cannot_be_fetched_the_verdict_stands_and_the_note_says_the_limits_were_not_checked():
+def test_when_prices_cannot_be_fetched_the_price_checks_show_as_not_checked_with_the_reason():
     result = with_prices(Prices(error=AllSourcesFailed("no prices"))).analyze("sbin", CAUTIOUS)
-    assert result.verdict["verdict"] == "Buy" and "risk_findings" not in result.verdict
-    assert any(note.startswith("risk limits could not be checked") for note in result.notes)
+    assert result.verdict["verdict"] == "Buy" and "pre_overlay_verdict" not in result.verdict
+    (finding,) = result.verdict["risk_findings"]
+    assert finding["status"] == "unchecked" and "prices could not be fetched: no prices" in finding["message"]
+    assert "risk limits could not be fully checked: no prices" in result.notes
+    assert validate_judge_verdict(result.verdict) == []
+
+
+def test_when_prices_cannot_be_fetched_the_money_checks_still_run_and_can_hold_a_buy_back():
+    profile = RiskProfile("p", {"volatility": Limit(0.3, 0.6), "position": Limit(0.05, 0.10), "liquidity": Limit(0.01, 0.02)})
+    overlay = Overlay(profile, (Holding("INFY", 90_000.0),), 30_000.0)
+    result = with_prices(Prices(error=AllSourcesFailed("no prices"))).analyze("sbin", overlay)
+    found = {f["check"]: f for f in result.verdict["risk_findings"]}
+    assert found["position"]["status"] == "breach" and found["position"]["value"] == 0.25
+    assert found["volatility"]["status"] == found["liquidity"]["status"] == "unchecked"
+    assert "prices could not be fetched" in found["liquidity"]["message"]
+    assert result.verdict["verdict"] == "Hold" and result.verdict["pre_overlay_verdict"] == "Buy"
+
+
+def test_a_bonus_in_the_price_history_is_adjusted_and_the_note_says_so():
+    closes = [100.0 + 0.1 * (i % 3) for i in range(300)]
+    bars = make_bars([c * 2 for c in closes[:250]] + closes[250:], symbol="SBIN")
+    result = with_prices(Prices(bars)).analyze("sbin", CAUTIOUS)
+    assert [f["status"] for f in result.verdict["risk_findings"]] == ["ok"] and result.verdict["verdict"] == "Buy"
+    (note,) = [note for note in result.notes if note.startswith("risk profile 'cautious' applied")]
+    assert "Prices adjusted for 1 split or bonus event(s)" in note
+    calm = with_prices(Prices(make_bars(closes, symbol="SBIN"))).analyze("sbin", CAUTIOUS)
+    assert not any("Prices adjusted" in note for note in calm.notes)
 
 
 def test_asking_for_an_overlay_with_no_price_source_is_an_error_not_a_silent_skip():

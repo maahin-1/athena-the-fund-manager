@@ -128,6 +128,32 @@ def test_too_many_different_symbols_are_refused():
     assert len(parse_holdings(HEADER + rows[: rows.index("S500")])) == 500
 
 
+@pytest.mark.parametrize("rows", ["A,1e308\nA,1e308\n", "A,1e308\nB,1e308\n", "A,2e15\n", "A,6e14\nB,6e14\n"])
+def test_holdings_that_add_up_to_more_than_1e15_rupees_are_refused(rows):
+    with pytest.raises(ProfileError, match=re.escape("holdings: the values add up to more than 1e15 rupees")):
+        parse_holdings(HEADER + rows)
+    assert parse_holdings(HEADER + "A,5e14\nB,5e14\n") == (Holding("A", 5e14), Holding("B", 5e14))
+
+
+def test_holdings_text_that_is_too_long_or_has_too_many_rows_is_refused_before_it_is_read():
+    with pytest.raises(ProfileError, match=re.escape("holdings: the text is longer than 1,000,000 characters")):
+        parse_holdings(HEADER + "x" * 1_000_000)
+    with pytest.raises(ProfileError, match=re.escape("holdings: at most 5000 rows")):
+        parse_holdings(HEADER + "SBIN,1\n" * 5001)
+    assert parse_holdings(HEADER + "SBIN,1\n" * 5000) == (Holding("SBIN", 5000.0),)
+
+
+def test_files_that_are_too_large_are_refused_without_being_read_whole(tmp_path):
+    big = tmp_path / "big.csv"
+    big.write_bytes(HEADER.encode() + b"SBIN,1\n" * 150_000)
+    with pytest.raises(ProfileError, match=re.escape("is larger than 1 MB")):
+        load_holdings(str(big))
+    profile = tmp_path / "big.json"
+    profile.write_text(json.dumps({"preset": "moderate", "name": "x" * 50, "pad": "y" * 102_400}), encoding="utf-8")
+    with pytest.raises(ProfileError, match=re.escape("is larger than 100 KB")):
+        load_profile(str(profile))
+
+
 def test_a_text_that_is_not_csv_at_all_is_a_profile_error():
     with pytest.raises(ProfileError):
         parse_holdings("symbol,value\n\"unclosed,1\n")
@@ -186,6 +212,10 @@ def test_the_command_line_builds_an_overlay_only_when_a_profile_is_named(tmp_pat
     for amount in (0.0, -1.0, float("inf"), float("nan")):
         with pytest.raises(ProfileError, match="--amount must be a number above zero"):
             build_overlay("moderate", None, amount)
+    for amount in (1e308, 1.0000001e15):
+        with pytest.raises(ProfileError, match="--amount must be at most 1e15 rupees"):
+            build_overlay("moderate", None, amount)
+    assert build_overlay("moderate", None, 1e15).amount == 1e15
 
 
 def test_an_overlay_token_changes_with_anything_that_changes_the_checks():

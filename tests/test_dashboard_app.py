@@ -571,3 +571,48 @@ def test_a_verdict_without_findings_shows_no_risk_overlay_and_no_held_back_warni
     app = open_app(FakeService(full_view()), "sbin")
     assert not any("Held back" in w.value for w in app.warning)
     assert not any("check" in frame.value.columns for frame in app.dataframe)
+
+
+from athena.dashboard.risk_form import IGNORED_PASTE, MAX_UPLOAD_BYTES, _choose_holdings, _decode_upload
+
+
+def test_an_uploaded_file_wins_over_pasted_text_and_the_page_says_the_paste_is_ignored():
+    assert _choose_holdings("symbol,value\nSBIN,1", None) == ("symbol,value\nSBIN,1", None)
+    assert _choose_holdings("symbol,value\nSBIN,1", "symbol,value\nINFY,2") == ("symbol,value\nINFY,2", IGNORED_PASTE)
+    assert _choose_holdings("  \n", "symbol,value\nINFY,2") == ("symbol,value\nINFY,2", None)
+    assert IGNORED_PASTE == "Using the uploaded file; the pasted text is ignored."
+
+
+def test_an_uploaded_file_is_decoded_unless_it_is_binary_or_too_large():
+    assert _decode_upload("﻿symbol,value\nSBIN,1".encode("utf-8")) == ("symbol,value\nSBIN,1", None)
+    assert _decode_upload(b"\xff\xfe\x00\x80") == ("", "holdings: the uploaded file is not a text file")
+    assert _decode_upload(b"x" * (MAX_UPLOAD_BYTES + 1)) == ("", "holdings: the uploaded file is larger than 1 MB")
+
+
+def test_the_holdings_box_asks_for_nse_tickers_and_caps_its_length():
+    app = open_app(FakeService(full_view()), "sbin")
+    risk_on(app)
+    box = app.sidebar.text_area(key="risk_holdings")
+    assert "Use NSE tickers (for example SBIN), not names or ISINs." in box.help
+    assert box.max_chars == 1_000_000
+
+
+def test_switching_off_every_check_asks_for_one_and_nothing_is_analysed():
+    service = FakeService(full_view())
+    app = open_app(service, "sbin")
+    risk_on(app)
+    asked = len(service.overlays)
+    for box in [box for box in app.sidebar.checkbox if str(box.key).endswith("-on") and str(box.key).startswith("risk-")]:
+        box.uncheck()
+    app.run()
+    assert not app.exception and app.error[0].value == "Switch on at least one check, or turn the risk limits off."
+    assert len(service.overlays) == asked
+
+
+def test_a_problem_in_the_sidebar_is_shown_even_before_a_ticker_is_typed():
+    service = FakeService(full_view())
+    app = open_app(service)
+    risk_on(app)
+    app.sidebar.text_area(key="risk_holdings").set_value("symbol,value\nSBIN,lots").run()
+    assert not app.exception and "holdings row 2: 'lots' is not a number" in app.error[0].value
+    assert service.queries == []

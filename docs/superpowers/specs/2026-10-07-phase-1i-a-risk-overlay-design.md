@@ -76,3 +76,13 @@ A figure that cannot be computed (too little history) is a finding with status `
 - Dashboard: the sidebar edits flow into the view (AppTest); a bad CSV or profile shows a message, not a traceback (the lesson of 1h-c: arbitrary input is parsed with a catch-all that becomes a clear error).
 - Mutation checks by hand, all must be caught; a live check on real stocks (a calm large cap passes every check on the moderate preset; a volatile small cap breaches volatility).
 - `TRD.md` §2.7 and §2.1 and `PRD.md` FR-10 updated.
+
+## Review fixes
+
+- The stock figures are measured on clean prices adjusted for splits and bonuses (`athena.backtest.adjust`, the same overnight-break detection as the backtest); bars whose close or volume is not a finite number, or whose close is zero or below, are dropped; the adjustment sentence is added to the overlay note.
+- A figure that is not a finite number is "not checked: the price history has gaps", never within the limits; historical VaR and CVaR of a series with a missing value are nan, never a zero loss.
+- Fewer than 126 daily returns leave volatility, drawdown, VaR and CVaR not checked; 126 to 251 returns add "(measured over the last N daily returns, less than a year)" to those findings.
+- When the price download fails, the price checks are listed as not checked with the reason and the money checks (position, concentration) still run and can hold a Buy back; the note says the limits could not be fully checked.
+- Holdings and the amount are capped at 1e15 rupees; a total that cannot be added up leaves position and concentration not checked. Holdings text is capped at 1,000,000 characters and 5000 rows, holdings files at 1 MB and profile files at 100 KB.
+- Dashboard: an uploaded file wins over pasted text and says so; the holdings help asks for NSE tickers; switching off every check asks for one; a sidebar problem shows even before a ticker is typed.
+- The verdict contract checks each risk finding (check, status, message; status ok, warn, breach or unchecked) and that a `pre_overlay_verdict` is Buy or Overweight with the verdict Hold.

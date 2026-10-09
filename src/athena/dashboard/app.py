@@ -247,11 +247,11 @@ def run(service: ViewService) -> None:
     if picked:
         st.session_state[QUERY_KEY] = picked
     query = st.text_input("Ticker, ISIN or name", placeholder=PLACEHOLDER, key=QUERY_KEY).strip()
+    if problem:  # shown even with an empty box, and nothing is analysed until it is fixed
+        st.error(problem)
+        return
     if not query:
         st.info("Type an NSE ticker, an ISIN or a name to analyze it.")
-        return
-    if problem:
-        st.error(problem)
         return
     try:
         with st.spinner("Resolving, fetching data and asking the specialists..."):

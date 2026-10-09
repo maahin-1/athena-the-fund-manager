@@ -13,6 +13,9 @@ _VERDICT_KEYS = {
     "pre_overlay_verdict", "risk_findings",
 }
 _VERDICT_REQUIRED = {"verdict", "conviction", "key_risks", "resolution_path"}
+HELD_BACK_VERDICTS = ("Buy", "Overweight")  # the only calls a risk limit can hold back, always to Hold
+FINDING_STATUSES = ("ok", "warn", "breach", "unchecked")
+_FINDING_KEYS = {"check", "status", "message"}
 
 
 def _is_int_in_range(value: Any, low: int, high: int) -> bool:
@@ -85,10 +88,25 @@ def validate_judge_verdict(verdict: Any) -> list[str]:
             errors.append("panel_agreement must be a number between 0 and 1")
     if "contested" in verdict and not isinstance(verdict["contested"], bool):
         errors.append("contested must be a boolean")
-    if "pre_overlay_verdict" in verdict and verdict["pre_overlay_verdict"] not in VERDICTS:
-        errors.append(f"pre_overlay_verdict must be one of {list(VERDICTS)}, got {verdict['pre_overlay_verdict']!r}")
-    if "risk_findings" in verdict and not (
-        isinstance(verdict["risk_findings"], list) and all(isinstance(item, dict) for item in verdict["risk_findings"])
-    ):
-        errors.append("risk_findings must be a list of objects")
+    if "pre_overlay_verdict" in verdict:
+        held = verdict["pre_overlay_verdict"]
+        if held not in HELD_BACK_VERDICTS:
+            errors.append(f"pre_overlay_verdict must be Buy or Overweight, got {held!r}")
+        elif verdict.get("verdict") != "Hold":
+            errors.append(f"a verdict held back from {held} must be Hold, got {verdict.get('verdict')!r}")
+    if "risk_findings" in verdict:
+        errors += _finding_errors(verdict["risk_findings"])
+    return errors
+
+
+def _finding_errors(findings: Any) -> list[str]:
+    if not (isinstance(findings, list) and all(isinstance(item, dict) for item in findings)):
+        return ["risk_findings must be a list of objects"]
+    errors: list[str] = []
+    for i, item in enumerate(findings):
+        missing_keys = sorted(_FINDING_KEYS - item.keys())
+        if missing_keys:
+            errors.append(f"risk_findings[{i}] missing keys: {missing_keys}")
+        if "status" in item and item["status"] not in FINDING_STATUSES:
+            errors.append(f"risk_findings[{i}].status must be one of {list(FINDING_STATUSES)}, got {item['status']!r}")
     return errors

@@ -86,13 +86,19 @@ def tracking_difference(asset_levels: Sequence[float], index_levels: Sequence[fl
 
 def value_at_risk(returns: Sequence[float], confidence: float = 0.95, min_obs: int = MIN_OBS) -> float:
     """Historical one-period VaR: the loss, as a positive fraction, that the worst `1 - confidence` of the returns
-    reach (the percentile, linearly interpolated). 0.0 when even that tail was a gain."""
+    reach (the percentile, linearly interpolated). 0.0 when even that tail was a gain; nan when a return is missing
+    (nan), never a zero loss."""
     values = _array(returns, "value at risk", min_obs)
+    if np.isnan(values).any():
+        return math.nan
     return max(0.0, float(-np.percentile(values, (1.0 - confidence) * 100.0)))
 
 
 def expected_shortfall(returns: Sequence[float], confidence: float = 0.95, min_obs: int = MIN_OBS) -> float:
-    """Historical CVaR: the average loss over the returns at or below the VaR cutoff, as a positive fraction."""
+    """Historical CVaR: the average loss over the returns at or below the VaR cutoff, as a positive fraction; nan when
+    a return is missing (nan)."""
     values = _array(returns, "expected shortfall", min_obs)
+    if np.isnan(values).any():
+        return math.nan
     cutoff = np.percentile(values, (1.0 - confidence) * 100.0)
     return max(0.0, float(-np.mean(values[values <= cutoff])))

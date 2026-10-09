@@ -29,16 +29,106 @@ def test_volatility_and_the_loss_figures_come_from_the_last_252_daily_returns():
 
 
 def test_the_drawdown_is_the_worst_fall_as_a_positive_size():
-    closes = [100.0] * 10 + [120.0, 90.0] + [100.0] * 20
+    closes = [100.0] * 10 + [120.0, 90.0] + [100.0] * 150
     figures = figures_from_bars(make_bars(closes))
     assert figures.drawdown == pytest.approx(0.25)
 
 
-def test_a_history_too_short_for_volatility_says_so_but_still_gives_what_it_can():
-    figures = figures_from_bars(make_bars([100.0, 90.0, 95.0, 99.0, 98.0]))
-    assert figures.volatility is None and figures.var_95 is None and figures.cvar_95 is None
-    assert "at least 20 observations" in figures.reasons["volatility"] and "var_95" in figures.reasons and "cvar_95" in figures.reasons
-    assert figures.drawdown == pytest.approx(0.10)
+STOCK_CHECKS = ("volatility", "drawdown", "var_95", "cvar_95")
+
+
+def test_fewer_than_126_daily_returns_leave_every_stock_figure_unchecked_with_the_count():
+    figures = figures_from_bars(make_bars(alternating(100)))
+    assert (figures.volatility, figures.drawdown, figures.var_95, figures.cvar_95) == (None, None, None, None)
+    assert figures.returns == 100
+    for check in STOCK_CHECKS:
+        assert figures.reasons[check] == "only 100 daily prices; at least 126 are needed for a risk check"
+    found = findings_for(figures, Overlay(PRESETS["moderate"]))
+    assert {found[check].status for check in STOCK_CHECKS} == {"unchecked"}
+    assert found["volatility"].message == "Volatility not checked: only 100 daily prices; at least 126 are needed for a risk check."
+    assert figures_from_bars(make_bars(alternating(125))).volatility is None
+    assert figures_from_bars(make_bars(alternating(126))).volatility is not None
+
+
+def test_between_126_and_251_returns_the_stock_findings_say_they_cover_less_than_a_year():
+    figures = figures_from_bars(make_bars(alternating(150)))
+    assert figures.returns == 150 and figures.reasons == {}
+    overlay = Overlay(PRESETS["moderate"], (Holding("A", 100.0),), 100.0)
+    found = findings_for(replace(figures, traded_value=1e9), overlay)
+    for check in STOCK_CHECKS:
+        assert found[check].status == "ok"
+        assert found[check].message.endswith(" (measured over the last 150 daily returns, less than a year).")
+    assert "less than a year" not in found["liquidity"].message and "less than a year" not in found["position"].message
+    assert found["volatility"].message.startswith("Volatility 15.9% is within your limits (warning at 35.0%)")
+
+
+def test_a_full_year_of_returns_keeps_the_plain_message():
+    figures = figures_from_bars(make_bars(alternating(300)))
+    assert figures.returns == 252
+    found = findings_for(figures, Overlay(profile(volatility=(0.2, 0.3))))
+    assert found["volatility"].message == "Volatility 15.9% is within your limits (warning at 20.0%)."
+
+
+def calm(count=300):
+    return [100.0 * (1 + 0.004 * math.sin(i * 0.7) + 0.0002 * i) for i in range(count)]
+
+
+def test_a_bonus_inside_the_window_is_adjusted_away_and_the_figures_say_so():
+    closes, cut = calm(), 220
+    plain = make_bars(closes, volume=1000.0)
+    broken = [replace(bar, open=bar.open * 2, high=bar.high * 2, low=bar.low * 2, close=bar.close * 2, volume=500.0) for bar in plain[:cut]] + plain[cut:]
+    figures, expected = figures_from_bars(broken), figures_from_bars(plain)
+    assert expected.adjustment_note == "" and expected.volatility < 0.1
+    assert replace(figures, adjustment_note="") == expected
+    assert figures.adjustment_note.startswith("Prices adjusted for 1 split or bonus event(s)") and "(x0.5)" in figures.adjustment_note
+
+
+def test_the_liquidity_figure_uses_the_adjusted_volume():
+    plain = make_bars([100.0] * 200, volume=1000.0)
+    broken = [replace(bar, open=200.0, close=200.0, volume=500.0) for bar in plain[:190]] + plain[190:]
+    assert figures_from_bars(broken).traded_value == pytest.approx(100.0 * 1000.0)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), 0.0, -5.0, float("inf")])
+def test_a_bad_close_in_the_middle_is_dropped_never_read_as_a_price(bad):
+    bars = make_bars(calm())
+    holed = bars[:150] + [replace(bars[150], close=bad)] + bars[151:]
+    figures = figures_from_bars(holed)
+    assert figures == figures_from_bars(bars[:150] + bars[151:])
+    assert all(math.isfinite(value) for value in (figures.volatility, figures.drawdown, figures.var_95, figures.cvar_95))
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_a_bar_with_a_volume_that_is_not_a_number_is_dropped_whole(bad):
+    bars = make_bars(calm())
+    holed = bars[:150] + [replace(bars[150], close=bars[150].close * 1.3, volume=bad)] + bars[151:]
+    assert figures_from_bars(holed) == figures_from_bars(bars[:150] + bars[151:])
+
+
+def test_a_zero_close_and_a_missing_volume_never_raise():
+    bars = make_bars(calm())
+    figures = figures_from_bars([replace(bars[0], close=0.0, open=0.0)] + bars[1:-1] + [replace(bars[-1], volume=float("nan"))])
+    assert figures.volatility is not None and math.isfinite(figures.traded_value)
+    assert figures_from_bars([replace(bar, close=0.0) for bar in bars]).reasons["volatility"].startswith("only 0 daily prices")
+
+
+def test_a_figure_that_is_not_a_number_is_unchecked_never_within_the_limits():
+    for value in (float("nan"), float("inf")):
+        found = findings_for(Figures(volatility=value), Overlay(profile(volatility=(0.2, 0.3))))["volatility"]
+        assert found.status == "unchecked" and found.value is None
+        assert found.message == "Volatility not checked: the price history has gaps."
+
+
+def test_holdings_too_large_to_add_up_leave_the_money_checks_unchecked():
+    overlay = Overlay(profile(position=(0.1, 0.2), concentration=(0.2, 0.4)), (Holding("A", 1e308), Holding("B", 1e308)), 1e308)
+    found = findings_for(Figures(), overlay)
+    assert {f.status for f in found.values()} == {"unchecked"}
+    assert all("too large" in f.message for f in found.values())
+
+
+def test_an_infinite_traded_value_leaves_liquidity_unchecked():
+    found = findings_for(Figures(traded_value=float("inf")), Overlay(profile(liquidity=(0.02, 0.05)), amount=1000.0))
+    assert found["liquidity"].status == "unchecked"
 
 
 def with_volume(bar, volume):
@@ -213,3 +303,6 @@ def test_a_verdict_after_the_overlay_still_passes_the_verdict_contract():
     bad = {**VERDICT, "pre_overlay_verdict": "Maybe", "risk_findings": ["not an object"]}
     errors = validate_judge_verdict(bad)
     assert any("pre_overlay_verdict" in e for e in errors) and any("risk_findings" in e for e in errors)
+    for verdict in ("Buy", "Overweight", "Hold", "Underweight", "Sell"):
+        for status in ("ok", "warn", "breach", "unchecked"):
+            assert validate_judge_verdict(apply_overlay({**VERDICT, "verdict": verdict}, [finding(status)])) == []
