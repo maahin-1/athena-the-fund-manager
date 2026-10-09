@@ -32,14 +32,14 @@ These defaults are starting points, not calibrated to any data; the report says 
 
 ## What it computes
 
-All from figures already fetched for the analysis (about 1 year of daily bars; the metrics packet's window):
+All from the instrument's own price history, which the analysis has already fetched (about 1 year of daily bars; the metrics packet's window of 252 returns):
 
-- `volatility`, `drawdown`: the metrics packet's `volatility` and `max_drawdown` (drawdown sign flipped to a positive size).
-- `var_95`, `cvar_95`: new pure functions in `metrics/stats.py`, historical simulation on the same window of daily returns: VaR is minus the 5th percentile of the returns (numpy's default linear interpolation), CVaR is minus the mean of the returns at or below that percentile. Tested against hand-computed values. Both added to the packet.
+- `volatility`, `drawdown`: the metrics engine's `annualized_volatility` and `max_drawdown`, computed by the overlay on that window (drawdown sign flipped to a positive size).
+- `var_95`, `cvar_95`: new pure functions in `metrics/stats.py`, historical simulation on the same window of daily returns: VaR is minus the 5th percentile of the returns (numpy's default linear interpolation), CVaR is minus the mean of the returns at or below that percentile. Tested against hand-computed values. The overlay computes them itself from the stock's bars; they are not added to the metrics packet, so the overlay needs no market series.
 - `liquidity`: the median of `close x volume` over the last 20 bars; the check is `amount / median traded value`. Zero or missing volume is reported as "not checked: no volume data".
 - `position`: `(existing value of this symbol + amount) / (total holdings + amount)`.
 - `concentration`: sum of squared weights across all holdings with the buy applied. The finding's text names the largest holding and its share.
-- `beta` against NIFTY 50 is shown for context only (no limit).
+- Beta is not part of the overlay: the risk panel already shows it.
 
 A figure that cannot be computed (too little history) is a finding with status `unchecked` and the reason, so the report never implies a clean bill of health from missing data.
 
@@ -49,7 +49,7 @@ A figure that cannot be computed (too little history) is a finding with status `
 
 `apply_overlay(verdict, findings) -> verdict` (pure):
 
-1. Every `breach` and `warn` is appended to `key_risks` (breaches first), even when the verdict does not change.
+1. Every `breach` and `warn` is put at the front of `key_risks` (breaches first, ahead of the specialists' own risks), even when the verdict does not change.
 2. If any finding is a `breach` and the specialists' verdict is `Buy` or `Overweight`, the final verdict becomes `Hold`, the original is kept in `pre_overlay_verdict`, and `key_risks` starts with "Held back by your risk limits: ...".
 3. `Hold`, `Underweight` and `Sell` never change: a risk limit may stop a purchase but never stops a sale. Warnings never change a verdict.
 4. The findings go in the verdict as a plain list so the dashboard and a report can draw them; the verdict contract gains the optional keys `pre_overlay_verdict` and `risk_findings` (the schema validator learns them).
@@ -57,9 +57,9 @@ A figure that cannot be computed (too little history) is a finding with status `
 ## Wiring
 
 - `athena.risk_overlay` (new package, no I/O): `model` (profile, limit, holding, finding, presets), `parse` (profile and holdings parsing with `ProfileError`, a `ValueError`), `checks` (the findings), `apply` (the override).
-- The orchestrator takes an optional `overlay` (profile, holdings, amount); after the blend it computes the findings from the risk packet and bars it already builds and applies the override. With no profile given, nothing changes: today's behaviour is the default.
+- The orchestrator takes an optional `overlay` (profile, holdings, amount); after the blend it computes the findings from the instrument's bars (the same shared price download the specialists and charts use) and applies the override. With no profile given, nothing changes: today's behaviour is the default.
 - CLI: `--profile NAME|FILE.json` (default none), `--holdings FILE.csv`, `--amount RUPEES`. The text report gains a "Risk overlay" block.
-- Dashboard: a sidebar section "Risk profile" (preset picker, the limits as number boxes, a CSV upload, an amount box); `DashboardView` carries the plain findings and the pre-overlay verdict; the verdict line shows "Hold (held back from Buy)" with the reason, and a "Risk overlay" panel lists each check with a mark, the value and the limit. Nothing is stored by the app: the profile and holdings live in the session or in the person's own files, and every function takes them as arguments, so a hosted version can pass them per request.
+- Dashboard: a sidebar section "Risk profile" (preset picker, the limits as number boxes, a box to paste the holdings CSV or a file upload, an amount box); the findings and the pre-overlay verdict travel inside `view.verdict`, so `DashboardView` itself is unchanged; the verdict line shows "Hold (held back from Buy)" with the reason, and a "Risk overlay" panel lists each check with a mark, the value and the limit. Nothing is stored by the app: the profile and holdings live in the session or in the person's own files, and every function takes them as arguments, so a hosted version can pass them per request.
 
 ## Honest limits, stated in the report
 
