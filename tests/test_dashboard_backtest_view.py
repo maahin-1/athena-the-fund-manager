@@ -3,7 +3,6 @@ from datetime import date
 
 from dash_fakes import trend_runs
 
-from athena.backtest.adjust import Adjustment, adjustment_note
 from athena.backtest.rules import RULES
 from athena.backtest.summary import num, pct
 from athena.dashboard.backtest_view import build_backtest_view
@@ -54,9 +53,7 @@ def test_the_blinding_result_is_carried_through_per_rule():
     assert [panel.blinded_identical for panel in build_backtest_view("SBIN", runs, "").panels] == [True, False]
 
 
-def test_detected_splits_become_one_note_worded_as_in_the_command_line_report():
-    events = (Adjustment(date(2024, 10, 28), 0.5),)
-    adjusted = [replace(run, adjustments=events) for run in RUNS]
-    view = build_backtest_view("SBIN", adjusted, "")
-    assert view.notes == (adjustment_note(events),) and "2024-10-28 (x0.5)" in view.notes[0]
+def test_the_notes_the_caller_gives_are_the_views_notes_and_there_are_none_by_default():
+    notes = ("Prices adjusted for 1 recorded split or bonus event(s), each confirmed by the price gap: 2024-10-28 (x0.5, yahoo).",)
+    assert build_backtest_view("SBIN", RUNS, "", notes).notes == notes
     assert build_backtest_view("SBIN", RUNS, "").notes == ()

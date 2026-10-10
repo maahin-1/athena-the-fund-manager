@@ -10,10 +10,11 @@ RESOLUTION_PATHS = ("debate", "blend")
 _SPECIALIST_KEYS = {"signal", "confidence", "reasoning", "data_coverage", "missing"}
 _VERDICT_KEYS = {
     "verdict", "conviction", "key_risks", "resolution_path", "debate_transcript_ref", "panel_agreement", "contested",
-    "pre_overlay_verdict", "risk_findings",
+    "pre_overlay_verdict", "held_back_by", "risk_findings",
 }
 _VERDICT_REQUIRED = {"verdict", "conviction", "key_risks", "resolution_path"}
 HELD_BACK_VERDICTS = ("Buy", "Overweight")  # the only calls a risk limit can hold back, always to Hold
+HELD_BY = ("risk limits", "price data")  # who held a verdict back
 FINDING_STATUSES = ("ok", "warn", "breach", "unchecked")
 _FINDING_KEYS = {"check", "status", "message"}
 
@@ -94,6 +95,11 @@ def validate_judge_verdict(verdict: Any) -> list[str]:
             errors.append(f"pre_overlay_verdict must be Buy or Overweight, got {held!r}")
         elif verdict.get("verdict") != "Hold":
             errors.append(f"a verdict held back from {held} must be Hold, got {verdict.get('verdict')!r}")
+    if "held_back_by" in verdict:
+        if verdict["held_back_by"] not in HELD_BY:
+            errors.append(f"held_back_by must be one of {list(HELD_BY)}, got {verdict['held_back_by']!r}")
+        elif "pre_overlay_verdict" not in verdict:
+            errors.append("held_back_by needs a pre_overlay_verdict")
     if "risk_findings" in verdict:
         errors += _finding_errors(verdict["risk_findings"])
     return errors

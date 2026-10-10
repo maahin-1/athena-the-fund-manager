@@ -4,12 +4,13 @@ from dataclasses import replace
 import pytest
 from bar_factory import NOW, make_bars
 
-from athena.backtest.adjust import Adjustment
 from athena.backtest.cli import BacktestWorld, analyze, assumptions, format_runs, main, run_rules
 from athena.backtest.engine import Config
 from athena.backtest.rules import RULES, Rule
 from athena.contracts import AthenaError, Record
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET
+from athena.price_integrity.events import PriceEvent
+from athena.price_integrity.history import CheckedHistory
 from athena.resolver import InstrumentIndex, InstrumentResolver
 from athena.store import DataStore
 from athena.trading_calendar import ist_date
@@ -97,36 +98,40 @@ def test_main_reports_errors_without_a_traceback(capsys):
     assert main(["SBIN"], factory=broken) == 1 and "error: no price data" in capsys.readouterr().out
 
 
-def test_a_bonus_issue_is_adjusted_before_either_replay_so_buy_and_hold_sees_the_true_move():
+def test_bars_are_replayed_as_given_so_a_halving_nobody_recorded_stays_a_halving():
     market = world()
+    true = run_rules(BARS, ["trend"], market.riskfree, market.index)
+    unrecorded = run_rules(BONUS_BARS, ["trend"], market.riskfree, market.index)
+    assert unrecorded[0].summary.benchmark_total_return < true[0].summary.benchmark_total_return - 0.3  # nothing adjusted it away
+    assert not hasattr(unrecorded[0], "adjustments") and unrecorded[0].blinded_identical
+
+
+def test_bars_the_checked_layer_adjusted_for_a_recorded_bonus_replay_like_the_true_history():
+    market = world()
+    event = PriceEvent(ist_date(BARS[BREAK].timestamp), 2.0)  # a 1:1 bonus is recorded as a 2-for-1 split
+    checked = CheckedHistory(lambda symbol: list(BONUS_BARS), lambda symbol: [event])
     true = run_rules(BARS, ["trend", "persona"], market.riskfree, market.index)
-    runs = run_rules(BONUS_BARS, ["trend", "persona"], market.riskfree, market.index)
-    expected = (Adjustment(ist_date(BARS[BREAK].timestamp), 0.5),)
-    assert [run.adjustments for run in runs] == [expected, expected] and [run.adjustments for run in true] == [(), ()]
+    runs = run_rules(checked("SBIN"), ["trend", "persona"], market.riskfree, market.index)
     for adjusted, real in zip(runs, true):
         assert adjusted.summary.benchmark_total_return == pytest.approx(real.summary.benchmark_total_return)
-    assert runs[0].summary.benchmark_total_return > 0.2  # unadjusted, the halving would show as a loss
-    assert runs[0].result.trades == () and runs[0].result.in_market[-1]  # no stop fired on a gap that never happened
-    assert all(run.blinded_identical for run in runs)  # the blinded replay sees the adjusted bars too
+    assert runs[0].result.trades == () and all(run.blinded_identical for run in runs)
 
 
-def test_the_report_names_the_adjustments_on_the_line_before_the_blinding_check_only_when_there_were_any():
-    text, _ = analyze(world(bars=BONUS_BARS), "SBIN", ["trend"])
+def test_the_report_prints_the_worlds_price_notes_on_the_lines_before_the_blinding_check():
+    noted = replace(world(), notes=lambda symbol: [f"note one for {symbol}", "note two"])
+    text, _ = analyze(noted, "SBIN", ["trend"])
     lines = text.splitlines()
     at = next(i for i, line in enumerate(lines) if line.startswith("Blinding check"))
-    assert lines[at - 1] == (
-        "Prices adjusted for 1 split or bonus event(s) found from an overnight price break, not from corporate-action "
-        f"data: {ist_date(BARS[BREAK].timestamp)} (x0.5)."
-    )
+    assert lines[at - 2 : at] == ["note one for SBIN", "note two"]
     plain, _ = analyze(world(), "SBIN", ["trend"])
-    assert "Prices adjusted" not in plain and "Prices adjusted" not in format_runs("SBIN", [])
+    assert "note one" not in plain and "note one" not in format_runs("SBIN", [])
 
 
 def test_the_assumptions_state_costs_stop_timing_cash_adjustment_index_and_open_positions():
     text = assumptions(Config())
     for expected in ("15 bps per side", "2 x ATR below the entry fill", "decisions at the close", "fills at the next open",
-                     "cash earns nothing", "overnight rate", "penalises time in cash", "splits and bonuses",
-                     "large overnight breaks", "never for dividends", "NIFTY 50 comparison is a price index",
+                     "cash earns nothing", "overnight rate", "penalises time in cash", "splits, bonuses and demergers",
+                     "no record explains", "never for dividends", "NIFTY 50 comparison is a price index",
                      "open at the end counts in the total return but not in the trade statistics"):
         assert expected in text
     assert text.count(". ") <= 1  # one or two sentences

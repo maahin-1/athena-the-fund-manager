@@ -19,6 +19,7 @@ def apply_overlay(verdict: dict[str, Any], findings: Sequence[Finding]) -> dict[
     risks = [f.message for f in breaches] + [f.message for f in warnings]
     if breaches and verdict["verdict"] in CAPPABLE:
         out["pre_overlay_verdict"] = verdict["verdict"]
+        out["held_back_by"] = "risk limits"
         out["verdict"] = "Hold"
         risks.insert(0, f"{HELD_BACK}: the specialists said {verdict['verdict']}.")
     out["key_risks"] = risks + list(verdict["key_risks"])

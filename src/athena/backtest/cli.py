@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from athena.adapters.prices import JugaadPriceAdapter, YahooPriceAdapter, ohlcv_chain
-from athena.backtest.adjust import Adjustment, adjust_for_splits, adjustment_note
 from athena.backtest.blinding import blind_bars
 from athena.backtest.engine import BacktestResult, Config, run_backtest, same_decisions
 from athena.backtest.rules import RULES, Rule, SeriesRule
@@ -20,6 +19,8 @@ from athena.loaders.nse_holidays import NseHolidayLoader, load_calendar
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET, NseMasterLoader
 from athena.metrics.series import Series
 from athena.orchestrator.builders import history_fetcher
+from athena.price_integrity.history import CheckedHistory
+from athena.price_integrity.live import live_price_checks
 from athena.resolver import CLI_SHOWN, Ambiguity, InstrumentIndex, InstrumentResolver, more_candidates_line
 from athena.store import DataStore
 from athena.strategies.compile import strategy_rule
@@ -37,6 +38,7 @@ class BacktestWorld:
     fetch_bars: Callable[[str], list[Bar]]  # symbol -> a long daily history
     riskfree: Series  # Nifty 1D Rate Index levels, for the Sharpe ratio
     index: Series  # NIFTY 50 closes, for the market comparison
+    notes: Callable[[str], Sequence[str]] = lambda symbol: ()  # what was adjusted in a symbol's bars, or could not be explained
 
 
 def live_world(years: int = BACKTEST_YEARS) -> BacktestWorld:
@@ -53,7 +55,9 @@ def live_world(years: int = BACKTEST_YEARS) -> BacktestWorld:
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     refresh_risk_data(store, since=ist_date(utc_now()) - timedelta(days=365 * years))
     market = risk_world_from_store(store)
-    return BacktestWorld(resolver, history_fetcher(chain, days=365 * years), market.rate, market.price_index)
+    events, actions = live_price_checks()
+    history = CheckedHistory(history_fetcher(chain, days=365 * years), events, actions)
+    return BacktestWorld(resolver, history, market.rate, market.price_index, history.notes)
 
 
 @dataclass(frozen=True)
@@ -61,7 +65,6 @@ class RuleRun:
     summary: Summary
     blinded_identical: bool
     result: BacktestResult
-    adjustments: tuple[Adjustment, ...] = ()  # splits and bonuses found in the bars, the same on every run
     description: str = ""  # what the rule does, in words
 
 
@@ -69,7 +72,8 @@ def run_rules(
     bars: list[Bar], rules: Sequence[str | Rule | SeriesRule], riskfree: Series, index: Series, config: Config = Config()
 ) -> list[RuleRun]:
     """Each rule (a built-in name, a packet rule or a strategy rule) on the real bars and again on blinded bars (ticker
-    removed, dates shifted, prices rescaled), both after adjusting the prices for the splits and bonus issues found in them."""
+    removed, dates shifted, prices rescaled). The bars are used as given: adjusting them for corporate actions is done before
+    they get here, and only against a recorded event."""
     unknown = [rule for rule in rules if isinstance(rule, str) and rule not in RULES]
     if unknown:
         raise ValueError(f"unknown rule {unknown[0]!r}; choose from {sorted(RULES)}")
@@ -78,7 +82,7 @@ def run_rules(
     repeated = [name for name in names if names.count(name) > 1]
     if repeated:
         raise ValueError(f"two rules are named {repeated[0]!r}; give each a different name")
-    adjusted, adjustments = adjust_for_splits(bars)
+    adjusted = sorted(bars, key=lambda bar: bar.timestamp)
     blinded = blind_bars(adjusted)
     runs = []
     for rule in resolved:
@@ -88,7 +92,6 @@ def run_rules(
                 summarize(real, riskfree, index),
                 same_decisions(real, run_backtest(blinded, rule, config)),
                 real,
-                adjustments,
                 rule.description,
             )
         )
@@ -107,8 +110,8 @@ def assumptions(config: Config = Config(), stop: str | None = None) -> str:
     return (
         f"Assumed costs {config.cost_bps_per_side:g} bps per side and {stop}; decisions at the close, fills at the next "
         "open; cash earns nothing, while the Sharpe ratio still subtracts the overnight rate, which penalises time in "
-        "cash. Prices are adjusted only for splits and bonuses detected from large overnight breaks, never for "
-        "dividends; the NIFTY 50 comparison is a price index; and a position still open at the end counts in the total "
+        "cash. Prices are adjusted only for corporate actions on record (splits, bonuses and demergers confirmed by the "
+        "price gap), never for dividends, and a large overnight break no record explains is left as it is; the NIFTY 50 comparison is a price index; and a position still open at the end counts in the total "
         "return but not in the trade statistics."
     )
 
@@ -124,11 +127,10 @@ def assumptions_for(runs: Sequence[RuleRun], config: Config = Config()) -> str:
     return assumptions(runs[0].result.config, f"a stop that depends on the rule ({each})")
 
 
-def format_runs(symbol: str, runs: list[RuleRun], config: Config = Config()) -> str:
+def format_runs(symbol: str, runs: list[RuleRun], config: Config = Config(), notes: Sequence[str] = ()) -> str:
     blocks = [format_summary(run.summary, symbol, run.description) for run in runs]
     checks = ", ".join(f"{run.summary.rule}: {'same trades' if run.blinded_identical else 'DIFFERENT'}" for run in runs)
-    note = adjustment_note(runs[0].adjustments) if runs else None
-    return "\n\n".join(blocks) + "\n\n" + (f"{note}\n" if note else "") + (
+    return "\n\n".join(blocks) + "\n\n" + "".join(f"{note}\n" for note in notes) + (
         f"Blinding check (ticker removed, dates shifted 28 years, prices rescaled to 100): {checks}."
         f"\n{assumptions_for(runs, config)}\n{DISCLAIMER}"
     )
@@ -148,7 +150,7 @@ def analyze(world: BacktestWorld, query: str, rules: Sequence[str | Rule | Serie
     if resolved.asset_class not in ("equity", "etf"):
         raise ValueError(f"backtests cover stocks and ETFs, not {resolved.asset_class}")
     runs = run_rules(world.fetch_bars(resolved.identifier), rules, world.riskfree, world.index)
-    return format_runs(resolved.identifier, runs), 0
+    return format_runs(resolved.identifier, runs, notes=world.notes(resolved.identifier)), 0
 
 
 def load_strategy_rule(path: str) -> SeriesRule:

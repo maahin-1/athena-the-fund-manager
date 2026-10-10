@@ -103,3 +103,11 @@ def test_risk_overlay_errors(changes, fragment):
 def test_verdict_missing_key():
     bad = {k: v for k, v in GOOD_VERDICT.items() if k != "conviction"}
     assert "missing keys: ['conviction']" in validate_judge_verdict(bad)
+
+
+def test_held_back_by_names_who_held_the_verdict_and_needs_the_original_call():
+    held = {**GOOD_VERDICT, "verdict": "Hold", "pre_overlay_verdict": "Buy"}
+    assert validate_judge_verdict({**held, "held_back_by": "price data"}) == []
+    assert validate_judge_verdict({**held, "held_back_by": "risk limits"}) == []
+    assert "held_back_by must be one of" in validate_judge_verdict({**held, "held_back_by": "luck"})[0]
+    assert validate_judge_verdict({**GOOD_VERDICT, "held_back_by": "price data"}) == ["held_back_by needs a pre_overlay_verdict"]

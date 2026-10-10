@@ -233,15 +233,14 @@ def test_when_prices_cannot_be_fetched_the_money_checks_still_run_and_can_hold_a
     assert result.verdict["verdict"] == "Hold" and result.verdict["pre_overlay_verdict"] == "Buy"
 
 
-def test_a_bonus_in_the_price_history_is_adjusted_and_the_note_says_so():
+def test_the_overlay_measures_the_bars_as_given_and_never_adjusts_a_break_itself():
     closes = [100.0 + 0.1 * (i % 3) for i in range(300)]
-    bars = make_bars([c * 2 for c in closes[:250]] + closes[250:], symbol="SBIN")
-    result = with_prices(Prices(bars)).analyze("sbin", CAUTIOUS)
-    assert [f["status"] for f in result.verdict["risk_findings"]] == ["ok"] and result.verdict["verdict"] == "Buy"
-    (note,) = [note for note in result.notes if note.startswith("risk profile 'cautious' applied")]
-    assert "Prices adjusted for 1 split or bonus event(s)" in note
+    broken = make_bars([c * 2 for c in closes[:250]] + closes[250:], symbol="SBIN")  # a halving nobody recorded
+    seen = with_prices(Prices(broken)).analyze("sbin", CAUTIOUS)
     calm = with_prices(Prices(make_bars(closes, symbol="SBIN"))).analyze("sbin", CAUTIOUS)
-    assert not any("Prices adjusted" in note for note in calm.notes)
+    assert [f["status"] for f in calm.verdict["risk_findings"]] == ["ok"] and calm.verdict["verdict"] == "Buy"
+    assert [f["status"] for f in seen.verdict["risk_findings"]] != ["ok"]  # the halving is a 50% fall to it
+    assert not any("adjusted" in note for note in seen.notes + calm.notes)
 
 
 def test_asking_for_an_overlay_with_no_price_source_is_an_error_not_a_silent_skip():
@@ -261,3 +260,21 @@ def test_with_no_specialist_view_the_hold_stands_and_the_findings_are_still_list
     result = with_prices(Prices(), {"quant_technical": FakeSpecialist(out("neutral", 0, "insufficient", ["x"]))}).analyze("sbin", CAUTIOUS)
     assert result.status == NO_VIEW and result.verdict["verdict"] == "Hold" and "pre_overlay_verdict" not in result.verdict
     assert result.verdict["risk_findings"][0]["status"] == "breach"
+
+
+def test_a_flagged_price_break_holds_a_buy_back_with_or_without_a_risk_profile_and_adds_a_note():
+    flags = lambda symbol: ["2026-03-02 (x0.5)"]  # noqa: E731
+    specialists = {"quant_technical": FakeSpecialist(out("bullish", 80))}
+    orchestrator = Orchestrator(FakeResolver(resolution()), specialists, {"quant_technical": lambda r: {}}, price_flags=flags)
+    result = orchestrator.analyze("sbin")
+    assert result.verdict["verdict"] == "Hold" and result.verdict["held_back_by"] == "price data" and result.verdict["pre_overlay_verdict"] == "Buy"
+    assert any("2026-03-02 (x0.5)" in note and "held back" in note for note in result.notes) and validate_judge_verdict(result.verdict) == []
+
+
+def test_no_flags_means_the_verdict_is_the_blend_and_the_gate_is_asked_for_the_resolved_symbol():
+    asked = []
+    specialists = {"quant_technical": FakeSpecialist(out("bullish", 80))}
+    orchestrator = Orchestrator(
+        FakeResolver(resolution()), specialists, {"quant_technical": lambda r: {}}, price_flags=lambda symbol: asked.append(symbol) or ()
+    )
+    assert orchestrator.analyze("sbin").verdict["verdict"] == "Buy" and asked == ["SBIN"]

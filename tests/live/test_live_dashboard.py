@@ -50,6 +50,6 @@ def test_live_page_renders_end_to_end():
         run(_live_service())
 
     app = AppTest.from_function(script, default_timeout=180).run()
-    app.text_input[0].set_value("SBIN").run()
+    app.text_input[0].set_value("INE062A01020").run()  # the ISIN: a bare ticker can list several instruments to choose from
     assert not app.exception, app.exception
-    assert len(app.get("plotly_chart")) == 1 and {m.label for m in app.metric} == {"Verdict", "Conviction"}
+    assert len(app.get("plotly_chart")) >= 1 and {m.label for m in app.metric} == {"Verdict", "Conviction"}

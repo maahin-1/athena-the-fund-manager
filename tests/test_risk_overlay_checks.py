@@ -73,20 +73,21 @@ def calm(count=300):
     return [100.0 * (1 + 0.004 * math.sin(i * 0.7) + 0.0002 * i) for i in range(count)]
 
 
-def test_a_bonus_inside_the_window_is_adjusted_away_and_the_figures_say_so():
+def test_a_break_inside_the_window_is_not_adjusted_here_so_the_figures_see_it_as_the_move_it_looks_like():
+    """Adjusting is the job of the checked-price layer, against a record. Here a halving stays a halving."""
     closes, cut = calm(), 220
     plain = make_bars(closes, volume=1000.0)
     broken = [replace(bar, open=bar.open * 2, high=bar.high * 2, low=bar.low * 2, close=bar.close * 2, volume=500.0) for bar in plain[:cut]] + plain[cut:]
-    figures, expected = figures_from_bars(broken), figures_from_bars(plain)
-    assert expected.adjustment_note == "" and expected.volatility < 0.1
-    assert replace(figures, adjustment_note="") == expected
-    assert figures.adjustment_note.startswith("Prices adjusted for 1 split or bonus event(s)") and "(x0.5)" in figures.adjustment_note
+    assert figures_from_bars(plain).volatility < 0.1
+    seen, clean = figures_from_bars(broken), figures_from_bars(plain)
+    assert seen.drawdown > 0.45 and seen.volatility > clean.volatility * 2  # the halving is a 50% fall
+    assert not hasattr(seen, "adjustment_note")
 
 
-def test_the_liquidity_figure_uses_the_adjusted_volume():
+def test_the_liquidity_figure_uses_the_volume_as_given():
     plain = make_bars([100.0] * 200, volume=1000.0)
     broken = [replace(bar, open=200.0, close=200.0, volume=500.0) for bar in plain[:190]] + plain[190:]
-    assert figures_from_bars(broken).traded_value == pytest.approx(100.0 * 1000.0)
+    assert figures_from_bars(broken).traded_value == pytest.approx(100.0 * 1000.0)  # the last 20 bars are all after the break
 
 
 @pytest.mark.parametrize("bad", [float("nan"), 0.0, -5.0, float("inf")])

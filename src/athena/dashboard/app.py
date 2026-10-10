@@ -176,7 +176,8 @@ def render(view: DashboardView) -> None:
     left.metric("Verdict", verdict.get("verdict", "-"))
     right.metric("Conviction", verdict.get("conviction", 0))
     if "pre_overlay_verdict" in verdict:
-        st.warning(f"Held back from {verdict['pre_overlay_verdict']} by your risk limits: the specialists said {verdict['pre_overlay_verdict']}.")
+        cause = "unreliable price data" if verdict.get("held_back_by") == "price data" else "your risk limits"
+        st.warning(f"Held back from {verdict['pre_overlay_verdict']} by {cause}: the specialists said {verdict['pre_overlay_verdict']}.")
     if view.status == NO_VIEW:
         st.warning("No specialist had enough data to form a view.")
 

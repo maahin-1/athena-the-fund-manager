@@ -42,6 +42,7 @@ class DashboardService:
         clock: Callable[[], datetime] = utc_now,
         fundamentals: FundamentalsSource | None = None,
         long_history: Callable[[str], list[Bar]] | None = None,
+        backtest_notes: Callable[[str], Sequence[str]] | None = None,
         price_notes: Callable[[str], Sequence[str]] | None = None,
         event_notes: Callable[[str, str], Sequence[str]] | None = None,
     ):
@@ -51,6 +52,7 @@ class DashboardService:
         self._clock = clock
         self._fundamentals = fundamentals
         self._long_history = long_history
+        self._backtest_notes = backtest_notes  # the same for the long history the backtest runs on
         self._price_notes = price_notes  # what was adjusted in the bars, or could not be explained, for this symbol
         self._event_notes = event_notes  # what the exchange and the press said about those events: (symbol, company name)
 
@@ -90,7 +92,8 @@ class DashboardService:
         runs = run_rules(
             self._long_history(identifier), list(RULES) if rules is None else list(rules), self._risk_world.rate, self._risk_world.price_index
         )
-        return build_backtest_view(identifier, runs, assumptions_for(runs))
+        notes = self._backtest_notes(identifier) if self._backtest_notes is not None else ()
+        return build_backtest_view(identifier, runs, assumptions_for(runs), notes)
 
 
 def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
@@ -101,13 +104,12 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     refresh_risk_data(sources.store, since=ist_date(utc_now()) - timedelta(days=365 * BACKTEST_YEARS))
     orchestrator = build_orchestrator(
         sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals,
-        news=sources.news, events=sources.history.events_found,
+        news=sources.news, events=sources.history.events_found, price_flags=sources.history.price_flags,
     )
-    long_history = lru_cache(maxsize=8)(
-        CheckedHistory(history_fetcher(sources.chain, days=365 * BACKTEST_YEARS), sources.events, sources.actions)
-    )
+    checked_long_history = CheckedHistory(history_fetcher(sources.chain, days=365 * BACKTEST_YEARS), sources.events, sources.actions)
+    long_history = lru_cache(maxsize=8)(checked_long_history)
     return DashboardService(
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
-        long_history=long_history, price_notes=lambda symbol: sources.history.notes(symbol) + sources.warnings,
+        long_history=long_history, backtest_notes=checked_long_history.notes, price_notes=lambda symbol: sources.history.notes(symbol) + sources.warnings,
         event_notes=EventConfirmer(sources.news, sources.history.events_found) if sources.news is not None else None,
     )

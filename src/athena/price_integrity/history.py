@@ -8,6 +8,9 @@ from athena.price_integrity.actions import CorporateAction
 from athena.price_integrity.events import PriceEvent
 from athena.price_integrity.merge import merge_events
 from athena.price_integrity.reconcile import Reconciled, describe, reconcile
+from athena.trading_calendar import ist_date
+
+FLAG_BARS = 253  # the risk and trend figures read about a year of closes
 
 
 class CheckedHistory:
@@ -49,6 +52,15 @@ class CheckedHistory:
 
     def notes(self, symbol: str) -> tuple[str, ...]:
         return self._notes.get(symbol, ())
+
+    def price_flags(self, symbol: str, bars: int = FLAG_BARS) -> tuple[str, ...]:
+        """The large overnight breaks no record explains, inside the last `bars` bars of the last fetch of `symbol`: the
+        reason a figure measured over that stretch cannot be trusted. Empty when there are none (or nothing was fetched)."""
+        result = self._results.get(symbol)
+        if result is None or not result.bars:
+            return ()
+        since = ist_date(result.bars[-bars:][0].timestamp)
+        return tuple(f"{m.day} (x{m.ratio:.2g})" for m in result.unexplained if m.day >= since)
 
     def events_found(self, symbol: str) -> tuple[tuple[date, str, str], ...]:
         """What the last fetch of `symbol` found, as (day, kind, label), oldest first: events it adjusted for, large breaks

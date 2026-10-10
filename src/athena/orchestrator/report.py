@@ -27,7 +27,7 @@ def format_result(result: OrchestrationResult) -> str:
     lines = [
         f"{resolution.identifier}  {resolution.name}  ({resolution.asset_class}, {resolution.resolution_path} match)",
         f"Verdict: {verdict['verdict']}  conviction {verdict['conviction']}  ({verdict['resolution_path']})"
-        + (f"  [held back from {verdict['pre_overlay_verdict']} by your risk limits]" if "pre_overlay_verdict" in verdict else "")
+        + (f"  [held back from {verdict['pre_overlay_verdict']} by {'unreliable price data' if verdict.get('held_back_by') == 'price data' else 'your risk limits'}]" if "pre_overlay_verdict" in verdict else "")
         + ("  [no specialist had enough data]" if result.status == NO_VIEW else ""),
     ]
     if result.specialists:

@@ -36,4 +36,4 @@ def test_live_a_person_written_strategy_runs_next_to_a_built_in_rule(world):
     print("\n" + text)
     assert code == 0 and "rule: trend" in text and "rule: Close above the 20-day average" in text
     assert "Buy when the close crosses above the simple moving average (length 20)." in text
-    assert "Prices adjusted for 1 split or bonus event" in text  # the adjustment still applies to a strategy
+    assert "Prices adjusted for 1 recorded split or bonus event" in text  # the adjustment still applies to a strategy

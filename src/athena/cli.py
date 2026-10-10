@@ -28,7 +28,7 @@ from athena.orchestrator.builders import RequestCache, history_fetcher, technica
 from athena.orchestrator.fundamentals_source import LiveFundamentals
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
 from athena.orchestrator.report import format_result
-from athena.price_integrity.events import PriceEvent, yahoo_split_events
+from athena.price_integrity.events import PriceEvent
 from athena.news.google_news import GoogleNews
 from athena.news.hub import NewsHub, default_sources
 from athena.news.nse_announcements import NseAnnouncements
@@ -36,7 +36,7 @@ from athena.news.packet import news_packet_builder
 from athena.news.publisher_feeds import PublisherFeeds
 from athena.price_integrity.actions import CorporateAction
 from athena.price_integrity.history import CheckedHistory
-from athena.price_integrity.nse_actions import NseActions
+from athena.price_integrity.live import live_price_checks
 from athena.resolver import InstrumentIndex, InstrumentResolver, Resolution
 from athena.risk_overlay.parse import build_overlay
 from athena.store import DataStore
@@ -59,6 +59,7 @@ def build_orchestrator(
     fundamentals: Callable[[Resolution], dict] | None = None,
     news: NewsHub | None = None,
     events: Callable[[str], Sequence[tuple]] | None = None,
+    price_flags: Callable[[str], Sequence[str]] | None = None,
 ) -> Orchestrator:
     """Wire the specialists to their data and models: Quant/Technical always, and Valuation, Moat & Quality and
     Earnings Intelligence when a `fundamentals` source is given (all three read the same packet), and News Sentiment when
@@ -75,7 +76,7 @@ def build_orchestrator(
     if news is not None:
         specialists["news_sentiment"] = Specialist(NEWS_SENTIMENT, client)
         builders["news_sentiment"] = news_packet_builder(news, events or (lambda symbol: ()), fetch)
-    return Orchestrator(resolver, specialists, builders, bars=fetch)
+    return Orchestrator(resolver, specialists, builders, bars=fetch, price_flags=price_flags)
 
 
 GOOGLE_NEWS_SETTING = "ATHENA_GOOGLE_NEWS"  # "1" turns Google News on: its robots.txt disallows crawling, so it is off by default
@@ -116,8 +117,7 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True)
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
-    events = lru_cache(maxsize=512)(yahoo_split_events)  # events change rarely: one Yahoo call per symbol per session
-    actions = lru_cache(maxsize=512)(NseActions())
+    events, actions = live_price_checks()
     history = CheckedHistory(history_fetcher(chain), events, actions)
     google_on = read_setting(GOOGLE_NEWS_SETTING, env_file).strip() == "1"  # off unless the owner switches it on
     news = NewsHub(default_sources(NseAnnouncements(), PublisherFeeds(), GoogleNews(enabled=google_on)))
@@ -130,7 +130,7 @@ def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:
     sources = live_sources(env_file)
     return build_orchestrator(
         sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals,
-        news=sources.news, events=sources.history.events_found,
+        news=sources.news, events=sources.history.events_found, price_flags=sources.history.price_flags,
     )
 
 

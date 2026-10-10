@@ -5,7 +5,6 @@ import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
-from athena.backtest.adjust import adjust_for_splits, adjustment_note
 from athena.contracts import Bar, InsufficientData
 from athena.metrics import stats
 from athena.risk_overlay.model import (
@@ -33,7 +32,6 @@ class Figures:
     reasons: dict[str, str] = field(default_factory=dict)
     window: str = ""
     returns: int | None = None  # how many daily returns the stock figures cover; None when not measured from bars
-    adjustment_note: str = ""  # the sentence that says the prices were adjusted for splits or bonuses, if they were
 
 
 def _clean(bars: Sequence[Bar]) -> list[Bar]:
@@ -50,9 +48,10 @@ def _clean(bars: Sequence[Bar]) -> list[Bar]:
 
 
 def figures_from_bars(bars: Sequence[Bar]) -> Figures:
-    """The figures from clean bars adjusted for splits and bonuses (the main price source is unadjusted, so a 1:1 bonus
-    would otherwise read as a fall of half in one day)."""
-    adjusted, adjustments = adjust_for_splits(_clean(bars))
+    """The figures from clean bars exactly as given. Splits, bonuses and demergers are adjusted before the bars get here, and
+    only against a recorded event (athena.price_integrity); a break nothing explains stays in the bars, where it shows as the
+    move it looks like and the verdict is held back by the price gate (athena.orchestrator.price_gate)."""
+    adjusted = sorted(_clean(bars), key=lambda bar: bar.timestamp)
     closes = [bar.close for bar in adjusted][-WINDOW:]
     reasons: dict[str, str] = {}
     values: dict[str, float] = {}
@@ -78,8 +77,7 @@ def figures_from_bars(bars: Sequence[Bar]) -> Figures:
     else:
         reasons["liquidity"] = "there is no volume data"
     return Figures(
-        window=f"last {len(returns)} daily returns", reasons=reasons, returns=len(returns),
-        adjustment_note=adjustment_note(adjustments) or "", **values,
+        window=f"last {len(returns)} daily returns", reasons=reasons, returns=len(returns), **values,
     )
 
 

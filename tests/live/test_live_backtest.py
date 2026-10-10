@@ -39,4 +39,4 @@ def test_live_market_series_cover_the_backtest_window(world):
 def test_live_backtest_adjusts_the_reliance_bonus_issue(world):
     text, code = analyze(world, "RELIANCE", ["trend"])
     print("\n" + text)
-    assert code == 0 and "Prices adjusted for 1 split or bonus event" in text and "2024-10-28" in text
+    assert code == 0 and "Prices adjusted for 1 recorded split or bonus event" in text and "2024-10-28" in text

@@ -6,6 +6,7 @@ from typing import Any
 
 from athena.agents.base import Specialist
 from athena.contracts import AthenaError, Bar
+from athena.orchestrator.price_gate import gate_verdict
 from athena.orchestrator.blend import CONFLICT_MIN_CONFIDENCE, Conflict, blend_signals
 from athena.resolver import Ambiguity, InstrumentResolver, Resolution
 from athena.risk_overlay.apply import UNCALIBRATED_NOTE, apply_overlay
@@ -49,8 +50,10 @@ class Orchestrator:
         packet_builders: Mapping[str, PacketBuilder],
         conflict_min_confidence: int = CONFLICT_MIN_CONFIDENCE,
         bars: Callable[[str], Sequence[Bar]] | None = None,
+        price_flags: Callable[[str], Sequence[str]] | None = None,
     ):
         self._resolver = resolver
+        self._price_flags = price_flags  # symbol -> the unexplained price breaks in its last year of bars
         self._bars = bars  # the price history the risk overlay measures; shared with whoever else reads it
         self._specialists = dict(specialists)
         self._packet_builders = dict(packet_builders)
@@ -84,6 +87,10 @@ class Orchestrator:
                 "so the verdict reflects just those"
             )
         verdict = blended.verdict
+        flags = tuple(self._price_flags(resolution.identifier)) if self._price_flags is not None else ()
+        if flags:
+            verdict = gate_verdict(verdict, flags)
+            notes.append(f"price breaks no record explains ({', '.join(flags)}): a purchase call is held back")
         if overlay is None:
             notes.append(RISK_OVERLAY_NOTE)
         else:
@@ -116,7 +123,5 @@ class Orchestrator:
             note = f"risk limits could not be fully checked: {exc}"
         else:
             note = f"risk profile '{overlay.profile.name}' applied: {UNCALIBRATED_NOTE}"
-            if figures.adjustment_note:
-                note += f". {figures.adjustment_note}"
         findings = run_checks(figures, overlay, resolution.identifier)
         return apply_overlay(verdict, findings), note
