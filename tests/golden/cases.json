@@ -448,5 +448,28 @@
     100
    ]
   }
+ },
+ {
+  "symbol": "KOTAKBANK",
+  "why": "5-for-1 split inside the year: raw prices read a one-year fall of 78%, the adjusted series a rise of about 11%. The technical packet must be built from adjusted prices.",
+  "figures": {
+   "technical.rsi_14": [
+    40,
+    90
+   ],
+   "fundamentals.pe_trailing": [
+    5,
+    40
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "not_aligned",
+    "aligned_up"
+   ]
+  },
+  "missing": [
+   "fundamentals.fcf_yield"
+  ]
  }
 ]

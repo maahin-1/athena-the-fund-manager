@@ -1,0 +1,10 @@
+[
+ {"symbol": "KOTAKBANK", "why": "5-for-1 split", "applied": ["2026-01-14"], "unexplained": []},
+ {"symbol": "HDFCBANK", "why": "1:1 bonus", "applied": ["2025-08-26"], "unexplained": []},
+ {"symbol": "RELIANCE", "why": "1:1 bonus", "applied": ["2024-10-28"], "unexplained": []},
+ {"symbol": "NESTLEIND", "why": "split", "applied": ["2025-08-08"], "unexplained": []},
+ {"symbol": "WIPRO", "why": "bonus", "applied": ["2024-12-03"], "unexplained": []},
+ {"symbol": "VEDL", "why": "demerger: Yahoo has no record, so the 63% drop must stay and be flagged", "applied": [], "unexplained": ["2026-04-30"]},
+ {"symbol": "TCS", "why": "control: no event, no break", "applied": [], "unexplained": []},
+ {"symbol": "SUZLON", "why": "control: a steep real fall that must not be touched", "applied": [], "unexplained": []}
+]

@@ -10,6 +10,8 @@ from typing import Any
 
 from athena.contracts import Bar
 from athena.metrics.fundamentals import build_fundamentals_packet
+from athena.price_integrity.events import PriceEvent
+from athena.price_integrity.reconcile import reconcile
 from athena.technicals.packet import build_technical_packet
 
 GOLDEN_DIR = Path(__file__).resolve().parents[3] / "tests" / "golden"
@@ -47,6 +49,7 @@ class Snapshot:
     bars: tuple[Bar, ...]
     fundamentals: Mapping[str, Any] | None  # the stored statements payload, or None for an ETF
     fundamentals_as_of: datetime | None
+    events: tuple[PriceEvent, ...] = ()  # recorded splits and bonuses as of the capture; the bars are raw, as the exchange printed them
 
 
 @dataclass(frozen=True)
@@ -99,6 +102,7 @@ def snapshot_to_json(snapshot: Snapshot) -> dict[str, Any]:
         "bars": [[b.timestamp.isoformat(), b.open, b.high, b.low, b.close, b.volume] for b in snapshot.bars],
         "fundamentals": snapshot.fundamentals,
         "fundamentals_as_of": snapshot.fundamentals_as_of.isoformat() if snapshot.fundamentals_as_of else None,
+        "events": [[event.day.isoformat(), event.ratio, event.source] for event in snapshot.events],
     }
 
 
@@ -112,6 +116,7 @@ def snapshot_from_json(raw: Mapping[str, Any]) -> Snapshot:
     return Snapshot(
         raw["symbol"], raw["name"], raw["asset_class"], captured, bars, raw.get("fundamentals"),
         datetime.fromisoformat(as_of) if as_of else None,
+        tuple(PriceEvent(date.fromisoformat(day), float(ratio), source) for day, ratio, source in raw.get("events", [])),
     )
 
 
@@ -127,10 +132,11 @@ def load_index_history(path: Path | None = None) -> dict[date, dict[str, float]]
 
 def build_packets(snapshot: Snapshot, index_history: Mapping[date, Mapping[str, float]]) -> dict[str, dict[str, Any]]:
     """The packets the specialists read, rebuilt from the frozen data as of the day it was captured."""
-    packets = {TECHNICAL: build_technical_packet(snapshot.symbol, snapshot.captured_on, snapshot.bars)}
+    bars = reconcile(snapshot.bars, snapshot.events).bars  # the same event-verified prices the dashboard reads
+    packets = {TECHNICAL: build_technical_packet(snapshot.symbol, snapshot.captured_on, bars)}
     if snapshot.fundamentals is not None and snapshot.fundamentals_as_of is not None and snapshot.bars:
         packets[FUNDAMENTALS] = build_fundamentals_packet(
-            snapshot.symbol, snapshot.fundamentals_as_of, snapshot.fundamentals, snapshot.bars[-1].close,
+            snapshot.symbol, snapshot.fundamentals_as_of, snapshot.fundamentals, bars[-1].close,
             snapshot.captured_on, index_history,
         )
     return packets
