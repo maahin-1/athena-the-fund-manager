@@ -11,6 +11,7 @@ from athena.adapters.prices import JugaadPriceAdapter, YahooPriceAdapter, ohlcv_
 from athena.agents.base import Specialist
 from athena.agents.earnings_intelligence import EARNINGS_INTELLIGENCE
 from athena.agents.moat_quality import MOAT_QUALITY
+from athena.agents.news_sentiment import NEWS_SENTIMENT
 from athena.agents.quant_technical import QUANT_TECHNICAL
 from athena.agents.valuation import VALUATION
 from athena.clock import utc_now
@@ -31,6 +32,7 @@ from athena.price_integrity.events import PriceEvent, yahoo_split_events
 from athena.news.google_news import GoogleNews
 from athena.news.hub import NewsHub, default_sources
 from athena.news.nse_announcements import NseAnnouncements
+from athena.news.packet import news_packet_builder
 from athena.news.publisher_feeds import PublisherFeeds
 from athena.price_integrity.actions import CorporateAction
 from athena.price_integrity.history import CheckedHistory
@@ -55,9 +57,12 @@ def build_orchestrator(
     clock: Callable[[], datetime] = utc_now,
     fetch_bars: Callable[[str], list[Bar]] | None = None,
     fundamentals: Callable[[Resolution], dict] | None = None,
+    news: NewsHub | None = None,
+    events: Callable[[str], Sequence[tuple]] | None = None,
 ) -> Orchestrator:
     """Wire the specialists to their data and models: Quant/Technical always, and Valuation, Moat & Quality and
-    Earnings Intelligence when a `fundamentals` source is given (all three read the same packet).
+    Earnings Intelligence when a `fundamentals` source is given (all three read the same packet), and News Sentiment when
+    a `news` hub is given (`events` says which corporate events the price checks found, so the model can tell them from news).
     `fetch_bars` and `fundamentals` let a caller share downloads with other consumers (the dashboard does)."""
     fetch = fetch_bars or history_fetcher(chain, clock=clock)
     client = llm_router.client_for("specialist")
@@ -67,6 +72,9 @@ def build_orchestrator(
         for name, spec in FUNDAMENTAL_SPECIALISTS.items():
             specialists[name] = Specialist(spec, client)
             builders[name] = fundamentals
+    if news is not None:
+        specialists["news_sentiment"] = Specialist(NEWS_SENTIMENT, client)
+        builders["news_sentiment"] = news_packet_builder(news, events or (lambda symbol: ()), fetch)
     return Orchestrator(resolver, specialists, builders, bars=fetch)
 
 
@@ -121,7 +129,8 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
 def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:
     sources = live_sources(env_file)
     return build_orchestrator(
-        sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals
+        sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals,
+        news=sources.news, events=sources.history.events_found,
     )
 
 

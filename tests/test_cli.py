@@ -64,7 +64,7 @@ def test_offline_end_to_end_resolves_fetches_analyzes_and_blends():
     assert llm_router.roles == ["specialist"]
     assert result.status == OK and result.resolution.identifier == "SBIN"
     assert result.specialists["quant_technical"]["data_coverage"] == "full"
-    assert set(result.skipped) == {"valuation", "moat_quality", "earnings_intelligence"}
+    assert set(result.skipped) == {"valuation", "moat_quality", "earnings_intelligence", "news_sentiment"}
     assert validate_judge_verdict(result.verdict) == []
     assert result.verdict["verdict"] == "Buy" and result.verdict["conviction"] == 72
 

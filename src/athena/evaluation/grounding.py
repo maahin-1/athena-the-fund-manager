@@ -8,7 +8,8 @@ from typing import Any
 # A number as written in prose: optional sign, digits with thousands commas, optional decimals, optional %.
 # Digits glued to letters ("FY2026", "Q3") are not numbers.
 _NUMBER_IN_TEXT = re.compile(r"(?<![\w.])[-+]?\d[\d,]*(?:\.\d+)?%?")
-_NUMBER_IN_DATA_STRING = re.compile(r"\d+(?:\.\d+)?")
+# in data text a figure may carry thousands commas (a headline saying Rs 15,000 crore): read it as one number, not 15 and 000
+_NUMBER_IN_DATA_STRING = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,7 @@ def collect_values(data: Any) -> list[float]:
     if isinstance(data, (int, float)):
         values.append(float(data))
     elif isinstance(data, str):
-        values.extend(float(match) for match in _NUMBER_IN_DATA_STRING.findall(data))
+        values.extend(float(match.replace(",", "")) for match in _NUMBER_IN_DATA_STRING.findall(data))
     elif isinstance(data, Mapping):
         for item in data.values():
             values.extend(collect_values(item))

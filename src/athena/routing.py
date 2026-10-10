@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 ROUTING: dict[str, tuple[str, ...]] = {
-    "equity": ("valuation", "moat_quality", "quant_technical", "earnings_intelligence"),
+    "equity": ("valuation", "moat_quality", "quant_technical", "earnings_intelligence", "news_sentiment"),
     "etf": ("etf_analyst", "quant_technical"),
     "mutual_fund": ("mutual_fund_analyst",),
     "bond": ("credit_analysis", "duration_curve"),

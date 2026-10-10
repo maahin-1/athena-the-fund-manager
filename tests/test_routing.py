@@ -4,7 +4,7 @@ from athena.routing import ROUTING, route
 
 
 def test_equity_and_etf_routes():
-    assert route("equity") == ("valuation", "moat_quality", "quant_technical", "earnings_intelligence")
+    assert route("equity") == ("valuation", "moat_quality", "quant_technical", "earnings_intelligence", "news_sentiment")
     assert route("etf") == ("etf_analyst", "quant_technical")
 
 

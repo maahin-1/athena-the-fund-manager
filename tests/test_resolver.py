@@ -69,7 +69,7 @@ def test_ticker_variants_resolve_exactly(resolver, query):
     assert (result.asset_class, result.identifier, result.identifier_type, result.resolution_path, result.confidence) == (
         "equity", "SBIN", "ticker", "exact", 1.0,
     )
-    assert result.routed_specialists == ("valuation", "moat_quality", "quant_technical", "earnings_intelligence")
+    assert result.routed_specialists == ("valuation", "moat_quality", "quant_technical", "earnings_intelligence", "news_sentiment")
 
 
 @pytest.mark.parametrize("query, symbol", [("m&m", "M&M"), ("bajaj-auto", "BAJAJ-AUTO")])

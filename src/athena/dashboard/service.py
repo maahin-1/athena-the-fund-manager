@@ -100,7 +100,8 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     sources = live_sources(env_file)
     refresh_risk_data(sources.store, since=ist_date(utc_now()) - timedelta(days=365 * BACKTEST_YEARS))
     orchestrator = build_orchestrator(
-        sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals
+        sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals,
+        news=sources.news, events=sources.history.events_found,
     )
     long_history = lru_cache(maxsize=8)(
         CheckedHistory(history_fetcher(sources.chain, days=365 * BACKTEST_YEARS), sources.events, sources.actions)

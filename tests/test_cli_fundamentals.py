@@ -63,14 +63,14 @@ def test_the_three_fundamentals_specialists_are_the_ones_the_routing_table_names
     assert set(FUNDAMENTAL_SPECIALISTS) == {"valuation", "moat_quality", "earnings_intelligence"}
 
 
-def test_with_a_fundamentals_source_a_stock_is_analysed_by_all_four_equity_specialists():
+def test_with_a_fundamentals_source_a_stock_is_analysed_by_the_four_specialists_that_exist_without_news():
     source = FakeFundamentals()
     result = orchestrator(source).analyze("sbin")
-    assert result.status == OK and result.skipped == {}
+    assert result.status == OK and result.skipped == {"news_sentiment": "not built yet"}  # no news hub was given
     assert set(result.specialists) == {"quant_technical", "valuation", "moat_quality", "earnings_intelligence"}
     assert all(out["data_coverage"] == "full" for out in result.specialists.values())
     assert validate_judge_verdict(result.verdict) == [] and result.verdict["verdict"] == "Buy"
-    assert not any("routed specialists ran" in note for note in result.notes)
+    assert any("only 4 of 5 routed specialists ran" in note for note in result.notes)
     assert source.calls == ["SBIN"] * 3  # one call per specialist; LiveFundamentals caches the work behind them
 
 
@@ -84,12 +84,66 @@ def test_an_etf_never_calls_the_fundamentals_source_and_keeps_its_own_routing():
 def test_without_a_fundamentals_source_the_three_are_listed_as_not_built_as_before():
     result = orchestrator(None).analyze("sbin")
     assert set(result.specialists) == {"quant_technical"}
-    assert result.skipped == {name: "not built yet" for name in FUNDAMENTAL_SPECIALISTS}
+    assert result.skipped == {name: "not built yet" for name in (*FUNDAMENTAL_SPECIALISTS, "news_sentiment")}
 
 
 def test_a_fundamentals_failure_skips_the_three_but_the_technical_specialist_still_answers():
     result = orchestrator(FakeFundamentals(error=EmptyRefreshError("no statements for 'SBIN'"))).analyze("sbin")
     assert set(result.specialists) == {"quant_technical"} and result.status == OK
-    assert set(result.skipped) == set(FUNDAMENTAL_SPECIALISTS)
-    assert all("EmptyRefreshError" in why for why in result.skipped.values())
-    assert any("only 1 of 4 routed specialists ran" in note for note in result.notes)
+    assert set(result.skipped) == set(FUNDAMENTAL_SPECIALISTS) | {"news_sentiment"}
+    assert all("EmptyRefreshError" in result.skipped[name] for name in FUNDAMENTAL_SPECIALISTS)
+    assert any("only 1 of 5 routed specialists ran" in note for note in result.notes)
+
+
+# ---- the news specialist, when a news hub is given
+
+from datetime import date, datetime, timezone  # noqa: E402
+
+from athena.contracts import AthenaError  # noqa: E402
+from athena.news.hub import NewsHub  # noqa: E402
+from athena.news.model import NewsItem, SourceResult  # noqa: E402
+
+TODAY = date.today()
+
+
+def headline(days_ago, title):
+    day = date.fromordinal(TODAY.toordinal() - days_ago)
+    return NewsItem(title, "ET", datetime(day.year, day.month, day.day, 9, tzinfo=timezone.utc), "https://x", "google news")
+
+
+def with_news(hub, events=None):
+    fetched = []
+    router = FakeLLMRouter()
+    built = build_orchestrator(
+        make_resolver(), router, FakeChain(), fetch_bars=lambda s: fetched.append(s) or make_bars([100.0] * 60, symbol=s),
+        fundamentals=FakeFundamentals(), news=hub, events=events,
+    )
+    return built, fetched
+
+
+def test_with_a_news_hub_the_fifth_specialist_runs_after_the_bars_are_fetched():
+    hub = NewsHub([("t", lambda symbol, names, since, until, extra="": SourceResult([headline(i + 1, f"SBIN headline {i}") for i in range(4)]))])
+    built, fetched = with_news(hub)
+    result = built.analyze("sbin")
+    assert result.skipped == {} and "news_sentiment" in result.specialists and fetched.count("SBIN") >= 1
+    assert result.specialists["news_sentiment"]["data_coverage"] == "full"
+
+
+def test_a_news_hub_that_finds_nothing_makes_the_news_specialist_abstain_and_the_rest_still_answer():
+    built, _ = with_news(NewsHub([("t", lambda symbol, names, since, until, extra="": SourceResult([]))]))
+    result = built.analyze("sbin")
+    assert result.specialists["news_sentiment"]["data_coverage"] == "insufficient" and "quant_technical" in result.specialists
+
+
+def test_a_news_source_that_fails_is_a_note_in_the_packet_not_a_failed_analysis():
+    def broken(symbol, names, since, until, extra=""):
+        raise AthenaError("NSE announcements unavailable for SBIN: HTTP 403")
+
+    built, _ = with_news(NewsHub([("t", broken)]))
+    result = built.analyze("sbin")
+    assert result.status == OK and result.specialists["news_sentiment"]["data_coverage"] == "insufficient"
+
+
+def test_an_etf_is_not_routed_to_the_news_specialist():
+    built, _ = with_news(NewsHub([("t", lambda symbol, names, since, until, extra="": SourceResult([]))]))
+    assert "news_sentiment" not in built.analyze("niftybees").skipped

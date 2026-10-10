@@ -68,3 +68,10 @@ def test_small_integers_are_ignored_by_default_but_can_be_checked():
 def test_text_without_figures_is_trivially_grounded():
     result = check_grounded("The stock looks fairly valued.", PACKET)
     assert result.ok and result.checked == 0
+
+
+def test_a_figure_with_thousands_commas_inside_data_text_is_one_number():
+    data = {"headlines": [{"title": "Wipro buyback of Rs 15,000 crore opens; Rs 1,23,456 and 24,930.5 crore"}]}
+    assert check_grounded("A 15,000 crore buyback.", data).ok
+    assert check_grounded("About 24,930.5 crore.", data).ok
+    assert not check_grounded("A 18,000 crore buyback.", data).ok
