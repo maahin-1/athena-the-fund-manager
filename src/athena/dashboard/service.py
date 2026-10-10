@@ -97,7 +97,7 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
         sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals
     )
     long_history = lru_cache(maxsize=8)(
-        CheckedHistory(history_fetcher(sources.chain, days=365 * BACKTEST_YEARS), sources.events)
+        CheckedHistory(history_fetcher(sources.chain, days=365 * BACKTEST_YEARS), sources.events, sources.actions)
     )
     return DashboardService(
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,

@@ -1,10 +1,14 @@
 [
- {"symbol": "KOTAKBANK", "why": "5-for-1 split", "applied": ["2026-01-14"], "unexplained": []},
- {"symbol": "HDFCBANK", "why": "1:1 bonus", "applied": ["2025-08-26"], "unexplained": []},
- {"symbol": "RELIANCE", "why": "1:1 bonus", "applied": ["2024-10-28"], "unexplained": []},
- {"symbol": "NESTLEIND", "why": "split", "applied": ["2025-08-08"], "unexplained": []},
- {"symbol": "WIPRO", "why": "bonus", "applied": ["2024-12-03"], "unexplained": []},
- {"symbol": "VEDL", "why": "demerger: Yahoo has no record, so the 63% drop must stay and be flagged", "applied": [], "unexplained": ["2026-04-30"]},
- {"symbol": "TCS", "why": "control: no event, no break", "applied": [], "unexplained": []},
- {"symbol": "SUZLON", "why": "control: a steep real fall that must not be touched", "applied": [], "unexplained": []}
+ {"symbol": "KOTAKBANK", "why": "5-for-1 split, recorded by Yahoo and by NSE with the same ratio", "applied": ["2026-01-14"], "noted": [], "unexplained": []},
+ {"symbol": "HDFCBANK", "why": "1:1 bonus; a special dividend is noted, not adjusted", "applied": ["2025-08-26"], "noted": ["2025-07-25 other"], "unexplained": []},
+ {"symbol": "RELIANCE", "why": "1:1 bonus", "applied": ["2024-10-28"], "noted": [], "unexplained": []},
+ {"symbol": "NESTLEIND", "why": "1:1 bonus", "applied": ["2025-08-08"], "noted": ["2026-07-10 other"], "unexplained": []},
+ {"symbol": "WIPRO", "why": "1:1 bonus; a buyback is noted, not adjusted", "applied": ["2024-12-03"], "noted": ["2026-06-05 buyback"], "unexplained": []},
+ {"symbol": "VEDL", "why": "demerger: only NSE records it and gives no ratio, so the factor comes from the 63% price gap", "applied": ["2026-04-30"], "noted": [], "unexplained": []},
+ {"symbol": "ITC", "why": "demerger of the hotels business: NSE records it but the price gap is inside the normal band, so it is noted and nothing is adjusted", "applied": [], "noted": ["2025-01-06 demerger"], "unexplained": []},
+ {"symbol": "HINDUNILVR", "why": "demerger recorded with no price break: noted, not adjusted", "applied": [], "noted": ["2024-11-06 other", "2025-12-05 demerger"], "unexplained": []},
+ {"symbol": "ADANIENT", "why": "rights issue: noted, not adjusted", "applied": [], "noted": ["2025-11-17 rights"], "unexplained": []},
+ {"symbol": "INFY", "why": "buyback: noted, not adjusted", "applied": [], "noted": ["2025-11-14 buyback"], "unexplained": []},
+ {"symbol": "TCS", "why": "control: special dividends only, nothing adjusted", "applied": [], "noted": ["2025-01-17 other", "2026-01-16 other"], "unexplained": []},
+ {"symbol": "SUZLON", "why": "control: a steep real fall that must not be touched", "applied": [], "noted": [], "unexplained": []}
 ]

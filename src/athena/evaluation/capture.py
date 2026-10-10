@@ -32,7 +32,8 @@ def capture_symbol(sources: LiveSources, symbol: str) -> Snapshot:
         record = sources.fundamentals._loader.read(DATASET, resolved.identifier)
         payload, as_of = record.payload, record.as_of
     return Snapshot(
-        resolved.identifier, resolved.name, resolved.asset_class, utc_now(), bars, payload, as_of, _events(sources, resolved.identifier)
+        resolved.identifier, resolved.name, resolved.asset_class, utc_now(), bars, payload, as_of, _events(sources, resolved.identifier),
+        _actions(sources, resolved.identifier),
     )
 
 
@@ -44,12 +45,22 @@ def _events(sources: LiveSources, symbol: str) -> tuple:
         return ()
 
 
+def _actions(sources: LiveSources, symbol: str) -> tuple:
+    try:
+        return tuple(sources.actions(symbol))
+    except AthenaError as exc:
+        print(f"{symbol}: no NSE corporate actions recorded, {exc}")
+        return ()
+
+
 def backfill_events(sources: LiveSources, directory: Path) -> list[str]:
     """Add today's recorded events to snapshots captured before they carried any, leaving their bars untouched."""
     done = []
     for path in sorted((directory / "snapshots").glob("*.json")):
         snapshot = load_snapshot(path.stem, directory / "snapshots")
-        write_snapshot(replace(snapshot, events=_events(sources, snapshot.symbol)), directory / "snapshots")
+        write_snapshot(
+            replace(snapshot, events=_events(sources, snapshot.symbol), actions=_actions(sources, snapshot.symbol)), directory / "snapshots"
+        )
         done.append(snapshot.symbol)
     return done
 

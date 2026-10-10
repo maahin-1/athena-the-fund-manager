@@ -10,8 +10,10 @@ from typing import Any
 
 from athena.contracts import Bar
 from athena.metrics.fundamentals import build_fundamentals_packet
+from athena.price_integrity.actions import CorporateAction
 from athena.price_integrity.events import PriceEvent
-from athena.price_integrity.reconcile import reconcile
+from athena.price_integrity.merge import merge_events
+from athena.price_integrity.reconcile import Reconciled, reconcile
 from athena.technicals.packet import build_technical_packet
 
 GOLDEN_DIR = Path(__file__).resolve().parents[3] / "tests" / "golden"
@@ -50,6 +52,7 @@ class Snapshot:
     fundamentals: Mapping[str, Any] | None  # the stored statements payload, or None for an ETF
     fundamentals_as_of: datetime | None
     events: tuple[PriceEvent, ...] = ()  # recorded splits and bonuses as of the capture; the bars are raw, as the exchange printed them
+    actions: tuple[CorporateAction, ...] = ()  # NSE's corporate-action rows as of the capture
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,7 @@ def snapshot_to_json(snapshot: Snapshot) -> dict[str, Any]:
         "fundamentals": snapshot.fundamentals,
         "fundamentals_as_of": snapshot.fundamentals_as_of.isoformat() if snapshot.fundamentals_as_of else None,
         "events": [[event.day.isoformat(), event.ratio, event.source] for event in snapshot.events],
+        "actions": [[a.day.isoformat(), a.kind, a.ratio, a.text, a.premium] for a in snapshot.actions],
     }
 
 
@@ -117,6 +121,7 @@ def snapshot_from_json(raw: Mapping[str, Any]) -> Snapshot:
         raw["symbol"], raw["name"], raw["asset_class"], captured, bars, raw.get("fundamentals"),
         datetime.fromisoformat(as_of) if as_of else None,
         tuple(PriceEvent(date.fromisoformat(day), float(ratio), source) for day, ratio, source in raw.get("events", [])),
+        tuple(CorporateAction(date.fromisoformat(day), kind, ratio, text, premium) for day, kind, ratio, text, premium in raw.get("actions", [])),
     )
 
 
@@ -130,9 +135,15 @@ def load_index_history(path: Path | None = None) -> dict[date, dict[str, float]]
     return {date.fromisoformat(day): dict(row) for day, row in json.loads(path.read_text(encoding="utf-8")).items()}
 
 
+def reconcile_snapshot(snapshot: Snapshot) -> Reconciled:
+    """The snapshot's raw bars checked against its recorded events and NSE rows, exactly as `CheckedHistory` does live."""
+    merged = merge_events(snapshot.events, snapshot.actions)
+    return reconcile(snapshot.bars, merged.events, snapshot.actions)
+
+
 def build_packets(snapshot: Snapshot, index_history: Mapping[date, Mapping[str, float]]) -> dict[str, dict[str, Any]]:
     """The packets the specialists read, rebuilt from the frozen data as of the day it was captured."""
-    bars = reconcile(snapshot.bars, snapshot.events).bars  # the same event-verified prices the dashboard reads
+    bars = reconcile_snapshot(snapshot).bars  # the same event-verified prices the dashboard reads
     packets = {TECHNICAL: build_technical_packet(snapshot.symbol, snapshot.captured_on, bars)}
     if snapshot.fundamentals is not None and snapshot.fundamentals_as_of is not None and snapshot.bars:
         packets[FUNDAMENTALS] = build_fundamentals_packet(

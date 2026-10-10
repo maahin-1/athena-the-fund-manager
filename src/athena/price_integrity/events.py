@@ -14,6 +14,7 @@ class PriceEvent:
     day: date  # the ex-date, an IST trading date
     ratio: float
     source: str = "yahoo"
+    kind: str = "split"  # split | bonus | demerger: a label for the notes; the adjustment is the ratio
 
     @property
     def factor(self) -> float:

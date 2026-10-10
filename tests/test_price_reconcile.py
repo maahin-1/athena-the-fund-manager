@@ -84,3 +84,59 @@ def test_events_from_before_the_history_or_after_it_are_neither_applied_nor_repo
     bars = make_bars(FLAT)
     result = reconcile(bars, [PriceEvent(date(2004, 8, 25), 2.0), PriceEvent(date(2030, 1, 1), 2.0)])
     assert not result.applied and not result.unseen and describe(result) == ()
+
+
+# ---- NSE actions: demergers adjusted from the price gap, everything else noted
+
+from athena.price_integrity.actions import CorporateAction  # noqa: E402
+
+
+def demerger(day, text="Demerger"):
+    return CorporateAction(day, "demerger", None, text)
+
+
+def test_a_recorded_demerger_with_a_price_break_is_adjusted_by_the_observed_gap_and_says_so():
+    bars = make_bars([100.0] * 30 + [37.0] * 30)  # a 63% fall on the ex-date
+    result = reconcile(bars, [], [demerger(day_of(bars, 30))])
+    assert [round(b.close, 4) for b in result.bars] == [37.0] * 60
+    assert len(result.applied) == 1 and result.applied[0].event.kind == "demerger" and not result.unexplained
+    note = describe(result)[0]
+    assert "demerger" in note and "price gap" in note and "market move" in note
+
+
+def test_the_same_fall_with_no_demerger_record_stays_unexplained_and_untouched():
+    bars = make_bars([100.0] * 30 + [37.0] * 30)
+    result = reconcile(bars, [], [])
+    assert [b.close for b in result.bars] == [100.0] * 30 + [37.0] * 30 and result.unexplained
+
+
+def test_a_demerger_with_no_break_in_the_prices_is_noted_not_adjusted():
+    bars = make_bars(FLAT + FLAT)
+    result = reconcile(bars, [], [demerger(day_of(bars, 30))])
+    assert [b.close for b in result.bars] == [100.0] * 60 and not result.applied
+    assert [a.kind for a in result.noted] == ["demerger"] and "not adjusted" in describe(result)[0]
+
+
+def test_rights_buybacks_and_other_rows_are_noted_and_change_no_price():
+    bars = make_bars(FLAT + FLAT)
+    actions = [
+        CorporateAction(day_of(bars, 10), "rights", 1 / 15, "Rights 1:15 @ Premium Rs 1247", 1247.0),
+        CorporateAction(day_of(bars, 20), "buyback", None, "Buy Back"),
+        CorporateAction(day_of(bars, 40), "other", None, "Special Dividend - Rs 40 Per Share"),
+    ]
+    result = reconcile(bars, [], actions)
+    assert [b.close for b in result.bars] == [100.0] * 60 and not result.applied and len(result.noted) == 3
+    note = describe(result)[0]
+    assert "Rights 1:15" in note and "Buy Back" in note and "Special Dividend" in note
+
+
+def test_nse_rows_outside_the_history_and_split_or_bonus_rows_are_not_noted_here():
+    bars = make_bars(FLAT)
+    actions = [CorporateAction(date(2004, 1, 1), "buyback", None, "Buy Back"), CorporateAction(day_of(bars, 10), "split", 5.0, "Split")]
+    assert not reconcile(bars, [], actions).noted
+
+
+def test_a_split_and_a_demerger_compose():
+    bars = make_bars([100.0] * 20 + [50.0] * 20 + [25.0] * 20)
+    result = reconcile(bars, [PriceEvent(day_of(bars, 20), 2.0)], [demerger(day_of(bars, 40))])
+    assert [b.close for b in result.bars] == pytest.approx([25.0] * 60) and len(result.applied) == 2

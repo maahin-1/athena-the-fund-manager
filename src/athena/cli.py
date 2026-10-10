@@ -28,7 +28,9 @@ from athena.orchestrator.fundamentals_source import LiveFundamentals
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
 from athena.orchestrator.report import format_result
 from athena.price_integrity.events import PriceEvent, yahoo_split_events
+from athena.price_integrity.actions import CorporateAction
 from athena.price_integrity.history import CheckedHistory
+from athena.price_integrity.nse_actions import NseActions
 from athena.resolver import InstrumentIndex, InstrumentResolver, Resolution
 from athena.risk_overlay.parse import build_overlay
 from athena.store import DataStore
@@ -74,6 +76,7 @@ class LiveSources:
     fundamentals: LiveFundamentals
     history: CheckedHistory  # the bars' fetcher: its notes say what was adjusted or could not be explained
     events: Callable[[str], Sequence[PriceEvent]]
+    actions: Callable[[str], Sequence[CorporateAction]]  # NSE's own corporate-action rows (demergers, rights, buybacks)
 
 
 def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
@@ -92,10 +95,11 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
     events = lru_cache(maxsize=512)(yahoo_split_events)  # events change rarely: one Yahoo call per symbol per session
-    history = CheckedHistory(history_fetcher(chain), events)
+    actions = lru_cache(maxsize=512)(NseActions())
+    history = CheckedHistory(history_fetcher(chain), events, actions)
     bars = RequestCache(history)
     fundamentals = LiveFundamentals(FundamentalsLoader(store), valuation_history(store), bars)
-    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events)
+    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions)
 
 
 def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:

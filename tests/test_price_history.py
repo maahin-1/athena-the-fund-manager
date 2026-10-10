@@ -30,3 +30,44 @@ def test_no_events_and_no_breaks_means_no_notes_and_the_bars_are_returned_unchan
     flat = make_bars([100.0] * 40)
     history = CheckedHistory(lambda symbol: list(flat), lambda symbol: [])
     assert history("X") == flat and history.notes("X") == ()
+
+
+# ---- with NSE's corporate actions as a second source
+
+from athena.price_integrity.actions import CorporateAction  # noqa: E402
+
+DEMERGER_BARS = make_bars([100.0] * 30 + [37.0] * 30, symbol="VEDL")
+DEMERGER_DAY = ist_date(DEMERGER_BARS[30].timestamp)
+
+
+def test_nse_demerger_row_adjusts_what_yahoo_cannot_know():
+    history = CheckedHistory(lambda s: list(DEMERGER_BARS), lambda s: [], lambda s: [CorporateAction(DEMERGER_DAY, "demerger", None, "Demerger")])
+    assert [round(b.close, 4) for b in history("VEDL")] == [37.0] * 60
+    assert "demerger" in history.notes("VEDL")[0]
+
+
+def test_nse_failing_leaves_yahoos_events_working_and_says_so():
+    def blocked(symbol):
+        raise AthenaError("NSE corporate actions unavailable for KOTAKBANK: HTTP 403")
+
+    history = CheckedHistory(lambda s: list(BARS), lambda s: [PriceEvent(EX_DATE, 5.0)], blocked)
+    assert [b.close for b in history("KOTAKBANK")] == [20.0] * 60
+    notes = history.notes("KOTAKBANK")
+    assert "NSE corporate actions unavailable" in notes[0] and any("adjusted for 1 recorded" in n for n in notes)
+
+
+def test_yahoo_failing_leaves_nses_split_text_working():
+    def broken(symbol):
+        raise AthenaError("corporate actions unavailable for KOTAKBANK: blocked")
+
+    row = CorporateAction(EX_DATE, "split", 5.0, "Face Value Split From Rs 5 To Re 1")
+    history = CheckedHistory(lambda s: list(BARS), broken, lambda s: [row])
+    assert [b.close for b in history("KOTAKBANK")] == [20.0] * 60
+
+
+def test_a_ratio_conflict_between_the_sources_adjusts_nothing_and_flags_it():
+    row = CorporateAction(EX_DATE, "split", 10.0, "Face Value Split From Rs 10 To Re 1")
+    history = CheckedHistory(lambda s: list(BARS), lambda s: [PriceEvent(EX_DATE, 5.0)], lambda s: [row])
+    assert [b.close for b in history("KOTAKBANK")] == [100.0] * 30 + [20.0] * 30
+    notes = history.notes("KOTAKBANK")
+    assert "disagree" in notes[0] and any("Unexplained" in n for n in notes)
