@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 
 from athena.adapters.prices import JugaadPriceAdapter, YahooPriceAdapter, ohlcv_chain
@@ -26,6 +27,8 @@ from athena.orchestrator.builders import RequestCache, history_fetcher, technica
 from athena.orchestrator.fundamentals_source import LiveFundamentals
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
 from athena.orchestrator.report import format_result
+from athena.price_integrity.events import PriceEvent, yahoo_split_events
+from athena.price_integrity.history import CheckedHistory
 from athena.resolver import InstrumentIndex, InstrumentResolver, Resolution
 from athena.risk_overlay.parse import build_overlay
 from athena.store import DataStore
@@ -69,6 +72,8 @@ class LiveSources:
     store: DataStore
     bars: RequestCache
     fundamentals: LiveFundamentals
+    history: CheckedHistory  # the bars' fetcher: its notes say what was adjusted or could not be explained
+    events: Callable[[str], Sequence[PriceEvent]]
 
 
 def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
@@ -86,9 +91,11 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True)
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
-    bars = RequestCache(history_fetcher(chain))
+    events = lru_cache(maxsize=512)(yahoo_split_events)  # events change rarely: one Yahoo call per symbol per session
+    history = CheckedHistory(history_fetcher(chain), events)
+    bars = RequestCache(history)
     fundamentals = LiveFundamentals(FundamentalsLoader(store), valuation_history(store), bars)
-    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals)
+    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events)
 
 
 def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:

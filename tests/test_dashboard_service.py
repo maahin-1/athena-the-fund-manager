@@ -39,11 +39,11 @@ class FakeOrchestrator:
         return result
 
 
-def make_service(result=None):
+def make_service(result=None, price_notes=None):
     fetch = CountingFetch()
     cache = RequestCache(fetch)
     orchestrator = FakeOrchestrator(cache, result)
-    service = DashboardService(orchestrator, cache, RiskWorld({}, {}, {}), clock=lambda: NOW)
+    service = DashboardService(orchestrator, cache, RiskWorld({}, {}, {}), clock=lambda: NOW, price_notes=price_notes)
     return service, fetch, orchestrator
 
 
@@ -173,3 +173,12 @@ def test_a_view_passes_the_risk_overlay_to_the_orchestrator_only_when_there_is_o
     overlay = Overlay(PRESETS["moderate"], (), 5000.0)
     service.view("sbin", overlay)
     assert orchestrator.overlays == [None, overlay]
+
+
+def test_the_price_notes_for_the_symbol_are_added_after_the_other_view_notes():
+    view = make_service(price_notes=lambda symbol: (f"Prices adjusted for {symbol}.",))[0].view("sbin")
+    assert view.notes[-1] == "Prices adjusted for SBIN."
+
+
+def test_without_a_price_notes_source_no_price_note_appears():
+    assert all("Prices adjusted" not in note for note in make_service()[0].view("sbin").notes)

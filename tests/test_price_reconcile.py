@@ -73,8 +73,14 @@ def test_input_is_not_changed_and_unsorted_bars_come_back_in_date_order():
 
 def test_the_notes_say_what_was_adjusted_what_is_unexplained_and_what_was_unseen():
     bars = make_bars([100.0] * 20 + [50.0] * 20 + [10.0] * 20)
-    result = reconcile(bars, [PriceEvent(day_of(bars, 20), 2.0), PriceEvent(date(2020, 1, 1), 3.0)])
+    result = reconcile(bars, [PriceEvent(day_of(bars, 20), 2.0), PriceEvent(day_of(bars, 55), 3.0)])
     notes = describe(result)
     assert len(notes) == 3
     assert "adjusted for 1 recorded" in notes[0] and "Unexplained" in notes[1] and "no matching price break" in notes[2]
     assert describe(reconcile(make_bars(FLAT), [])) == ()
+
+
+def test_events_from_before_the_history_or_after_it_are_neither_applied_nor_reported():
+    bars = make_bars(FLAT)
+    result = reconcile(bars, [PriceEvent(date(2004, 8, 25), 2.0), PriceEvent(date(2030, 1, 1), 2.0)])
+    assert not result.applied and not result.unseen and describe(result) == ()

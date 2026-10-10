@@ -47,6 +47,8 @@ def reconcile(bars: Sequence[Bar], events: Sequence[PriceEvent]) -> Reconciled:
     applied: list[Applied] = []
     unseen: list[PriceEvent] = []
     for event in sorted(events, key=lambda e: e.day):
+        if not days or not days[0] <= event.day <= days[-1]:
+            continue  # outside the history we hold: nothing to adjust and nothing to report
         anchor = bisect_left(days, event.day)  # the first trading day on or after the ex-date
         near = [i for i in range(anchor - SEARCH_DAYS, anchor + SEARCH_DAYS + 1) if i in gaps and i not in claimed]
         fits = [(abs(math.log(gaps[i] / event.factor)), i) for i in near if MATCH_LOW <= gaps[i] / event.factor <= MATCH_HIGH]

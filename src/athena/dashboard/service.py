@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from functools import lru_cache
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from athena.dashboard.view import DashboardView, build_view
 from athena.llm.envfile import DEFAULT_ENV_FILE
 from athena.orchestrator.builders import RequestCache, history_fetcher
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
+from athena.price_integrity.history import CheckedHistory
 from athena.resolver import Resolution
 from athena.risk_overlay.model import Overlay
 from athena.technicals.packet import build_technical_packet
@@ -39,6 +41,7 @@ class DashboardService:
         clock: Callable[[], datetime] = utc_now,
         fundamentals: FundamentalsSource | None = None,
         long_history: Callable[[str], list[Bar]] | None = None,
+        price_notes: Callable[[str], Sequence[str]] | None = None,
     ):
         self._orchestrator = orchestrator
         self._bars = bars
@@ -46,6 +49,7 @@ class DashboardService:
         self._clock = clock
         self._fundamentals = fundamentals
         self._long_history = long_history
+        self._price_notes = price_notes  # what was adjusted in the bars, or could not be explained, for this symbol
 
     def view(self, query: str, overlay: Overlay | None = None, list_relatives: bool = False) -> DashboardView:
         self._bars.clear()
@@ -66,7 +70,10 @@ class DashboardService:
                 fundamentals = self._fundamentals(result.resolution)
             except AthenaError as exc:
                 note = f"fundamentals unavailable: {exc}"
-        return build_view(result, bars, technical, risk, fundamentals, note)
+        view = build_view(result, bars, technical, risk, fundamentals, note)
+        if self._price_notes is None:
+            return view
+        return replace(view, notes=view.notes + tuple(self._price_notes(result.resolution.identifier)))
 
 
     def backtest(self, identifier: str, rules: Sequence[str | Rule | SeriesRule] | None = None) -> BacktestView:
@@ -89,8 +96,10 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     orchestrator = build_orchestrator(
         sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals
     )
-    long_history = lru_cache(maxsize=8)(history_fetcher(sources.chain, days=365 * BACKTEST_YEARS))
+    long_history = lru_cache(maxsize=8)(
+        CheckedHistory(history_fetcher(sources.chain, days=365 * BACKTEST_YEARS), sources.events)
+    )
     return DashboardService(
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
-        long_history=long_history,
+        long_history=long_history, price_notes=sources.history.notes,
     )
