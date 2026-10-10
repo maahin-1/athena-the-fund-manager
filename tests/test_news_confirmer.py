@@ -25,7 +25,7 @@ def test_each_found_event_is_looked_up_in_its_own_window_with_words_for_its_kind
     hub = hub_with([headline(KOTAK_DAY, "Kotak stock split: did shares really crash 80% today?")], calls=calls)
     confirm = EventConfirmer(hub, lambda symbol: [(KOTAK_DAY, "split", "split (x0.2)")], today=lambda: date(2026, 10, 10))
     notes = confirm("KOTAKBANK", "Kotak Mahindra Bank Limited")
-    assert calls == [("KOTAKBANK", date(2025, 12, 31), date(2026, 1, 21), "stock split")]
+    assert calls == [("KOTAKBANK", date(2025, 12, 31), date(2026, 1, 21), "(split OR bonus)")]
     assert len(notes) == 1 and "split (x0.2) on 2026-01-14: confirmed by 1 headline" in notes[0]
 
 

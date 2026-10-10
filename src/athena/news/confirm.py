@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from athena.news.model import NewsItem
+from athena.news.model import NewsItem, loose_names, mentions
 
 DAYS_BEFORE, DAYS_AFTER = 14, 7  # announcements and record dates come before the ex-date; the aftermath is reported within days
 SHOWN = 2  # headlines kept per event
@@ -12,8 +12,9 @@ CONFIRMED, NONE_FOUND = "confirmed", "no coverage found"
 
 _ACTION_WORDS = ("split", "sub-division", "face value", "bonus", "demerger", "demerged", "scheme of arrangement", "record date", "rights", "buyback", "buy back")
 KEYWORDS = {
-    "split": ("split", "sub-division", "subdivision", "face value"),
-    "bonus": ("bonus",),
+    # Yahoo records a bonus as a split, so both kinds look for both words
+    "split": ("split", "sub-division", "subdivision", "face value", "bonus"),
+    "bonus": ("bonus", "split", "sub-division", "subdivision", "face value"),
     "demerger": ("demerger", "demerged", "scheme of arrangement", "record date", "spin"),
     "rights": ("rights",),
     "buyback": ("buyback", "buy back"),
@@ -41,15 +42,19 @@ class Confirmation:
     headlines: tuple[NewsItem, ...]  # the closest to the event date first, at most SHOWN
 
 
-def confirm_events(events: Sequence[EventRef], items: Sequence[NewsItem]) -> list[Confirmation]:
+def confirm_events(events: Sequence[EventRef], items: Sequence[NewsItem], names: tuple[str, ...] = ()) -> list[Confirmation]:
     """Whether the news reported each event: a headline or filing from 14 days before to 7 days after its date that uses a
-    word for that kind of event. This only confirms, it never decides anything: no price, ratio or adjustment comes from news."""
+    word for that kind of event. With `names`, a headline must also name the company (an exchange filing is for the symbol,
+    so it always counts): a generic piece about stock splits is not coverage of this one. This only confirms, it never decides anything: no price, ratio or adjustment comes from news."""
     out = []
+    about = loose_names(names)
     for event in events:
         words = KEYWORDS.get(event.kind, KEYWORDS["other"])
         near = [
             item for item in items
-            if -DAYS_BEFORE <= (item.published.date() - event.day).days <= DAYS_AFTER and any(word in f"{item.title} {item.snippet}".lower() for word in words)
+            if -DAYS_BEFORE <= (item.published.date() - event.day).days <= DAYS_AFTER
+            and any(word in f"{item.title} {item.snippet}".lower() for word in words)
+            and (not names or item.source == "nse" or mentions(item, about))
         ]
         near.sort(key=lambda item: (abs((item.published.date() - event.day).days), item.published))
         out.append(Confirmation(event, CONFIRMED if near else NONE_FOUND, tuple(near[:SHOWN])))

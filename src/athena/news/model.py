@@ -45,6 +45,19 @@ class SourceResult:
     notes: tuple[str, ...] = ()
 
 
+GENERIC_FIRST_WORDS = frozenset({"state", "bank", "indian", "india", "national", "general", "the", "first", "new", "bharat", "hindustan"})
+
+
+def loose_names(names: tuple[str, ...]) -> tuple[str, ...]:
+    """The names plus, for a company with a name of several words, its first word when that word is distinctive (headlines
+    say `Kotak stock split`, not `Kotak Mahindra Bank Limited stock split`). A generic first word (`State`) is not added."""
+    out = list(names)
+    words = names[0].split() if names else []
+    if len(words) >= 2 and len(words[0]) >= 4 and words[0].lower() not in GENERIC_FIRST_WORDS and words[0] not in out:
+        out.append(words[0])
+    return tuple(out)
+
+
 def mentions(item: NewsItem, names: tuple[str, ...]) -> bool:
     """Whether the title or snippet names the company as a whole word (so `Idea` does not match `ideal`)."""
     text = f"{item.title} {item.snippet}"

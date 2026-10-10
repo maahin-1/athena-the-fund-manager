@@ -5,9 +5,10 @@ from datetime import date, timedelta
 
 from athena.news.confirm import DAYS_AFTER, DAYS_BEFORE, EventRef, confirm_events, describe_confirmations
 from athena.news.hub import NewsHub
+from athena.news.model import company_names
 
 MAX_EVENTS = 5  # looked up per view: each is a request to NSE and, when it is on, to Google News
-EXTRA_WORDS = {"split": "stock split", "bonus": "bonus issue", "demerger": "demerger", "rights": "rights issue", "buyback": "buyback"}
+EXTRA_WORDS = {"split": "(split OR bonus)", "bonus": "(split OR bonus)", "demerger": "demerger", "rights": "rights issue", "buyback": "buyback"}
 
 
 class EventConfirmer:
@@ -46,6 +47,6 @@ class EventConfirmer:
             except Exception as exc:  # news must never stop a view
                 source_notes.append(f"{label} on {day} could not be checked against the news: {exc}")
                 continue
-            confirmations += confirm_events([ref], result.items)
+            confirmations += confirm_events([ref], result.items, company_names(company))
             source_notes += [note for note in result.notes if note not in source_notes]
         return describe_confirmations(confirmations) + tuple(source_notes)

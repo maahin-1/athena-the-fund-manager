@@ -43,7 +43,7 @@ def test_a_split_is_confirmed_by_headlines_near_its_ex_date_and_the_nearest_come
 
 def test_a_headline_outside_the_window_or_without_a_keyword_for_that_kind_does_not_confirm():
     assert one("2026-03-02", "split", KOTAK).status == "no coverage found"  # only a March headline, none about a split
-    assert one("2026-01-14", "bonus", KOTAK).status == "no coverage found"  # a split headline does not confirm a bonus
+    assert one("2026-01-14", "buyback", KOTAK).status == "no coverage found"  # a split headline does not confirm a buyback
 
 
 def test_a_demerger_is_confirmed_by_the_exchange_filing_and_the_press():
@@ -84,3 +84,36 @@ def test_the_window_reaches_further_back_than_forward_because_announcements_come
     assert one("2026-04-30", "demerger", demerger_news("2026-04-15")).status == "no coverage found"  # 15 days before: out
     assert one("2026-04-30", "demerger", demerger_news("2026-05-07")).status == "confirmed"  # 7 days after: in
     assert one("2026-04-30", "demerger", demerger_news("2026-05-08")).status == "no coverage found"  # 8 days after: out
+
+
+# ---- the headline must be about this company
+
+WIPRO_NAMES = ("Wipro", "Wipro Limited")
+KOTAK_NAMES = ("Kotak Mahindra Bank", "Kotak Mahindra Bank Limited")
+
+
+def test_generic_pieces_about_stock_splits_do_not_confirm_a_companys_split():
+    generic = [
+        item("2024-12-03", "24/7 Wall St.", "Stock Splits Matter: Here's What's Coming in December"),
+        item("2024-12-10", "The Economic Times", "Achyut Healthcare among 4 stocks to track today for stock split, rights, bonus and dividend"),
+    ]
+    got = confirm_events([EventRef(date(2024, 12, 3), "split")], generic, WIPRO_NAMES)[0]
+    assert got.status == "no coverage found"
+    assert confirm_events([EventRef(date(2024, 12, 3), "split")], generic)[0].status == "confirmed"  # without names nothing is checked
+
+
+def test_a_headline_with_the_short_company_name_counts_and_so_does_an_exchange_filing():
+    got = confirm_events([EventRef(date(2026, 1, 14), "split")], KOTAK, KOTAK_NAMES)[0]
+    assert got.status == "confirmed" and "Kotak Mahindra stock split" in got.headlines[0].title  # first word is enough
+    nse = [item("2024-11-21", "NSE", "Record Date: the record date for the purpose of Bonus is 03-Dec-2024", "nse")]
+    assert confirm_events([EventRef(date(2024, 12, 3), "split")], nse, WIPRO_NAMES)[0].status == "confirmed"
+
+
+def test_a_generic_first_word_is_not_enough_so_another_banks_split_does_not_confirm_this_one():
+    other = [item("2026-01-14", "ET", "State Bank of Maharashtra announces stock split")]
+    assert confirm_events([EventRef(date(2026, 1, 14), "split")], other, ("State Bank of India",))[0].status == "no coverage found"
+
+
+def test_a_yahoo_bonus_recorded_as_a_split_is_confirmed_by_bonus_headlines():
+    bonus = [item("2024-11-21", "NSE", "Record Date: the record date for the purpose of Bonus is 03-Dec-2024", "nse")]
+    assert confirm_events([EventRef(date(2024, 12, 3), "split")], bonus)[0].status == "confirmed"
