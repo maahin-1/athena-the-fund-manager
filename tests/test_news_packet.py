@@ -128,3 +128,15 @@ def test_the_builder_primes_the_bars_asks_the_hub_for_thirty_days_and_passes_the
     packet = build_for(Res())
     assert order == ["WIPRO"] and asked == [("WIPRO", ("Wipro", "Wipro Limited"), date(2026, 9, 10), TODAY)]
     assert packet["recorded_events"] and packet["metrics"]["headline_count_30d"]["value"] == 3
+
+
+def test_press_results_that_do_not_name_the_company_are_dropped_but_exchange_filings_are_kept():
+    noise = [item(1, "Best IT Sector Stocks In India - Key Insights", publisher="Alice Blue"), item(2, "Tata Consultancy Services results beat", publisher="Mint")]
+    real = press(3, start=3) + [item(2, "Board outcome: dividend declared", "nse", "NSE")]
+    packet = build(noise + real)
+    assert {h["title"] for h in packet["headlines"]} == {"Wipro headline number 0", "Wipro headline number 1", "Wipro headline number 2", "Board outcome: dividend declared"}
+
+
+def test_the_short_company_name_is_enough_for_a_press_headline_to_count():
+    packet = build_news_packet("KOTAKBANK", "Kotak Mahindra Bank Limited", [item(1, "Kotak stock split: did shares crash?"), item(2, "Kotak Bank FD rates revised"), item(3, "Kotak lender upgraded")], (), TODAY)
+    assert packet["metrics"]["headline_count_30d"]["value"] == 3

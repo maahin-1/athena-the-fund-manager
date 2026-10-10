@@ -90,3 +90,34 @@ def test_the_specialists_on_live_packets_are_reported_against_the_same_labels(so
         print(f"{finding.outcome:10} {finding.symbol:11} {finding.check:28} {finding.detail}")
     print("live signal outcomes:", {k: dict(v) for k, v in report.by_component().items()})
     assert report.findings  # reported, not judged: the market moves under these labels
+
+
+# ---- the news specialist on frozen headlines
+
+from athena.agents.news_sentiment import NEWS_SENTIMENT  # noqa: E402
+from athena.evaluation.news_cases import load_news_cases  # noqa: E402
+
+NEWS_RUNS = 3
+
+
+def test_the_news_specialist_stays_inside_the_labelled_signals_and_the_run_to_run_spread_is_reported(sources):
+    """Each scored case is run three times on the same frozen packet (a fresh specialist each time, so nothing is cached)."""
+    client = sources.llm_router.client_for("specialist")
+    report, spread = GoldenReport(), {}
+    for case in (c for c in load_news_cases() if c.signals):
+        golden = GoldenCase(case.symbol, case.why, signals={"news_sentiment": case.signals})
+        seen = []
+        for _ in range(NEWS_RUNS):
+            try:
+                output = Specialist(NEWS_SENTIMENT, client).analyze(case.packet())
+            except AthenaError:
+                output = None
+            seen.append(output["signal"] if output and output["data_coverage"] != "insufficient" else None)
+            report.add(check_signals(golden, {"news_sentiment": output}))
+        spread[f"{case.symbol} {case.as_of}"] = seen
+    for finding in report.findings:
+        print(f"{finding.outcome:10} {finding.symbol:11} {finding.detail}")
+    print("signals per run:", spread)
+    print("cases whose signal changed between runs:", [k for k, v in spread.items() if len({s for s in v if s}) > 1] or "none")
+    assert not report.failures(), [f"{f.symbol}: {f.detail}" for f in report.failures()]
+    assert report.count(NO_ANSWER) <= len(report.findings) // 2, "more than half the runs gave no answer"

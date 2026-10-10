@@ -122,7 +122,7 @@ def with_news(hub, events=None):
 
 
 def test_with_a_news_hub_the_fifth_specialist_runs_after_the_bars_are_fetched():
-    hub = NewsHub([("t", lambda symbol, names, since, until, extra="": SourceResult([headline(i + 1, f"SBIN headline {i}") for i in range(4)]))])
+    hub = NewsHub([("t", lambda symbol, names, since, until, extra="": SourceResult([headline(i + 1, f"State Bank of India headline {i}") for i in range(4)]))])
     built, fetched = with_news(hub)
     result = built.analyze("sbin")
     assert result.skipped == {} and "news_sentiment" in result.specialists and fetched.count("SBIN") >= 1

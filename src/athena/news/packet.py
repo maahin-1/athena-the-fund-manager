@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from athena.news.hub import NewsHub
-from athena.news.model import NewsItem
+from athena.news.model import NewsItem, company_names, loose_names, mentions
 
 WINDOW_DAYS = 30
 RECENT_DAYS = 7
@@ -60,7 +60,9 @@ def build_news_packet(
     since = today - timedelta(days=WINDOW_DAYS)
     recent = [item for item in items if since <= item.published.date() <= today]
     skipped = [i for i in recent if i.source == "nse" and is_routine(i.title)]
-    usable = [i for i in recent if i not in skipped]
+    names = loose_names(company_names(company))
+    # a press result must name the company (Google also returns sector round-ups and other firms' news); a filing is for the symbol
+    usable = [i for i in recent if i not in skipped and (i.source == "nse" or mentions(i, names))]
     newest = sorted(usable, key=lambda i: i.published, reverse=True)
     press = [i for i in newest if i.source != "nse"][:MAX_PRESS]
     filings = [i for i in newest if i.source == "nse"][:MAX_FILINGS]
