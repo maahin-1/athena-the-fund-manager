@@ -100,7 +100,11 @@ def run_cases(
 def report(rows: Iterable[Mapping[str, Any]], specialists: Iterable[str] = PACKET_FOR) -> str:
     calls = calls_from_rows(rows)
     horizons = sorted({call.horizon for call in calls})
-    blocks = [format_score(result) for name in specialists for h in horizons if (result := score(calls, name, h)) is not None]
+    results = [score(calls, name, h) for name in specialists for h in horizons]
+    blocks = [format_score(result) for result in results if result is not None and result.cases]
+    silent = sorted({result.specialist for result in results if result is not None and not result.cases})
+    if silent and blocks:
+        blocks.append("No call at all (no packet, or every run abstained): " + ", ".join(silent))
     return "\n\n".join(blocks) if blocks else "No scored runs yet."
 
 
