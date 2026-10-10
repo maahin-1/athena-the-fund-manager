@@ -62,3 +62,18 @@ def test_other_things_are_kept_with_their_text_never_guessed_at():
 
 def test_a_corporate_action_is_a_plain_value_object():
     assert CorporateAction(DAY, "demerger", None, "Demerger") == parse("Demerger")
+
+
+@pytest.mark.parametrize(
+    "subject, ratio, premium",
+    [
+        ("Rights 87:38 @ Premium Of Rs 2.50 Per Share", 87 / 38, 2.5),
+        ("Rights 1:2 @ Premium Re 1/-", 0.5, 1.0),
+        ("Rights 11: 50 @ Premium Rs 0/-", 11 / 50, 0.0),
+        ("Rights 1:4@ Premium Rs 110/-", 0.25, 110.0),
+        ("Rights 6:55 @ Premium Rs 3", 6 / 55, 3.0),
+    ],
+)
+def test_the_rights_wordings_seen_on_the_exchange_are_read(subject, ratio, premium):
+    rights = parse(subject)
+    assert rights.kind == "rights" and rights.ratio == pytest.approx(ratio) and rights.premium == premium

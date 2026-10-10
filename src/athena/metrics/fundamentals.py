@@ -16,6 +16,13 @@ CRORE = 1e7
 SOURCE = "computed from Yahoo statements (INR)"
 GRAHAM_MULTIPLIER = 22.5  # Graham's ceiling: P/E 15 x P/B 1.5
 QUARTER_SPAN_DAYS = 290  # four consecutive quarter-ends span about 273 days
+# What the cross-checks accept, set from 40 real stocks on Oct 10, 2026: EPS over net income per current share ranged 0.94 to
+# 1.12 (a buyback, a rights issue); a split or bonus not restated in the EPS gives 2x or more, so 0.75 to 1.33 passes every real
+# case and stops a share-count mismatch. Our close and Yahoo's current price both read within a few percent on the same day.
+EPS_BASIS_RANGE = (0.75, 1.33)
+PRICE_AGREEMENT = (0.8, 1.25)
+STALE_ANNUAL_DAYS = 456  # fiscal year-ends are a year apart and filed within months: older than 15 months is out of date
+STALE_QUARTER_DAYS = 200  # a quarter is filed within 45 days of its end, so a newer one should exist after about 135
 YEAR_WINDOW = (350, 380)  # days between a quarter and the same quarter a year earlier
 MIN_INDEX_HISTORY = 250  # trading days needed before an index percentile means anything
 VALUATION, QUALITY, EARNINGS = "valuation", "quality", "earnings"
@@ -84,6 +91,17 @@ def _percentile(values: list[float], x: float) -> float:
     return sum(1 for value in values if value <= x) / len(values)
 
 
+def stale_statement_flags(annual: list[date], quarterly: list[date], today: date) -> list[str]:
+    """Sentences for statements that stop too long ago: a company that merged away, stopped reporting, or a source that is
+    behind. Nothing is withheld; the periods in each figure's window already say which year it is from."""
+    flags = []
+    if annual and (today - annual[-1]).days > STALE_ANNUAL_DAYS:
+        flags.append(f"the latest fiscal year in the statements ended {annual[-1].isoformat()}, over 15 months ago; the company may have stopped reporting or the source is behind")
+    if quarterly and (today - quarterly[-1]).days > STALE_QUARTER_DAYS:
+        flags.append(f"the latest quarter in the statements ended {quarterly[-1].isoformat()}, over {STALE_QUARTER_DAYS} days ago; trailing figures may miss recent results")
+    return flags
+
+
 def build_fundamentals_packet(
     instrument: str,
     as_of: datetime,
@@ -129,6 +147,13 @@ def build_fundamentals_packet(
 
     def have_price() -> float:
         _need(price is not None and price > 0, "no current price")
+        reference = st.info.get("currentPrice")
+        if reference:  # Yahoo's own current price: a close far from it means one of the two is on another basis
+            ratio = price / float(reference)  # type: ignore[operator]
+            _need(
+                PRICE_AGREEMENT[0] <= ratio <= PRICE_AGREEMENT[1],
+                f"the last close ({price:.2f}) is {ratio:.2f}x Yahoo's current price ({float(reference):.2f}); one of them may not be adjusted for a split or bonus",
+            )
         return price  # type: ignore[return-value]
 
     def shares() -> float:
@@ -139,14 +164,33 @@ def build_fundamentals_packet(
         _need(bool(counted), "no share count")
         return counted[-1][1]
 
+    def basis_checked(eps: float, net_income: float | None, window: str) -> float:
+        """EPS is taken only if it agrees with net income over today's share count: Yahoo does not always restate EPS after
+        a split or bonus, and an unrestated one is off by the split ratio."""
+        if net_income is None or not st.info.get("sharesOutstanding"):
+            return eps  # nothing to check it against
+        implied = net_income / float(st.info["sharesOutstanding"])
+        ratio = eps / implied if implied else math.inf
+        _need(
+            EPS_BASIS_RANGE[0] <= ratio <= EPS_BASIS_RANGE[1],
+            f"diluted EPS ({eps:.2f}, {window}) is {ratio:.2f}x net income over the current share count ({implied:.2f}); "
+            "the EPS may be on a different share count (a split, bonus or merger not restated) or leave out discontinued operations",
+        )
+        return eps
+
     def eps_ttm() -> tuple[float, str, str | None]:
         same_currency()
         quarters = st.quarterly_series("Diluted EPS")[-4:]
         if len(quarters) == 4 and (quarters[-1][0] - quarters[0][0]).days <= QUARTER_SPAN_DAYS:
-            return sum(value for _, value in quarters), f"last 4 quarters to {quarters[-1][0].isoformat()}", None
+            profit = dict(st.quarterly_series("Net Income"))
+            window = f"last 4 quarters to {quarters[-1][0].isoformat()}"
+            net = sum(profit[day] for day, _ in quarters) if all(day in profit for day, _ in quarters) else None
+            return basis_checked(sum(value for _, value in quarters), net, window), window, None
         annual = st.annual_series("income", "Diluted EPS")
         _need(bool(annual), "no diluted EPS")
-        return annual[-1][1], f"fiscal year to {annual[-1][0].isoformat()}", "annual EPS used because four consecutive quarters were not available"
+        window = f"fiscal year to {annual[-1][0].isoformat()}"
+        profit = dict(st.annual_series("income", "Net Income"))
+        return basis_checked(annual[-1][1], profit.get(annual[-1][0]), window), window, "annual EPS used because four consecutive quarters were not available"
 
     def book_value_per_share() -> float:
         same_currency()
@@ -158,7 +202,11 @@ def build_fundamentals_packet(
         return _cagr(st.annual_series("income", "Net Income"), "earnings growth")
 
     # ---- valuation
-    attempt("last_price", VALUATION, "INR", ["close"], lambda: R(have_price(), "last close"))
+    def last_close() -> R:
+        _need(price is not None and price > 0, "no current price")
+        return R(price, "last close")  # type: ignore[arg-type]
+
+    attempt("last_price", VALUATION, "INR", ["close"], last_close)
     attempt("market_cap", VALUATION, "INR crore", ["close", "shares"], lambda: R(have_price() * shares() / CRORE, "last close x shares outstanding"))
 
     def pe() -> R:
@@ -374,6 +422,7 @@ def build_fundamentals_packet(
 
     annual_dates = [day for day, _ in st.annual_series("income", "Total Revenue")]
     quarter_dates = [day for day, _ in st.quarterly_series("Total Revenue")]
+    flags = list(payload.get("quality_flags", [])) + stale_statement_flags(annual_dates, quarter_dates, ist_date(now))
     return {
         "instrument": instrument,
         "as_of": as_of.isoformat(),
@@ -381,7 +430,7 @@ def build_fundamentals_packet(
         "is_lender": st.is_financial,
         "latest_annual_period": annual_dates[-1].isoformat() if annual_dates else None,
         "latest_quarter": quarter_dates[-1].isoformat() if quarter_dates else None,
-        "data_quality_flags": list(payload.get("quality_flags", [])),
+        "data_quality_flags": flags,
         "metrics": metrics,
         "missing": list(reasons),
         "missing_reasons": reasons,

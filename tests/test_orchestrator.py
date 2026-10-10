@@ -278,3 +278,11 @@ def test_no_flags_means_the_verdict_is_the_blend_and_the_gate_is_asked_for_the_r
         FakeResolver(resolution()), specialists, {"quant_technical": lambda r: {}}, price_flags=lambda symbol: asked.append(symbol) or ()
     )
     assert orchestrator.analyze("sbin").verdict["verdict"] == "Buy" and asked == ["SBIN"]
+
+
+def test_a_note_the_resolver_left_on_the_resolution_leads_the_result_notes():
+    from dataclasses import replace
+
+    renamed = replace(resolution(), note="ZOMATO is a retired ticker: showing SBIN.")
+    orchestrator = Orchestrator(FakeResolver(renamed), {"quant_technical": FakeSpecialist(out())}, {"quant_technical": lambda r: {}})
+    assert orchestrator.analyze("zomato").notes[0] == "ZOMATO is a retired ticker: showing SBIN."

@@ -56,3 +56,44 @@ def test_a_source_with_no_statements_fails_loud_and_does_not_cache_the_failure()
         with pytest.raises(EmptyRefreshError):
             source(RESOLUTION)
     assert statements.fetches == ["ACME", "ACME"]
+
+
+# ---- merger and scheme filings (Phase 1j-d)
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from athena.contracts import AthenaError  # noqa: E402
+from athena.news.model import NewsItem  # noqa: E402
+
+
+def with_filings(filings):
+    statements = Counting(ACME)
+    loader = FundamentalsLoader(DataStore(), fetch=statements, clock=lambda: NOW)
+    return LiveFundamentals(loader, index_history(), lambda symbol: make_bars([PRICE - 1, PRICE]), clock=lambda: NOW, filings=filings)
+
+
+def test_a_filing_that_says_a_scheme_took_effect_becomes_a_data_quality_flag_and_the_window_is_the_statements_four_years():
+    asked = []
+    when = datetime(2024, 2, 1, 10, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+
+    def filings(symbol, since, until):
+        asked.append((symbol, (until - since).days))
+        return [NewsItem("Effective Date of the Scheme of Amalgamation amongst Acme Ltd and Beta Ltd", "NSE", when, "", "nse")]
+
+    flags = with_filings(filings)(RESOLUTION)["data_quality_flags"]
+    assert asked == [("ACME", 1460)] and len(flags) == 1 and "taking effect (2024-02-01)" in flags[0] and "not organic" in flags[0]
+
+
+def test_no_scheme_filing_adds_no_flag_and_an_unreachable_source_says_so_without_failing_the_packet():
+    assert with_filings(lambda *a: [])(RESOLUTION)["data_quality_flags"] == []
+
+    def down(*a):
+        raise AthenaError("NSE announcements unavailable for ACME: HTTP 403")
+
+    packet = with_filings(down)(RESOLUTION)
+    assert "mergers and schemes of arrangement could not be checked" in packet["data_quality_flags"][0] and "HTTP 403" in packet["data_quality_flags"][0]
+    assert packet["metrics"]["pe_trailing"]["value"] > 0
+
+
+def test_without_a_filings_source_nothing_is_added():
+    assert make()[0](RESOLUTION)["data_quality_flags"] == []

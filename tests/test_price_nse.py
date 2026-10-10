@@ -74,3 +74,12 @@ def test_a_network_failure_is_also_an_athena_error():
 
     with pytest.raises(AthenaError, match="NSE corporate actions unavailable for VEDL: connection reset"):
         NseActions(Broken(None), today=lambda: date(2026, 10, 10))("VEDL")
+
+
+def test_each_action_carries_the_face_value_the_exchange_lists_and_an_unreadable_one_is_none():
+    nse, _ = client(FakeResponse(payload=[
+        {"symbol": "X", "exDate": "13-May-2020", "subject": "Rights 1:15 @ Premium Rs 1247", "faceVal": "10"},
+        {"symbol": "X", "exDate": "14-May-2021", "subject": "Rights 1:15 @ Premium Rs 1", "faceVal": "-"},
+        {"symbol": "X", "exDate": "15-May-2022", "subject": "Demerger", "faceVal": "0"},
+    ]))
+    assert [a.face_value for a in nse("X")] == [10.0, None, None]

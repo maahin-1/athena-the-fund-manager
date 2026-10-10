@@ -3,18 +3,19 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Protocol
 
 from athena.clock import utc_now
-from athena.contracts import EmptyRefreshError, UnknownInstrument
+from athena.contracts import AthenaError, EmptyRefreshError, UnknownInstrument
 from athena.freshness import check_fresh
 from athena.isin import isin_checksum_ok, isin_type_hint, looks_like_isin
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET
 from athena.routing import route
 from athena.store import DataStore
+from athena.symbol_changes import SymbolChanges, describe_trail
 from athena.trading_calendar import TradingCalendar
 
 logger = logging.getLogger("athena.resolver")
@@ -73,6 +74,7 @@ class Resolution:
     confidence: float
     candidates: tuple[Candidate, ...]
     routed_specialists: tuple[str, ...]
+    note: str = ""  # what was done to get here that the person should know, such as a retired ticker followed to its new name
 
 
 @dataclass(frozen=True)
@@ -156,10 +158,17 @@ class InstrumentResolver:
     short prefix is never settled by a guess (a similarity score or a model): when other instruments are related to
     what was typed, they are all listed, the closest first, for the person to choose."""
 
-    def __init__(self, index: InstrumentIndex, classifier: Classifier | None = None, confirm_related: bool = False) -> None:
+    def __init__(
+        self,
+        index: InstrumentIndex,
+        classifier: Classifier | None = None,
+        confirm_related: bool = False,
+        symbol_changes: SymbolChanges | None = None,
+    ) -> None:
         self._index = index
         self._classifier = classifier
         self._confirm_related = confirm_related
+        self._symbol_changes = symbol_changes  # the exchange's rename list, to follow a retired ticker
 
     def resolve(self, query: str, list_relatives: bool = False) -> Resolution | Ambiguity:
         """`list_relatives` (with `confirm_related`) also lists what else is related to a typed ticker instead of taking
@@ -180,6 +189,10 @@ class InstrumentResolver:
         if looks_like_isin(text):
             return self._resolve_isin(text)
 
+        followed = self._follow_rename(text)
+        if followed is not None:
+            return followed
+
         name_key = normalize_name(query)
         matches = self._index.by_name.get(name_key, [])
         if len(matches) == 1 and self._confirm_related:
@@ -194,6 +207,20 @@ class InstrumentResolver:
             return Ambiguity(query, candidates, "the name matches more than one instrument")
 
         return self._resolve_fuzzy(query, text, name_key)
+
+    def _follow_rename(self, text: str) -> Resolution | None:
+        """A ticker that is no longer listed but that the exchange's own list says was renamed to one that is. A rename list
+        that cannot be loaded changes nothing: the query goes on to the name matching as before."""
+        if self._symbol_changes is None:
+            return None
+        try:
+            trail = self._symbol_changes.follow(text, lambda symbol: symbol in self._index.by_symbol)
+        except AthenaError:
+            return None
+        if not trail:
+            return None
+        resolved = self._resolved(self._index.by_symbol[trail[-1].new], "ticker", "renamed", 1.0)
+        return replace(resolved, note=describe_trail(trail))
 
     def confirm(self, ambiguity: Ambiguity, index: int) -> Resolution:
         chosen = ambiguity.candidates[index]

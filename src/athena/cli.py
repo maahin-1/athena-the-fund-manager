@@ -40,6 +40,7 @@ from athena.price_integrity.live import live_price_checks
 from athena.resolver import InstrumentIndex, InstrumentResolver, Resolution
 from athena.risk_overlay.parse import build_overlay
 from athena.store import DataStore
+from athena.symbol_changes import SymbolChanges
 from athena.trading_calendar import TradingCalendar, ist_date
 
 INDEX_VALUATION_DAYS = 365 * 8  # NSE has published index P/E since 2015; eight years is plenty for a percentile
@@ -114,15 +115,16 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     warnings = (HOLIDAY_WARNING.format(error=holiday_error),) if holiday_error else ()
     years = [int(record.key) for record in store.latest_records(HOLIDAY_DATASET)]
     calendar = load_calendar(store, years) if years else TradingCalendar(frozenset())
-    resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True)
+    resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True, symbol_changes=SymbolChanges())
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
     events, actions = live_price_checks()
     history = CheckedHistory(history_fetcher(chain), events, actions)
     google_on = read_setting(GOOGLE_NEWS_SETTING, env_file).strip() == "1"  # off unless the owner switches it on
-    news = NewsHub(default_sources(NseAnnouncements(), PublisherFeeds(), GoogleNews(enabled=google_on)))
+    announcements = NseAnnouncements()
+    news = NewsHub(default_sources(announcements, PublisherFeeds(), GoogleNews(enabled=google_on)))
     bars = RequestCache(history)
-    fundamentals = LiveFundamentals(FundamentalsLoader(store), valuation_history(store), bars)
+    fundamentals = LiveFundamentals(FundamentalsLoader(store), valuation_history(store), bars, filings=announcements)
     return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions, warnings, news)
 
 

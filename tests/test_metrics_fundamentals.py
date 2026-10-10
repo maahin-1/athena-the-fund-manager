@@ -97,7 +97,8 @@ def test_without_a_price_every_price_based_figure_is_missing_but_fundamentals_st
 
 def test_losses_and_stalled_growth_remove_the_ratios_that_would_mislead():
     losing = copy.deepcopy(ACME)
-    losing["quarterly"]["income"]["Diluted EPS"] = by(QUARTERS, [-1, -1, -1, -1, -1], 1)
+    losing["quarterly"]["income"]["Diluted EPS"] = by(QUARTERS, [-1, -1, -1, -1, -1], 1)  # 10 crore shares
+    losing["quarterly"]["income"]["Net Income"] = by(QUARTERS, [-10, -10, -10, -10, -10])  # -10 crore over 10 crore shares: a real loss, EPS and profit agree
     p = packet(losing)
     assert p["missing_reasons"]["pe_trailing"] == "earnings per share is not positive"
     assert "graham_number_premium" in p["missing"] and "earnings_yield" in p["missing"]
@@ -173,3 +174,46 @@ def test_statements_reported_in_inr_are_used_as_before():
     inr = copy.deepcopy(ACME)
     inr["info"]["financialCurrency"] = "INR"
     assert packet(inr)["metrics"]["pe_trailing"]["value"] == packet()["metrics"]["pe_trailing"]["value"]
+
+
+# ---- cross-checks added in Phase 1j-d
+
+def test_eps_that_is_not_on_todays_share_count_is_not_used_for_any_figure_built_on_it():
+    stale = copy.deepcopy(ACME)
+    stale["quarterly"]["income"]["Diluted EPS"] = {day: value * 5 for day, value in stale["quarterly"]["income"]["Diluted EPS"].items()}  # a 5-for-1 split not restated
+    p = packet(stale)
+    for name in ("pe_trailing", "earnings_yield", "peg", "graham_number_premium"):
+        reason = p["missing_reasons"][name]
+        assert "is 5.04x net income over the current share count" in reason and "split, bonus or merger not restated" in reason and "discontinued operations" in reason, name
+    assert "pb" in p["metrics"] and "market_cap" in p["metrics"]  # nothing that does not use EPS is touched
+
+
+def test_a_buyback_or_rights_issue_sized_difference_between_eps_and_net_income_per_share_passes():
+    for factor in (0.94, 1.12):
+        shifted = copy.deepcopy(ACME)
+        shifted["quarterly"]["income"]["Diluted EPS"] = {day: value * factor for day, value in shifted["quarterly"]["income"]["Diluted EPS"].items()}
+        assert "pe_trailing" in packet(shifted)["metrics"], factor
+
+
+def test_a_close_far_from_yahoos_current_price_blocks_the_ratios_but_the_close_itself_is_still_shown():
+    off = copy.deepcopy(ACME)
+    off["info"]["currentPrice"] = PRICE * 5  # our close is 0.2x Yahoo's: one side is on another split basis
+    p = packet(off)
+    assert value(p, "last_price") == PRICE
+    for name in ("market_cap", "pe_trailing", "pb", "fcf_yield"):
+        assert "0.20x Yahoo's current price" in p["missing_reasons"][name], name
+    near = copy.deepcopy(ACME)
+    near["info"]["currentPrice"] = PRICE * 1.1
+    assert "pe_trailing" in packet(near)["metrics"]
+
+
+def test_statements_that_stop_long_ago_are_flagged_and_current_ones_are_not():
+    assert packet()["data_quality_flags"] == []
+    from datetime import date
+
+    from athena.metrics.fundamentals import stale_statement_flags
+
+    flags = stale_statement_flags([date(2024, 3, 31)], [date(2025, 3, 31)], date(2026, 10, 10))
+    assert len(flags) == 2 and "ended 2024-03-31, over 15 months ago" in flags[0] and "ended 2025-03-31, over 200 days ago" in flags[1]
+    assert stale_statement_flags([date(2026, 3, 31)], [date(2026, 6, 30)], date(2026, 10, 10)) == []
+    assert stale_statement_flags([], [], date(2026, 10, 10)) == []

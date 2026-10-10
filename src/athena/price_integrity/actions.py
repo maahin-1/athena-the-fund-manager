@@ -7,7 +7,7 @@ from datetime import date
 _BONUS = re.compile(r"bonus\s*(\d+)\s*:\s*(\d+)")
 _FROM = re.compile(r"from\s*(?:rs|re)\.?\s*([\d.]+)")
 _TO = re.compile(r"to\s*(?:rs|re)\.?\s*([\d.]+)")
-_RIGHTS = re.compile(r"rights\s*(\d+)\s*:\s*(\d+)(?:\s*@\s*premium\s*rs\.?\s*([\d.]+))?")
+_RIGHTS = re.compile(r"rights\s*(\d+)\s*:\s*(\d+)(?:\s*@\s*premium(?:\s*of)?\s*(?:rs|re)\.?\s*([\d.]+))?")
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class CorporateAction:
     ratio: float | None
     text: str
     premium: float | None = None  # the rights issue premium in rupees, when stated
+    face_value: float | None = None  # the share's face value in rupees as the exchange lists it; with the premium it gives a rights issue price
     source: str = "nse"
 
 

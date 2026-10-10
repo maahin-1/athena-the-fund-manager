@@ -80,7 +80,7 @@ class Orchestrator:
             except AthenaError as exc:
                 skipped[name] = f"{type(exc).__name__}: {exc}"
         blended = blend_signals(outputs, self._conflict_min_confidence)
-        notes: list[str] = []
+        notes: list[str] = [resolution.note] if resolution.note else []
         if len(outputs) < len(resolution.routed_specialists):
             notes.append(
                 f"only {len(outputs)} of {len(resolution.routed_specialists)} routed specialists ran, "

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 from athena.contracts import AthenaError
@@ -57,11 +58,21 @@ class NseActions:
             try:
                 day = datetime.strptime(str(row["exDate"]).strip(), "%d-%b-%Y").date()
                 action = parse_subject(day, str(row["subject"]))
+                if action is not None:
+                    action = replace(action, face_value=_face_value(row.get("faceVal")))
             except (KeyError, ValueError):
                 continue  # a row with no usable ex-date or text is not an event we can place
             if action is not None:
                 actions.append(action)
         return sorted(actions, key=lambda action: action.day)
+
+
+def _face_value(text) -> float | None:
+    try:
+        value = float(str(text).strip())
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 def _stamp(day: date) -> str:
