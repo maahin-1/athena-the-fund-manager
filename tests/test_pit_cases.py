@@ -38,7 +38,7 @@ def builder(yahoo=True, filings=None, load=None):
     listed = [ref] if filings is None else filings
     loader = load or (lambda r: parse_filing(xbrl("2024-12-31", "2024-10-01")))
     yahoo_payload = (lambda symbol: ACME) if yahoo else None
-    return PitCaseBuilder(lambda s: BARS, lambda s: BARS, INDEX, VALUATION, lambda s: listed, loader, yahoo_payload, unadjusted_source=None)
+    return PitCaseBuilder(lambda s: BARS, lambda s: BARS, INDEX, VALUATION, lambda s: listed, loader, yahoo_payload, unadjusted_sources=None)
 
 
 def test_a_case_reads_only_what_existed_on_the_date_and_records_what_happened_after():
@@ -119,3 +119,9 @@ def test_prices_from_a_source_that_is_already_split_adjusted_are_not_used_for_pe
     case = adjusted_only.build("ACME", date(2025, 2, 14))
     assert "fundamentals" not in case.packets and "quant_technical" in case.packets
     assert "already adjusted for later splits" in case.notes[0] and "t" in case.notes[0]
+
+
+def test_prices_from_the_exchange_files_count_as_unadjusted():
+    from athena.evaluation.pit_cases import UNADJUSTED_SOURCES
+
+    assert {"jugaad", "bhavcopy"} <= UNADJUSTED_SOURCES and "yahoo" not in UNADJUSTED_SOURCES

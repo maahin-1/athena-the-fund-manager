@@ -23,7 +23,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 NSE_FILINGS_UNTIL = date(2025, 3, 31)  # the exchange's results list is complete to about here; after it only a few late filers appear
 SOURCE_NSE, SOURCE_YAHOO, SOURCE_NONE = "NSE results filings", "Yahoo, filtered by legal filing deadline", "none"
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-UNADJUSTED_SOURCE = "jugaad"  # the exchange's own prices, as printed; Yahoo's are already adjusted for every later split
+UNADJUSTED_SOURCES = frozenset({"jugaad", "bhavcopy"})  # the exchange's own prices, as printed; Yahoo's are already adjusted for every later split
 MIN_BARS = 60  # fewer closes than this before the date and no technical packet is built
 
 
@@ -77,9 +77,9 @@ class PitCaseBuilder:
         filings: Callable[[str], Sequence[FilingRef]],
         load_filing: Callable[[FilingRef], Filing],
         yahoo_payload: Callable[[str], Mapping[str, Any]] | None = None,
-        unadjusted_source: str | None = UNADJUSTED_SOURCE,
+        unadjusted_sources: frozenset[str] | None = UNADJUSTED_SOURCES,
     ):
-        self._unadjusted_source = unadjusted_source  # None: the caller vouches that the raw bars are unadjusted
+        self._unadjusted = unadjusted_sources  # None: the caller vouches that the raw bars are unadjusted
         self._raw, self._adjusted, self._index, self._valuation = raw_bars, adjusted_bars, index, index_valuation
         self._filings, self._load, self._yahoo = filings, load_filing, yahoo_payload
 
@@ -119,8 +119,8 @@ class PitCaseBuilder:
             notes.append(f"only {len(adjusted)} closes before {as_of}: no technical packet")
         payload, source, payload_notes = self._payload(symbol, as_of)
         notes += payload_notes
-        if payload is not None and raw and self._unadjusted_source and any(bar.source != self._unadjusted_source for bar in raw):
-            others = sorted({bar.source for bar in raw if bar.source != self._unadjusted_source})
+        if payload is not None and raw and self._unadjusted and any(bar.source not in self._unadjusted for bar in raw):
+            others = sorted({bar.source for bar in raw if bar.source not in self._unadjusted})
             notes.append(
                 f"the price history came from {', '.join(others)}, which is already adjusted for later splits, so the price would not be on "
                 "the share count the filings report: no fundamentals packet"

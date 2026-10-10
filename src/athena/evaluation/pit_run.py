@@ -108,8 +108,13 @@ def report(rows: Iterable[Mapping[str, Any]], specialists: Iterable[str] = PACKE
     return "\n\n".join(blocks) if blocks else "No scored runs yet."
 
 
-def live_builder() -> tuple[PitCaseBuilder, dict[str, Analyst]]:
-    """The real sources: NSE prices and filings, Yahoo statements, the NIFTY 50, and the specialist model."""
+LOOKBACK_DAYS = 400  # prices needed before the first as-of date (253 closes for the technical packet) ...
+LOOKAHEAD_DAYS = 400  # ... and after the last, for the 252-trading-day outcome
+
+
+def live_builder(first: date, last: date) -> tuple[PitCaseBuilder, dict[str, Analyst]]:
+    """The real sources: the exchange's daily price files (then jugaad, then Yahoo), NSE filings, Yahoo statements, the NIFTY 50,
+    and the specialist model. Prices are fetched for the window the dates need, not nine years."""
     from datetime import timedelta
     from functools import lru_cache
 
@@ -123,15 +128,18 @@ def live_builder() -> tuple[PitCaseBuilder, dict[str, Analyst]]:
     from athena.dashboard.risk import refresh_risk_data, risk_world_from_store
     from athena.loaders.fundamentals import DATASET, FundamentalsLoader
     from athena.loaders.index_valuation import valuation_history
-    from athena.orchestrator.builders import history_fetcher
-    from athena.pit.nse_results import FilingStore, NseResults
+    from athena.pit.bhavcopy import BhavcopyPriceAdapter
+    from athena.pit.nse_results import CachedFilings, FilingStore, NseResults
     from athena.price_integrity.history import CheckedHistory
-    from athena.trading_calendar import ist_date
+    from athena.adapters.prices import JugaadPriceAdapter, YahooPriceAdapter, ohlcv_chain
+    from athena.trading_calendar import TradingCalendar, ist_date
 
-    years = 9
     sources = live_sources()
-    refresh_risk_data(sources.store, since=ist_date(utc_now()) - timedelta(days=365 * years))
-    raw = lru_cache(maxsize=64)(history_fetcher(sources.chain, days=365 * years))
+    today = ist_date(utc_now())
+    window = (first - timedelta(days=LOOKBACK_DAYS), min(last + timedelta(days=LOOKAHEAD_DAYS), today))
+    refresh_risk_data(sources.store, since=window[0])
+    chain = ohlcv_chain([BhavcopyPriceAdapter(), JugaadPriceAdapter(), YahooPriceAdapter()], TradingCalendar(frozenset()))
+    raw = lru_cache(maxsize=64)(lambda symbol: chain.run(symbol, since=window[0], until=window[1]).value)
     adjusted = lru_cache(maxsize=64)(CheckedHistory(raw, sources.events, sources.actions))
     loader = FundamentalsLoader(sources.store)
     results = NseResults()
@@ -146,7 +154,7 @@ def live_builder() -> tuple[PitCaseBuilder, dict[str, Analyst]]:
     analysts = {name: Specialist(spec, client).analyze for name, spec in specs.items()}
     builder = PitCaseBuilder(
         raw, adjusted, risk_world_from_store(sources.store).price_index, valuation_history(sources.store),
-        lru_cache(maxsize=64)(results.filings), FilingStore(results).filing, yahoo,
+        lru_cache(maxsize=64)(CachedFilings(results).filings), FilingStore(results).filing, yahoo,
     )
     return builder, analysts
 
@@ -167,9 +175,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not (args.symbols and args.start and args.end):
         parser.error("--symbols, --from and --to are needed to run")
-    builder, analysts = live_builder()
+    first, last = date.fromisoformat(args.start), date.fromisoformat(args.end)
+    builder, analysts = live_builder(first, last)
     chosen = {name: analysts[name] for name in args.specialists.split(",")}
-    days = month_ends(date.fromisoformat(args.start), date.fromisoformat(args.end))
+    days = month_ends(first, last)
     made = run_cases(builder, chosen, args.symbols.split(","), days, RUN_DIR / f"{args.out}.jsonl", args.repeats, args.blind, print)
     print(f"{made} analyst runs made")
     return 0

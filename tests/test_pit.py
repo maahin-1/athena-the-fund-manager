@@ -250,3 +250,27 @@ def test_a_downloaded_page_that_is_not_a_filing_is_an_error_not_a_crash(tmp_path
     store = FilingStore(NseResults(FakeSession([FakeResponse()])), tmp_path, lambda r: "<html>Resource not found</html>")
     with pytest.raises(AthenaError, match="unreadable filing"):
         store.filing(ref(date(2024, 12, 31), at(date(2025, 1, 15))))
+
+
+def test_a_results_list_is_fetched_once_and_then_read_from_disk(tmp_path):
+    from athena.pit.nse_results import CachedFilings
+
+    ref = FilingRef("ACME", date(2024, 12, 31), datetime(2025, 1, 15, 19, 0, tzinfo=IST), True, False, "https://x/q3.xml")
+    calls = []
+    cached = CachedFilings(None, tmp_path, fetch=lambda symbol: calls.append(symbol) or [ref])
+    assert cached.filings("ACME") == [ref]
+    assert cached.filings("ACME") == [ref]
+    assert calls == ["ACME"]
+    (tmp_path / "index_ACME.json").write_text("not json", encoding="utf-8")
+    assert cached.filings("ACME") == [ref] and calls == ["ACME", "ACME"]  # a damaged cache is fetched again
+
+
+def test_a_failed_fetch_leaves_nothing_cached(tmp_path):
+    from athena.pit.nse_results import CachedFilings
+
+    def refuse(symbol):
+        raise AthenaError("HTTP 403")
+
+    with pytest.raises(AthenaError):
+        CachedFilings(None, tmp_path, fetch=refuse).filings("ACME")
+    assert not list(tmp_path.glob("index_*"))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -132,3 +133,34 @@ class FilingStore:
             return parse_filing(text)
         except ValueError as exc:
             raise AthenaError(f"unreadable filing {ref.url}: {exc}") from exc
+
+
+class CachedFilings:
+    """A company's results list kept on disk after the first successful fetch, so a run that revisits it, or restarts, does not ask
+    the exchange again. Meant for dates well in the past, where the list no longer grows: a filing made after the list was saved
+    would be missing from it."""
+
+    def __init__(self, results: NseResults, directory: Path = CACHE_DIR, fetch: Callable[[str], list[FilingRef]] | None = None):
+        self._fetch = fetch or results.filings
+        self._directory = directory
+
+    def filings(self, symbol: str) -> list[FilingRef]:
+        path = self._directory / f"index_{symbol}.json"
+        if path.exists():
+            try:
+                return [
+                    FilingRef(r["symbol"], date.fromisoformat(r["period_end"]), datetime.fromisoformat(r["filed"]), r["consolidated"], r["annual"], r["url"])
+                    for r in json.loads(path.read_text(encoding="utf-8"))
+                ]
+            except (ValueError, KeyError, TypeError):
+                pass  # an unreadable cache is fetched again
+        refs = self._fetch(symbol)
+        self._directory.mkdir(parents=True, exist_ok=True)
+        rows = [
+            {"symbol": r.symbol, "period_end": r.period_end.isoformat(), "filed": r.filed.isoformat(), "consolidated": r.consolidated, "annual": r.annual, "url": r.url}
+            for r in refs
+        ]
+        temporary = path.with_suffix(".part")
+        temporary.write_text(json.dumps(rows), encoding="utf-8")
+        temporary.replace(path)
+        return refs
