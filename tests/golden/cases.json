@@ -1,0 +1,452 @@
+[
+ {
+  "symbol": "INFY",
+  "why": "Reports in USD but trades in INR: no price-against-statement ratio may be computed, and valuation has nothing to say (the Oct 2026 P/E 1279 bug).",
+  "figures": {
+   "fundamentals.roe_latest": [
+    0.15,
+    0.6
+   ],
+   "fundamentals.market_cap": [
+    100000,
+    1000000
+   ]
+  },
+  "missing": [
+   "fundamentals.pe_trailing",
+   "fundamentals.pb",
+   "fundamentals.earnings_yield",
+   "fundamentals.fcf_yield",
+   "fundamentals.peg",
+   "fundamentals.graham_number_premium"
+  ],
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "valuation": [
+    "abstain"
+   ],
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "TCS",
+  "why": "Large IT services stock on a clean three-timeframe downtrend; ratios must be sane.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ],
+   "fundamentals.roe_latest": [
+    0.25,
+    0.7
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "WIPRO",
+  "why": "Indian IT stock reporting in INR, long downtrend; ratios must be sane.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "RELIANCE",
+  "why": "Conglomerate reporting in INR, downtrend; ratios must be sane.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "HINDUNILVR",
+  "why": "Defensive consumer stock in a sustained downtrend (down over a quarter of its value in a year).",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ],
+   "fundamentals.roe_latest": [
+    0.15,
+    0.6
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "ITC",
+  "why": "Defensive consumer stock in a sustained downtrend with a modest multiple.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "MARUTI",
+  "why": "Cyclical auto maker, down sharply on all timeframes.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "SUZLON",
+  "why": "Volatile small-cap in a steep downtrend, oversold.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "ASIANPAINT",
+  "why": "Premium-multiple consumer name with weak earnings growth: expensive against its growth, in a downtrend.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    30,
+    100
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ]
+  },
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "valuation": [
+    "bearish",
+    "neutral"
+   ],
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "NESTLEIND",
+  "why": "Very high multiple resting on a very high return on equity.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    40,
+    150
+   ],
+   "fundamentals.pb": [
+    20,
+    150
+   ],
+   "fundamentals.roe_latest": [
+    0.5,
+    1.5
+   ]
+  },
+  "signals": {
+   "valuation": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "ADANIENT",
+  "why": "High-multiple conglomerate; ratios must be sane and growth figures present.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    150
+   ],
+   "fundamentals.pb": [
+    0.3,
+    100
+   ],
+   "fundamentals.earnings_cagr": [
+    0.0,
+    2.0
+   ]
+  }
+ },
+ {
+  "symbol": "HDFCBANK",
+  "why": "A bank: cash-flow and working-capital ratios do not apply and must be absent; P/E and P/B must be sane. (Yahoo's equity figure makes ROE read low, so it is not pinned.)",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    5,
+    40
+   ],
+   "fundamentals.pb": [
+    0.5,
+    5
+   ]
+  },
+  "missing": [
+   "fundamentals.fcf_yield",
+   "fundamentals.current_ratio",
+   "fundamentals.interest_coverage",
+   "fundamentals.cash_conversion"
+  ],
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "SBIN",
+  "why": "A state-owned bank: lender rules apply; P/E and P/B must be sane.",
+  "figures": {
+   "fundamentals.pe_trailing": [
+    3,
+    30
+   ],
+   "fundamentals.pb": [
+    0.3,
+    4
+   ]
+  },
+  "missing": [
+   "fundamentals.fcf_yield",
+   "fundamentals.current_ratio",
+   "fundamentals.interest_coverage",
+   "fundamentals.cash_conversion"
+  ]
+ },
+ {
+  "symbol": "IDEA",
+  "why": "Negative book value (debt-laden telecom): P/B and ROE cannot be meaningful and must be absent; valuation may only be cautious or abstain.",
+  "missing": [
+   "fundamentals.pb",
+   "fundamentals.roe_latest"
+  ],
+  "signals": {
+   "valuation": [
+    "bearish",
+    "neutral",
+    "abstain"
+   ]
+  }
+ },
+ {
+  "symbol": "NIFTYBEES",
+  "why": "Broad-market ETF in a clean three-timeframe downtrend.",
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "ITBEES",
+  "why": "IT-sector ETF in a clean three-timeframe downtrend.",
+  "values": {
+   "technical.trend_alignment": [
+    "aligned_down"
+   ]
+  },
+  "signals": {
+   "quant_technical": [
+    "bearish",
+    "neutral"
+   ]
+  }
+ },
+ {
+  "symbol": "BANKBEES",
+  "why": "Bank-sector ETF: prices must build a technical packet.",
+  "figures": {
+   "technical.rsi_14": [
+    0,
+    100
+   ]
+  }
+ },
+ {
+  "symbol": "JUNIORBEES",
+  "why": "Next-50 ETF, oversold (RSI near 30).",
+  "figures": {
+   "technical.rsi_14": [
+    15,
+    45
+   ]
+  }
+ },
+ {
+  "symbol": "GOLDBEES",
+  "why": "Gold ETF with a strong one-year run: must build a technical packet.",
+  "figures": {
+   "technical.rsi_14": [
+    0,
+    100
+   ]
+  }
+ },
+ {
+  "symbol": "SILVERBEES",
+  "why": "Silver ETF with a very strong one-year run: must build a technical packet.",
+  "figures": {
+   "technical.rsi_14": [
+    0,
+    100
+   ]
+  }
+ },
+ {
+  "symbol": "PSUBNKBEES",
+  "why": "PSU bank ETF: must build a technical packet.",
+  "figures": {
+   "technical.rsi_14": [
+    0,
+    100
+   ]
+  }
+ },
+ {
+  "symbol": "LIQUIDBEES",
+  "why": "Liquid ETF priced near 1,000 by design: the close must sit near 1,000 and RSI must be a number.",
+  "figures": {
+   "technical.last_close": [
+    990,
+    1010
+   ],
+   "technical.rsi_14": [
+    0,
+    100
+   ]
+  }
+ }
+]
