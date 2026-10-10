@@ -21,7 +21,7 @@ from athena.llm.router import Router, build_router
 from athena.loaders.fundamentals import FundamentalsLoader
 from athena.loaders.index_valuation import IndexValuationLoader, valuation_history
 from athena.loaders.nse_holidays import DATASET as HOLIDAY_DATASET
-from athena.loaders.nse_holidays import NseHolidayLoader, load_calendar
+from athena.loaders.nse_holidays import NseHolidayLoader, load_calendar, refresh_with_retry
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET, NseMasterLoader
 from athena.orchestrator.builders import RequestCache, history_fetcher, technical_packet_builder
 from athena.orchestrator.fundamentals_source import LiveFundamentals
@@ -66,6 +66,12 @@ def build_orchestrator(
     return Orchestrator(resolver, specialists, builders, bars=fetch)
 
 
+HOLIDAY_WARNING = (
+    "NSE's holiday list could not be loaded ({error}); the trading calendar counts only weekends as non-trading days, "
+    "so data-freshness checks can be a day off around exchange holidays."
+)
+
+
 @dataclass(frozen=True)
 class LiveSources:
     resolver: InstrumentResolver
@@ -77,6 +83,7 @@ class LiveSources:
     history: CheckedHistory  # the bars' fetcher: its notes say what was adjusted or could not be explained
     events: Callable[[str], Sequence[PriceEvent]]
     actions: Callable[[str], Sequence[CorporateAction]]  # NSE's own corporate-action rows (demergers, rights, buybacks)
+    warnings: tuple[str, ...] = ()  # what could not be loaded at start, for every view to show
 
 
 def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
@@ -88,7 +95,8 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     loader = NseMasterLoader(store)
     loader.refresh(EQUITY_DATASET)
     loader.refresh(ETF_DATASET)
-    NseHolidayLoader(store).refresh()
+    holiday_error = refresh_with_retry(NseHolidayLoader(store))
+    warnings = (HOLIDAY_WARNING.format(error=holiday_error),) if holiday_error else ()
     years = [int(record.key) for record in store.latest_records(HOLIDAY_DATASET)]
     calendar = load_calendar(store, years) if years else TradingCalendar(frozenset())
     resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True)
@@ -99,7 +107,7 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     history = CheckedHistory(history_fetcher(chain), events, actions)
     bars = RequestCache(history)
     fundamentals = LiveFundamentals(FundamentalsLoader(store), valuation_history(store), bars)
-    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions)
+    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions, warnings)
 
 
 def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:

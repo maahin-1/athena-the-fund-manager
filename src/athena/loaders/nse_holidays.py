@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterable
 from datetime import date, datetime
 from typing import Any
 
 from athena.clock import utc_now
-from athena.contracts import EmptyRefreshError, Record, RefreshResult, SchemaChangedError
+from athena.contracts import AthenaError, EmptyRefreshError, Record, RefreshResult, SchemaChangedError
 from athena.store import DataStore
 from athena.trading_calendar import TradingCalendar
 
@@ -74,3 +75,21 @@ def load_calendar(store: DataStore, years: Iterable[int]) -> TradingCalendar:
             raise EmptyRefreshError(f"no {DATASET} data for {year}; run the holiday loader first")
         dates.update(date.fromisoformat(text) for text in record.payload["dates"])
     return TradingCalendar(frozenset(dates))
+
+
+def refresh_with_retry(
+    loader: NseHolidayLoader, attempts: int = 3, sleep: Callable[[float], None] = time.sleep
+) -> AthenaError | None:
+    """Refresh the holiday list, trying again after a pause when NSE's feed answers with the wrong shape (it does so
+    about half the time). Returns None once it has loaded, or the last error after `attempts` tries: the caller carries on
+    with a weekends-only calendar and says so, rather than failing to start."""
+    error: AthenaError | None = None
+    for attempt in range(attempts):
+        try:
+            loader.refresh()
+            return None
+        except AthenaError as exc:
+            error = exc
+            if attempt + 1 < attempts:
+                sleep(1.0 * (attempt + 1))
+    return error

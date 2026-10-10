@@ -91,3 +91,36 @@ def test_wrong_dataset_is_rejected():
 
 def test_loader_satisfies_batchloader_protocol():
     assert isinstance(make_loader(DataStore()), BatchLoader)
+
+
+# ---- a flaky feed must not stop the app from starting
+
+from athena.contracts import AthenaError, SchemaChangedError  # noqa: E402
+from athena.loaders.nse_holidays import refresh_with_retry  # noqa: E402
+
+
+class FlakyLoader:
+    def __init__(self, failures):
+        self.failures, self.calls = failures, 0
+
+    def refresh(self):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise SchemaChangedError("holiday payload has no segment 'CM'")
+
+
+def test_a_feed_that_fails_twice_and_then_answers_is_loaded_after_waiting_between_tries():
+    loader, waits = FlakyLoader(2), []
+    assert refresh_with_retry(loader, attempts=3, sleep=waits.append) is None
+    assert loader.calls == 3 and waits == [1.0, 2.0]
+
+
+def test_a_feed_that_never_answers_returns_the_last_error_instead_of_raising():
+    loader, waits = FlakyLoader(99), []
+    error = refresh_with_retry(loader, attempts=3, sleep=waits.append)
+    assert isinstance(error, AthenaError) and "no segment 'CM'" in str(error) and loader.calls == 3 and len(waits) == 2
+
+
+def test_a_feed_that_answers_first_time_is_not_retried_or_waited_for():
+    loader, waits = FlakyLoader(0), []
+    assert refresh_with_retry(loader, sleep=waits.append) is None and loader.calls == 1 and waits == []

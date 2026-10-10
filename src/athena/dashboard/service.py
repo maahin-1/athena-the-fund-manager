@@ -101,5 +101,5 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     )
     return DashboardService(
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
-        long_history=long_history, price_notes=sources.history.notes,
+        long_history=long_history, price_notes=lambda symbol: sources.history.notes(symbol) + sources.warnings,
     )
