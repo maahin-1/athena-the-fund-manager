@@ -39,11 +39,11 @@ class FakeOrchestrator:
         return result
 
 
-def make_service(result=None, price_notes=None):
+def make_service(result=None, price_notes=None, event_notes=None):
     fetch = CountingFetch()
     cache = RequestCache(fetch)
     orchestrator = FakeOrchestrator(cache, result)
-    service = DashboardService(orchestrator, cache, RiskWorld({}, {}, {}), clock=lambda: NOW, price_notes=price_notes)
+    service = DashboardService(orchestrator, cache, RiskWorld({}, {}, {}), clock=lambda: NOW, price_notes=price_notes, event_notes=event_notes)
     return service, fetch, orchestrator
 
 
@@ -182,3 +182,14 @@ def test_the_price_notes_for_the_symbol_are_added_after_the_other_view_notes():
 
 def test_without_a_price_notes_source_no_price_note_appears():
     assert all("Prices adjusted" not in note for note in make_service()[0].view("sbin").notes)
+
+
+def test_event_notes_get_the_symbol_and_company_name_and_come_after_the_price_notes():
+    seen = []
+
+    def events(symbol, company):
+        seen.append((symbol, company))
+        return ("Kotak split on 2026-01-14: confirmed by 1 headline(s).",)
+
+    view = make_service(price_notes=lambda symbol: ("Prices adjusted.",), event_notes=events)[0].view("sbin")
+    assert seen == [("SBIN", "State Bank of India")] and view.notes[-2:] == ("Prices adjusted.", "Kotak split on 2026-01-14: confirmed by 1 headline(s).")

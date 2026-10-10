@@ -71,3 +71,17 @@ def test_a_ratio_conflict_between_the_sources_adjusts_nothing_and_flags_it():
     assert [b.close for b in history("KOTAKBANK")] == [100.0] * 30 + [20.0] * 30
     notes = history.notes("KOTAKBANK")
     assert "disagree" in notes[0] and any("Unexplained" in n for n in notes)
+
+
+def test_the_events_found_by_the_last_fetch_are_listed_oldest_first_with_a_label():
+    from athena.price_integrity.actions import CorporateAction
+
+    bars = make_bars([100.0] * 20 + [20.0] * 20 + [8.0] * 20, symbol="Z")
+    split_day, break_day = ist_date(bars[20].timestamp), ist_date(bars[40].timestamp)
+    buyback = CorporateAction(ist_date(bars[10].timestamp), "buyback", None, "Buy Back")
+    history = CheckedHistory(lambda s: list(bars), lambda s: [PriceEvent(split_day, 5.0)], lambda s: [buyback])
+    assert history.events_found("Z") == ()  # nothing fetched yet
+    history("Z")
+    found = history.events_found("Z")
+    assert [(day, kind) for day, kind, _ in found] == [(buyback.day, "buyback"), (split_day, "split"), (break_day, "unexplained")]
+    assert found[1][2] == "split (x0.2)" and found[2][2].startswith("unexplained price break") and found[0][2] == "Buy Back"

@@ -16,7 +16,7 @@ from athena.agents.valuation import VALUATION
 from athena.clock import utc_now
 from athena.contracts import AthenaError, Bar
 from athena.fallback import FallbackChain
-from athena.llm.envfile import DEFAULT_ENV_FILE
+from athena.llm.envfile import DEFAULT_ENV_FILE, read_setting
 from athena.llm.router import Router, build_router
 from athena.loaders.fundamentals import FundamentalsLoader
 from athena.loaders.index_valuation import IndexValuationLoader, valuation_history
@@ -28,6 +28,10 @@ from athena.orchestrator.fundamentals_source import LiveFundamentals
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
 from athena.orchestrator.report import format_result
 from athena.price_integrity.events import PriceEvent, yahoo_split_events
+from athena.news.google_news import GoogleNews
+from athena.news.hub import NewsHub, default_sources
+from athena.news.nse_announcements import NseAnnouncements
+from athena.news.publisher_feeds import PublisherFeeds
 from athena.price_integrity.actions import CorporateAction
 from athena.price_integrity.history import CheckedHistory
 from athena.price_integrity.nse_actions import NseActions
@@ -66,6 +70,7 @@ def build_orchestrator(
     return Orchestrator(resolver, specialists, builders, bars=fetch)
 
 
+GOOGLE_NEWS_SETTING = "ATHENA_GOOGLE_NEWS"  # "1" turns Google News on: its robots.txt disallows crawling, so it is off by default
 HOLIDAY_WARNING = (
     "NSE's holiday list could not be loaded ({error}); the trading calendar counts only weekends as non-trading days, "
     "so data-freshness checks can be a day off around exchange holidays."
@@ -84,6 +89,7 @@ class LiveSources:
     events: Callable[[str], Sequence[PriceEvent]]
     actions: Callable[[str], Sequence[CorporateAction]]  # NSE's own corporate-action rows (demergers, rights, buybacks)
     warnings: tuple[str, ...] = ()  # what could not be loaded at start, for every view to show
+    news: NewsHub | None = None  # NSE announcements, publisher feeds and (when switched on) Google News
 
 
 def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
@@ -105,9 +111,11 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     events = lru_cache(maxsize=512)(yahoo_split_events)  # events change rarely: one Yahoo call per symbol per session
     actions = lru_cache(maxsize=512)(NseActions())
     history = CheckedHistory(history_fetcher(chain), events, actions)
+    google_on = read_setting(GOOGLE_NEWS_SETTING, env_file).strip() == "1"  # off unless the owner switches it on
+    news = NewsHub(default_sources(NseAnnouncements(), PublisherFeeds(), GoogleNews(enabled=google_on)))
     bars = RequestCache(history)
     fundamentals = LiveFundamentals(FundamentalsLoader(store), valuation_history(store), bars)
-    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions, warnings)
+    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions, warnings, news)
 
 
 def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:

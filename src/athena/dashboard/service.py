@@ -17,6 +17,7 @@ from athena.dashboard.view import DashboardView, build_view
 from athena.llm.envfile import DEFAULT_ENV_FILE
 from athena.orchestrator.builders import RequestCache, history_fetcher
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
+from athena.news.confirmer import EventConfirmer
 from athena.price_integrity.history import CheckedHistory
 from athena.resolver import Resolution
 from athena.risk_overlay.model import Overlay
@@ -42,6 +43,7 @@ class DashboardService:
         fundamentals: FundamentalsSource | None = None,
         long_history: Callable[[str], list[Bar]] | None = None,
         price_notes: Callable[[str], Sequence[str]] | None = None,
+        event_notes: Callable[[str, str], Sequence[str]] | None = None,
     ):
         self._orchestrator = orchestrator
         self._bars = bars
@@ -50,6 +52,7 @@ class DashboardService:
         self._fundamentals = fundamentals
         self._long_history = long_history
         self._price_notes = price_notes  # what was adjusted in the bars, or could not be explained, for this symbol
+        self._event_notes = event_notes  # what the exchange and the press said about those events: (symbol, company name)
 
     def view(self, query: str, overlay: Overlay | None = None, list_relatives: bool = False) -> DashboardView:
         self._bars.clear()
@@ -71,9 +74,12 @@ class DashboardService:
             except AthenaError as exc:
                 note = f"fundamentals unavailable: {exc}"
         view = build_view(result, bars, technical, risk, fundamentals, note)
-        if self._price_notes is None:
-            return view
-        return replace(view, notes=view.notes + tuple(self._price_notes(result.resolution.identifier)))
+        extra: tuple[str, ...] = ()
+        if self._price_notes is not None:
+            extra += tuple(self._price_notes(result.resolution.identifier))
+        if self._event_notes is not None:
+            extra += tuple(self._event_notes(result.resolution.identifier, result.resolution.name))  # after the bars: it reads their events
+        return replace(view, notes=view.notes + extra) if extra else view
 
 
     def backtest(self, identifier: str, rules: Sequence[str | Rule | SeriesRule] | None = None) -> BacktestView:
@@ -102,4 +108,5 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     return DashboardService(
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
         long_history=long_history, price_notes=lambda symbol: sources.history.notes(symbol) + sources.warnings,
+        event_notes=EventConfirmer(sources.news, sources.history.events_found) if sources.news is not None else None,
     )
