@@ -51,6 +51,15 @@ class Warehouse:
             "CREATE TABLE IF NOT EXISTS universe (symbol VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL, name VARCHAR, isin VARCHAR, updated_at TIMESTAMP NOT NULL)"
         )
         self._con.execute(
+            "CREATE TABLE IF NOT EXISTS index_bars (index_name VARCHAR NOT NULL, day DATE NOT NULL, open DOUBLE, high DOUBLE, low DOUBLE, "
+            "close DOUBLE, pe DOUBLE, pb DOUBLE, div_yield DOUBLE, PRIMARY KEY (index_name, day))"
+        )
+        self._con.execute("CREATE TABLE IF NOT EXISTS index_days (day DATE PRIMARY KEY, rows INTEGER NOT NULL, loaded_at TIMESTAMP NOT NULL)")
+        self._con.execute(
+            "CREATE TABLE IF NOT EXISTS packets (symbol VARCHAR NOT NULL, kind VARCHAR NOT NULL, data_as_of DATE NOT NULL, built_at TIMESTAMP NOT NULL, "
+            "flags VARCHAR NOT NULL, payload VARCHAR NOT NULL, PRIMARY KEY (symbol, kind))"
+        )
+        self._con.execute(
             "CREATE TABLE IF NOT EXISTS statements (symbol VARCHAR PRIMARY KEY, fetched_at TIMESTAMP, tried_at TIMESTAMP NOT NULL, "
             "status VARCHAR NOT NULL, error VARCHAR, attempts INTEGER NOT NULL, payload VARCHAR)"
         )
@@ -115,6 +124,29 @@ class Warehouse:
             raise
         return len(data)
 
+    def put_index_day(self, day: date, rows: Iterable[tuple[str, float | None, float | None, float | None, float | None, float | None, float | None, float | None]], now: datetime) -> int:
+        """Replace the day's index rows (name, open, high, low, close, P/E, P/B, dividend yield) and record the day as loaded."""
+        data = [[name, day, o, h, low, c, pe, pb, dy] for name, o, h, low, c, pe, pb, dy in rows]
+        self._con.execute("BEGIN")
+        try:
+            self._con.execute("DELETE FROM index_bars WHERE day = ?", [day])
+            if data:
+                self._con.executemany("INSERT INTO index_bars VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", data)
+            self._con.execute("INSERT OR REPLACE INTO index_days VALUES (?, ?, ?)", [day, len(data), _naive(now)])
+            self._con.execute("COMMIT")
+        except Exception:
+            self._con.execute("ROLLBACK")
+            raise
+        return len(data)
+
+    def put_packets(self, rows: Iterable[tuple[str, str, date, list[str], Mapping[str, Any]]], now: datetime) -> int:
+        """Store (symbol, kind, the day of the last price, flags, packet) rows, replacing what was held for the same symbol and kind."""
+        stamp = _naive(now)
+        data = [[s, kind, day, stamp, json.dumps(flags), json.dumps(packet, sort_keys=True)] for s, kind, day, flags, packet in rows]
+        if data:
+            self._con.executemany("INSERT OR REPLACE INTO packets VALUES (?, ?, ?, ?, ?, ?)", data)
+        return len(data)
+
     def put_statement(self, symbol: str, status: str, payload: Mapping[str, Any] | None, error: str, now: datetime) -> None:
         """Keep the result of one statements fetch: `ok` with the payload, `empty` (the source has none for this symbol), or `error`
         (the fetch failed; the attempt count grows until a fetch succeeds). A failed fetch keeps the payload and the time it was
@@ -133,6 +165,29 @@ class Warehouse:
         )
 
     # ---- reading
+    def packet(self, symbol: str, kind: str) -> dict[str, Any] | None:
+        """A stored packet with where it came from: {"packet", "flags", "data_as_of", "built_at"}, or None."""
+        row = self._con.execute("SELECT data_as_of, built_at, flags, payload FROM packets WHERE symbol = ? AND kind = ?", [symbol, kind]).fetchone()
+        if row is None:
+            return None
+        return {"data_as_of": row[0], "built_at": row[1].replace(tzinfo=_UTC), "flags": json.loads(row[2]), "packet": json.loads(row[3])}
+
+    def packet_counts(self) -> dict[str, int]:
+        return dict(self._con.execute("SELECT kind, count(*) FROM packets GROUP BY kind").fetchall())
+
+    def index_days_loaded(self, first: date, last: date) -> set[date]:
+        return {r[0] for r in self._con.execute("SELECT day FROM index_days WHERE day BETWEEN ? AND ?", [first, last]).fetchall()}
+
+    def index_close(self, name: str) -> dict[date, float]:
+        """The index's closing level by trading date: the benchmark series the risk and outcome figures read."""
+        return {d: c for d, c in self._con.execute("SELECT day, close FROM index_bars WHERE index_name = ? AND close IS NOT NULL ORDER BY day", [name]).fetchall()}
+
+    def index_valuation(self, name: str) -> dict[date, dict[str, float]]:
+        """The index's P/E, P/B and dividend yield by trading date, in the shape the fundamentals packet reads. Days the exchange
+        gives no figure for are left out."""
+        rows = self._con.execute("SELECT day, pe, pb, div_yield FROM index_bars WHERE index_name = ? AND pe IS NOT NULL ORDER BY day", [name]).fetchall()
+        return {d: {"pe": pe, "pb": pb, "div_yield": dy} for d, pe, pb, dy in rows}
+
     def statement(self, symbol: str) -> tuple[dict[str, Any], datetime] | None:
         """The symbol's statements payload and when it was fetched, or None when none is held."""
         row = self._con.execute("SELECT payload, fetched_at FROM statements WHERE symbol = ?", [symbol]).fetchone()
@@ -220,6 +275,7 @@ class Warehouse:
             "symbols_on_last_day": len(self.symbols_on(latest)) if latest else 0, "universe": universe,
             "last_load": loaded_at.replace(tzinfo=_UTC) if loaded_at else None, "actions": self.actions_status(),
             "statements": dict(self._con.execute("SELECT status, count(*) FROM statements GROUP BY status").fetchall()),
+            "index_days": self._con.execute("SELECT count(*) FROM index_days").fetchone()[0], "packets": self.packet_counts(),
         }
         if first is not None and last is not None:
             out["gaps"] = self.gaps(first, last)

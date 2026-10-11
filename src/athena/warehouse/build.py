@@ -11,7 +11,9 @@ from pathlib import Path
 
 from athena.clock import utc_now
 from athena.warehouse.actions import ingest_actions
+from athena.warehouse.indices import ingest_indices
 from athena.warehouse.ingest import ingest_prices, ingest_universe, ready_through
+from athena.warehouse.packets import build_packets
 from athena.warehouse.statements import refresh_statements
 from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse
 
@@ -41,7 +43,9 @@ def format_status(status: dict, first: date) -> str:
         f"({status['symbols_on_last_day']:,} symbols that day)",
         f"days: {days.get('loaded', 0)} loaded, {days.get('no_session', 0)} with no session, {days.get('pending', 0)} pending",
         f"universe: " + (", ".join(f"{count:,} {kind}" for kind, count in sorted(status["universe"].items())) or "empty"),
-        f"statements: " + (", ".join(f"{count:,} {name}" for name, count in sorted(status["statements"].items())) or "none fetched yet"),
+        "packets: " + (", ".join(f"{count:,} {kind}" for kind, count in sorted(status["packets"].items())) or "none built yet"),
+        f"index files: {status['index_days']} days (benchmark and index P/E)",
+        f"statements: " +(", ".join(f"{count:,} {name}" for name, count in sorted(status["statements"].items())) or "none fetched yet"),
         f"actions: {status['actions']['rows']:,} corporate actions for {status['actions']['symbols']:,} symbols, ex-dates {status['actions']['first_ex']} to {status['actions']['last_ex']}",
         f"gaps since {first}: " + (f"{len(gaps)} weekdays not settled, e.g. {', '.join(d.isoformat() for d in gaps[:5])}" if gaps else "none"),
     ]
@@ -70,6 +74,10 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as exc:  # the price days already loaded stay good; the next run asks again
                 print(f"corporate actions not refreshed: {type(exc).__name__}: {exc}")
             try:
+                print("indices:", ingest_indices(warehouse, client.get, first, now))
+            except Exception as exc:
+                print(f"indices not refreshed: {type(exc).__name__}: {exc}")
+            try:
                 equity, etf = masters()
                 print(f"universe: {ingest_universe(warehouse, equity, etf, now)} symbols")
             except Exception as exc:  # the lists are on the exchange's archive host; the prices already loaded are still good
@@ -78,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
                 from athena.loaders.fundamentals import default_fetch
 
                 print("statements:", refresh_statements(warehouse, default_fetch, now, args.statements, on_progress=print))
+            print("packets:", build_packets(warehouse, now, on_progress=print))
         print(format_status(warehouse.status(first, ready_through(now)), first))
     finally:
         warehouse.close()
