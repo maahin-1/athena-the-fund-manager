@@ -63,12 +63,13 @@ def rows_to_actions(rows: list[Mapping[str, Any]]) -> tuple[list[tuple[str, date
 
 
 def ingest_actions(
-    warehouse: Warehouse, get: Callable[[str], bytes | None], today: date, now: datetime, since: date | None = None
+    warehouse: Warehouse, get: Callable[[str], bytes | None], today: date, now: datetime, since: date | None = None, full: bool = False
 ) -> dict[str, int]:
     """The first run reads from `since` (default two years back); later runs re-read the last 45 days and everything announced
-    ahead. Actions in the window are replaced, so one the exchange withdrew or reworded is not kept."""
+    ahead; `full` reads from `since` again whatever is held (to extend the history backwards). Actions in the window are replaced,
+    so one the exchange withdrew or reworded is not kept."""
     have = warehouse.actions_status()["rows"]
-    first = (since or today - timedelta(days=BACKFILL_DAYS)) if not have else today - timedelta(days=RECHECK_DAYS)
+    first = (since or today - timedelta(days=BACKFILL_DAYS)) if (not have or (full and since)) else today - timedelta(days=RECHECK_DAYS)
     last = today + timedelta(days=LOOKAHEAD_DAYS)
     rows, skipped = rows_to_actions(fetch_actions(get, first, last))
     return {"rows": warehouse.replace_actions(rows, first, last, now), "skipped": skipped}

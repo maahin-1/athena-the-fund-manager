@@ -70,6 +70,7 @@ def run_build(
     statements_fetch: Callable[[str], dict[str, Any]] | None,
     statements_budget: int,
     on_progress: Callable[[str], None] = lambda text: None,
+    full_actions: bool = False,
 ) -> dict[str, Any]:
     """Run every step of the nightly build, one failing never stopping the next, and say what each did. The price step is the one the
     others lean on: if it stopped early the build is not ok even when the later steps ran."""
@@ -87,7 +88,7 @@ def run_build(
         return result
 
     step("prices", lambda: ingest_prices(warehouse, price_store, first, now), lambda r: not r["stopped"] and not r["failed"])
-    step("actions", lambda: ingest_actions(warehouse, get, ready_through(now), now, since=first))
+    step("actions", lambda: ingest_actions(warehouse, get, ready_through(now), now, since=first, full=full_actions))
     step("indices", lambda: ingest_indices(warehouse, get, first, now), lambda r: not r["stopped"] and not r["failed"])
     step("universe", lambda: ingest_universe(warehouse, *lists(), now))
     if statements_budget and statements_fetch is not None:
@@ -116,7 +117,7 @@ def write_build_status(status: dict[str, Any], started: datetime, finished: date
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m athena.warehouse.build", description=__doc__.split("\n")[0])
-    parser.add_argument("--since", help="first day to load, YYYY-MM-DD (default: two years back)")
+    parser.add_argument("--since", help="first day to load, YYYY-MM-DD (default: two years back); an earlier day than the history held extends it backwards, actions included")
     parser.add_argument("--db", default=str(DEFAULT_PATH))
     parser.add_argument("--status", action="store_true", help="only report what the database holds")
     parser.add_argument("--statements", type=int, default=300, help="how many stocks' statements to fetch this run (0: none)")
@@ -131,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             from athena.pit.bhavcopy import ArchiveClient, BhavcopyStore
 
             client = ArchiveClient()
-            outcome = run_build(warehouse, started, first, client.get, BhavcopyStore(client), masters, default_fetch, args.statements, on_progress=print)
+            outcome = run_build(warehouse, started, first, client.get, BhavcopyStore(client), masters, default_fetch, args.statements, on_progress=print, full_actions=bool(args.since))
             ok = outcome["ok"]
             print("report:", write_build_status(outcome, started, utc_now()))
         print(format_status(warehouse.status(first, ready_through(started)), first))

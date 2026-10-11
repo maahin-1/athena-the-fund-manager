@@ -207,6 +207,14 @@ def test_the_first_run_reaches_back_two_years_and_later_runs_only_the_recent_pas
     assert "from_date=12-10-2024" in asked[0] and "from_date=28-08-2026" in asked[1]
 
 
+def test_a_full_run_reads_back_from_since_even_when_actions_are_held():
+    w = Warehouse(":memory:")
+    asked = []
+    ingest_actions(w, lambda url: asked.append(url) or json.dumps([nse_row("A", "14-Jan-2026", "Bonus 1:1")]).encode(), date(2026, 10, 12), NOW)
+    ingest_actions(w, lambda url: asked.append(url) or b"[]", date(2026, 10, 12), NOW, since=date(2023, 1, 2), full=True)
+    assert "from_date=02-01-2023" in asked[1]
+
+
 def test_adjusted_history_applies_a_recorded_split_and_a_split_with_a_bonus_the_same_day(tmp_path):
     w = Warehouse(":memory:")
     closes = {date(2026, 1, 12): 100.0, date(2026, 1, 13): 100.0, date(2026, 1, 14): 10.0, date(2026, 1, 15): 10.0}  # a tenth after a 10-to-2 split plus a 1:1 bonus

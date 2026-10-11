@@ -61,6 +61,7 @@ def run_cases(
     repeats: int = 1,
     blind: bool = False,
     on_progress: Callable[[str], None] = lambda text: None,
+    packet_for: Mapping[str, str] = PACKET_FOR,
 ) -> int:
     """Build each stock-and-date case and run every analyst on its packet `repeats` times, appending the rows to `out`.
     Returns the number of analyst runs made. A case that cannot be built, or a run that fails, is logged and skipped."""
@@ -82,7 +83,7 @@ def run_cases(
                 continue
             with out.open("a", encoding="utf-8") as handle:
                 for name, run in wanted:
-                    packet = case.packets.get(PACKET_FOR[name])
+                    packet = case.packets.get(packet_for[name])
                     if packet is None:
                         rows = rows_for(case, name, run, None, "no packet for this case")
                     else:
