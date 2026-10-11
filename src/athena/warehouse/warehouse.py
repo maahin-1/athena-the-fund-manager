@@ -98,6 +98,10 @@ class Warehouse:
             "CREATE TABLE IF NOT EXISTS actions (symbol VARCHAR NOT NULL, ex_date DATE NOT NULL, subject VARCHAR NOT NULL, face_value DOUBLE, "
             "series VARCHAR, isin VARCHAR, fetched_at TIMESTAMP NOT NULL, PRIMARY KEY (symbol, ex_date, subject))"
         )
+        self._con.execute(
+            "CREATE TABLE IF NOT EXISTS verdicts (symbol VARCHAR NOT NULL, made_at TIMESTAMP NOT NULL, data_as_of DATE NOT NULL, close DOUBLE, "
+            "annual_period DATE, quarter DATE, payload VARCHAR NOT NULL, PRIMARY KEY (symbol, made_at))"
+        )
 
     # ---- writing
     def upsert_day(self, day: date, rows: Mapping[str, Row], now: datetime) -> int:
@@ -195,6 +199,17 @@ class Warehouse:
             self._con.executemany("INSERT OR REPLACE INTO packets VALUES (?, ?, ?, ?, ?, ?)", data)
         return len(data)
 
+    def put_verdict(
+        self, symbol: str, now: datetime, data_as_of: date, close: float | None, annual_period: date | None, quarter: date | None,
+        payload: Mapping[str, Any],
+    ) -> None:
+        """Keep one verdict with what it was made from (the day and close of the last price, the statements' latest annual period and
+        quarter). Every verdict is kept; `latest_verdict` shows the newest."""
+        self._con.execute(
+            "INSERT OR REPLACE INTO verdicts VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [symbol, _naive(now), data_as_of, close, annual_period, quarter, json.dumps(payload, sort_keys=True)],
+        )
+
     def put_statement(self, symbol: str, status: str, payload: Mapping[str, Any] | None, error: str, now: datetime) -> None:
         """Keep the result of one statements fetch: `ok` with the payload, `empty` (the source has none for this symbol), or `error`
         (the fetch failed; the attempt count grows until a fetch succeeds). A failed fetch keeps the payload and the time it was
@@ -231,6 +246,34 @@ class Warehouse:
         if row is None:
             return None
         return {"data_as_of": row[0], "built_at": row[1].replace(tzinfo=_UTC), "flags": json.loads(row[2]), "packet": json.loads(row[3])}
+
+    def _verdict_rows(self, where: str, params: list[Any], limit: str = "") -> list[dict[str, Any]]:
+        try:
+            cursor = self._con.execute(
+                f"SELECT symbol, made_at, data_as_of, close, annual_period, quarter, payload FROM verdicts {where} ORDER BY made_at DESC {limit}", params
+            )
+        except duckdb.CatalogException:  # a database built before verdicts existed, opened read-only
+            return []
+        return [
+            {"symbol": s, "made_at": m.replace(tzinfo=_UTC), "data_as_of": d, "close": c, "annual_period": a, "quarter": q, "payload": json.loads(p)}
+            for s, m, d, c, a, q, p in cursor.fetchall()
+        ]
+
+    def latest_verdict(self, symbol: str) -> dict[str, Any] | None:
+        rows = self._verdict_rows("WHERE symbol = ?", [symbol], "LIMIT 1")
+        return rows[0] if rows else None
+
+    def verdict_history(self, symbol: str) -> list[dict[str, Any]]:
+        """Every verdict kept for the symbol, newest first."""
+        return self._verdict_rows("WHERE symbol = ?", [symbol])
+
+    def verdict_symbols(self) -> list[str]:
+        """The symbols that have at least one verdict, oldest-judged first (so a limited refresh serves the stalest first)."""
+        try:
+            rows = self._con.execute("SELECT symbol FROM verdicts GROUP BY symbol ORDER BY max(made_at)").fetchall()
+        except duckdb.CatalogException:
+            return []
+        return [r[0] for r in rows]
 
     def packet_counts(self) -> dict[str, int]:
         return dict(self._con.execute("SELECT kind, count(*) FROM packets GROUP BY kind").fetchall())

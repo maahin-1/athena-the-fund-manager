@@ -273,7 +273,7 @@ def run(service: ViewService) -> None:
         if path is None:
             st.info("The market screen needs the market database: run `python -m athena.warehouse.build`, then restart the dashboard.")
         else:
-            render_market(path)
+            render_market(path, getattr(service, "verdicts", None))
 
 
 def _analyse(service: ViewService) -> None:

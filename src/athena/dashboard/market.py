@@ -221,7 +221,8 @@ def _table(rows: Sequence[Mapping[str, Any]], columns: Sequence[str]):
     return frame, config
 
 
-def render_market(path: Path | str) -> None:
+def render_market(path: Path | str, verdicts: Any = None) -> None:
+    """`verdicts` (a `VerdictRunner`) adds the verdict panel under the chart; without it the screen is as before."""
     from athena.contracts import AthenaError
 
     path = Path(path)
@@ -295,6 +296,10 @@ def render_market(path: Path | str) -> None:
         st.plotly_chart(figure, use_container_width=True)
         for line in [*flags, *notes]:
             st.caption(line)
+        if verdicts is not None:
+            from athena.dashboard.verdict_panel import render_verdict
+
+            render_verdict(verdicts, symbol)
     else:
         st.caption("Click a row to see its chart.")
 
