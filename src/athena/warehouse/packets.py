@@ -9,7 +9,9 @@ from typing import Any
 
 from athena.technicals.packet import build_technical_packet
 from athena.metrics.fundamentals import build_fundamentals_packet
+from athena.trading_calendar import ist_date
 from athena.warehouse.history import adjusted_history
+from athena.warehouse.screen import screen_row
 from athena.warehouse.statements import STALE_OK_DAYS
 from athena.warehouse.warehouse import ETF, STOCK, Warehouse
 
@@ -37,6 +39,7 @@ def build_packets(
     index_pe = warehouse.index_valuation(BENCHMARK)
     chosen = set(symbols) if symbols is not None else None
     rows: list[tuple[str, str, date, list[str], dict[str, Any]]] = []
+    screen: list[dict[str, Any]] = []
     for entry in warehouse.universe():
         symbol, kind = entry["symbol"], entry["kind"]
         if kind not in (STOCK, ETF) or (chosen is not None and symbol not in chosen):
@@ -45,31 +48,32 @@ def build_packets(
         if len(bars) < MIN_BARS:
             summary["no_prices"] += 1
             continue
-        from athena.trading_calendar import ist_date
-
         day = ist_date(bars[-1].timestamp)
         if (last - day).days > ACTIVE_WITHIN_DAYS:
             summary["inactive"] += 1
             continue
         flags = [f"price break with no recorded action: {flag}" for flag in history.price_flags(symbol)]
         try:
-            rows.append((symbol, TECHNICAL, day, flags, build_technical_packet(symbol, _close(day), bars)))
+            technical = build_technical_packet(symbol, _close(day), bars)
+            rows.append((symbol, TECHNICAL, day, flags, technical))
             summary["technical"] += 1
+            fundamentals, age, notes = None, None, list(flags)
             if kind == STOCK:
                 held = warehouse.statement(symbol)
                 if held is None:
                     summary["no_statements"] += 1
-                    continue
-                payload, fetched = held
-                age = (now - fetched).days
-                notes = list(flags)
-                if age > STALE_OK_DAYS:
-                    notes.append(f"statements fetched {age} days ago")
-                packet = build_fundamentals_packet(symbol, _close(day), payload, bars[-1].close, _close(day), index_pe)
-                rows.append((symbol, FUNDAMENTALS, day, notes, packet))
-                summary["fundamentals"] += 1
+                else:
+                    payload, fetched = held
+                    age = (now - fetched).days
+                    if age > STALE_OK_DAYS:
+                        notes.append(f"statements fetched {age} days ago")
+                    fundamentals = build_fundamentals_packet(symbol, _close(day), payload, bars[-1].close, _close(day), index_pe)
+                    rows.append((symbol, FUNDAMENTALS, day, notes, fundamentals))
+                    summary["fundamentals"] += 1
+            screen.append(screen_row(symbol, kind, entry["name"] or symbol, day, bars, technical, fundamentals, len(notes), age))
         except Exception as exc:  # one stock's odd data must not stop the market's build
             summary["failed"].append(f"{symbol}: {type(exc).__name__}: {str(exc)[:80]}")
             on_progress(f"{symbol}: packet failed ({type(exc).__name__})")
     warehouse.put_packets(rows, now)
+    summary["screen"] = warehouse.put_screen(screen, now, replace_all=chosen is None)
     return summary

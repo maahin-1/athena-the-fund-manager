@@ -8,6 +8,7 @@ import streamlit as st
 from athena.contracts import AthenaError
 from athena.backtest.rules import RULES, Rule, SeriesRule
 from athena.dashboard.backtest_view import BacktestView
+from athena.dashboard.market import render_market
 from athena.dashboard.risk_form import risk_controls
 from athena.dashboard.strategy_form import strategy_controls
 from athena.dashboard.view import DashboardView, Panel
@@ -264,6 +265,18 @@ def _backtest_section(service: ViewService, identifier: str) -> None:
 def run(service: ViewService) -> None:
     st.set_page_config(page_title="Athena", layout="wide")
     st.title("Athena")
+    analyse, market = st.tabs(["Analyse a stock", "Market screen"])
+    with analyse:
+        _analyse(service)
+    with market:
+        path = getattr(service, "market_db", None)
+        if path is None:
+            st.info("The market screen needs the market database: run `python -m athena.warehouse.build`, then restart the dashboard.")
+        else:
+            render_market(path)
+
+
+def _analyse(service: ViewService) -> None:
     overlay, problem = risk_controls()
     picked = st.session_state.pop(PICK_KEY, None)  # applied before the box exists: Streamlit forbids changing it after
     if picked:

@@ -6,15 +6,20 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from athena.warehouse.fill import STATUS_PATH, read_status
 
+BUILD_STATUS_PATH = Path(".athena") / "build_status.json"
+STALE_BUILD_HOURS = 36  # the build runs each evening; a day and a half without one means a night was missed
 STALL_AFTER_SECONDS = 300  # a running job updates its status after every stock, a few seconds apart
 OK, PAUSED, BAD, NONE = "ok", "paused", "bad", "none"
+WARN = PAUSED  # for the build: it ran but a step failed
 
 
 def _parse(text: str) -> datetime | None:
@@ -47,6 +52,27 @@ def assess(status: dict[str, Any] | None, now: datetime) -> tuple[str, str]:
 
 def _percent(status: dict[str, Any]) -> int:
     return int(100 * status["done"] / status["total"]) if status.get("total") else 100
+
+
+def read_build(path: Path = BUILD_STATUS_PATH) -> dict[str, Any] | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def assess_build(status: dict[str, Any] | None, now: datetime) -> tuple[str, str]:
+    """(level, one line) for the nightly build: ok, warn (a step failed), bad (no recent build), none (never run)."""
+    if status is None:
+        return NONE, "no build status found: the nightly build has not run"
+    finished = _parse(status.get("finished_at", ""))
+    age_hours = (now - finished).total_seconds() / 3600 if finished else float("inf")
+    if age_hours > STALE_BUILD_HOURS:
+        return BAD, f"build is stale: the last one finished {age_hours:.0f} hours ago (prices to {status.get('last_loaded_day')})"
+    failed = [s["name"] for s in status.get("steps", []) if not s["ok"]]
+    if failed:
+        return WARN, f"build finished {age_hours:.1f} h ago with problems in: {', '.join(failed)} (see .athena/reports/build_latest.md)"
+    return OK, f"build ok, finished {age_hours:.1f} h ago, prices to {status.get('last_loaded_day')}"
 
 
 def describe(status: dict[str, Any] | None, now: datetime) -> str:
@@ -95,10 +121,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.events:
         level = watch(read_status, clock, time.sleep, lambda text: print(text, flush=True))
         return {OK: 0, PAUSED: 1}.get(level, 2)
-    status = read_status(STATUS_PATH)
+    status, build = read_status(STATUS_PATH), read_build()
     print(describe(status, clock()))
-    level, _ = assess(status, clock())
-    return {OK: 0, PAUSED: 1, BAD: 2, NONE: 3}[level]
+    build_level, build_line = assess_build(build, clock())
+    print(build_line)
+    fill_level, _ = assess(status, clock())
+    rank = {OK: 0, PAUSED: 1, BAD: 2, NONE: 0}
+    return max(rank[fill_level] if status is not None else 0, rank[build_level] if build is not None else 1)
 
 
 if __name__ == "__main__":

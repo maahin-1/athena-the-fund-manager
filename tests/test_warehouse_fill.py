@@ -159,3 +159,23 @@ def test_watching_ends_on_a_stall():
     lines = []
     level = watch(lambda: status(updated_at=(NOW - timedelta(hours=1)).isoformat()), lambda: NOW, lambda s: None, lines.append)
     assert level == BAD and "stalled" in lines[0]
+
+
+def test_a_database_that_stays_busy_stops_the_job_with_a_reason_instead_of_crashing(tmp_path, monkeypatch):
+    import duckdb
+
+    import athena.warehouse.fill as fill_module
+
+    db = make_db(tmp_path, ["A", "B"])
+    real = fill_module.Warehouse
+    calls = {"n": 0}
+
+    def busy(path, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 1:  # the first open (reading the queue) works; every write finds the file in use
+            raise duckdb.IOException("Could not set lock on file")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(fill_module, "Warehouse", busy)
+    status = fill(tmp_path, db, lambda s: GOOD)
+    assert status.state == "stopped" and "could not write to the database" in status.reason

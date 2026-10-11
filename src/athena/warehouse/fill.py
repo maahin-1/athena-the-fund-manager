@@ -120,8 +120,13 @@ def run_fill(
             result, message = (STATEMENT_OK if held is not None else STATEMENT_EMPTY), ""
             if result == STATEMENT_EMPTY:
                 message = "no financial statements from the source"
-        with Warehouse(db_path, wait_seconds=DB_WAIT_SECONDS, sleep=sleep) as warehouse:
-            warehouse.put_statement(symbol, result, held, message, now)
+        try:
+            with Warehouse(db_path, wait_seconds=DB_WAIT_SECONDS, sleep=sleep) as warehouse:
+                warehouse.put_statement(symbol, result, held, message, now)
+        except Exception as exc:  # the file stayed in use by another job past the wait: stop cleanly, the next run resumes
+            status.state, status.reason = "stopped", f"could not write to the database: {_message(exc)}"
+            on_progress(status.reason)
+            break
         outcome[symbol], errors[symbol] = result, message
         index += 1
         if result == STATEMENT_ERROR:
@@ -151,8 +156,11 @@ def run_fill(
     status.current = ""
     packets = {}
     if build_after:
-        with Warehouse(db_path, wait_seconds=DB_WAIT_SECONDS, sleep=sleep) as warehouse:
-            packets = build_packets(warehouse, clock())
+        try:
+            with Warehouse(db_path, wait_seconds=DB_WAIT_SECONDS, sleep=sleep) as warehouse:
+                packets = build_packets(warehouse, clock())
+        except Exception as exc:  # the statements are saved; the nightly build makes the packets
+            on_progress(f"packets not rebuilt: {_message(exc)}")
     ended = clock()
     status.report = str(write_report(report_dir, status, packets, db_path, started, ended, errors, outcome))
     _write(status_path, status, ended)
@@ -163,9 +171,13 @@ def write_report(
     report_dir: Path, status: FillStatus, packets: dict[str, Any], db_path: Path, started: datetime, ended: datetime,
     errors: dict[str, str], outcome: dict[str, str],
 ) -> Path:
-    with Warehouse(db_path, read_only=True, wait_seconds=DB_WAIT_SECONDS) as warehouse:
-        held = warehouse.status()["statements"]
-        stocks = len(warehouse.universe("stock"))
+    held, stocks, unread = {}, 0, ""
+    try:
+        with Warehouse(db_path, read_only=True, wait_seconds=DB_WAIT_SECONDS) as warehouse:
+            held = warehouse.status()["statements"]
+            stocks = len(warehouse.universe("stock"))
+    except Exception as exc:  # the report is still worth writing without the totals
+        unread = _message(exc)
     minutes = (ended - started).total_seconds() / 60
     failed = sorted(s for s, o in outcome.items() if o == STATEMENT_ERROR)
     lines = [
@@ -174,7 +186,8 @@ def write_report(
         f"- Result: **{status.state}**" + (f" ({status.reason})" if status.reason else ""),
         f"- Took {minutes:.0f} minutes; {status.done} of {status.total} due stocks tried; {status.pauses} pause(s) for refusals.",
         f"- This run: {status.ok} with statements, {status.empty} with none at the source (new listings, renamed or delisted), {status.error} failed.",
-        f"- Now held: {held.get('ok', 0):,} of {stocks:,} stocks have statements; {held.get('empty', 0):,} empty, {held.get('error', 0):,} failed.",
+        (f"- Now held: {held.get('ok', 0):,} of {stocks:,} stocks have statements; {held.get('empty', 0):,} empty, {held.get('error', 0):,} failed."
+         if not unread else f"- Totals in the database could not be read ({unread}); run `python -m athena.warehouse.build --status`."),
     ]
     if packets:
         lines.append(f"- Packets rebuilt: {packets.get('technical', 0):,} technical, {packets.get('fundamentals', 0):,} fundamentals; "

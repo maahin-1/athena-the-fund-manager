@@ -23,6 +23,7 @@ from athena.resolver import Resolution
 from athena.risk_overlay.model import Overlay
 from athena.technicals.packet import build_technical_packet
 from athena.trading_calendar import ist_date
+from athena.warehouse.warehouse import DEFAULT_PATH as DEFAULT_WAREHOUSE
 
 BACKTEST_YEARS = 8
 
@@ -45,6 +46,7 @@ class DashboardService:
         backtest_notes: Callable[[str], Sequence[str]] | None = None,
         price_notes: Callable[[str], Sequence[str]] | None = None,
         event_notes: Callable[[str, str], Sequence[str]] | None = None,
+        market_db: Path | None = None,
     ):
         self._orchestrator = orchestrator
         self._bars = bars
@@ -55,6 +57,7 @@ class DashboardService:
         self._backtest_notes = backtest_notes  # the same for the long history the backtest runs on
         self._price_notes = price_notes  # what was adjusted in the bars, or could not be explained, for this symbol
         self._event_notes = event_notes  # what the exchange and the press said about those events: (symbol, company name)
+        self.market_db = market_db  # the market warehouse the screen tab reads, or None when there is none
 
     def view(self, query: str, overlay: Overlay | None = None, list_relatives: bool = False) -> DashboardView:
         self._bars.clear()
@@ -112,4 +115,5 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
         long_history=long_history, backtest_notes=checked_long_history.notes, price_notes=lambda symbol: sources.history.notes(symbol) + sources.warnings,
         event_notes=EventConfirmer(sources.news, sources.history.events_found) if sources.news is not None else None,
+        market_db=DEFAULT_WAREHOUSE,
     )

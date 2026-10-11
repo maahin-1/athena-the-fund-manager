@@ -15,6 +15,7 @@ import duckdb
 from athena.contracts import Bar
 from athena.pit.bhavcopy import SOURCE, Row
 from athena.price_integrity.actions import CorporateAction, parse_subject
+from athena.warehouse.screen import SCREEN_COLUMNS
 
 DEFAULT_PATH = Path(".athena") / "warehouse.duckdb"
 LOADED, NO_SESSION, PENDING = "loaded", "no_session", "pending"
@@ -83,6 +84,8 @@ class Warehouse:
             "close DOUBLE, pe DOUBLE, pb DOUBLE, div_yield DOUBLE, PRIMARY KEY (index_name, day))"
         )
         self._con.execute("CREATE TABLE IF NOT EXISTS index_days (day DATE PRIMARY KEY, rows INTEGER NOT NULL, loaded_at TIMESTAMP NOT NULL)")
+        columns = ", ".join(f"{name} {sql_type}" for name, sql_type in SCREEN_COLUMNS.items())
+        self._con.execute(f"CREATE TABLE IF NOT EXISTS screen ({columns}, built_at TIMESTAMP NOT NULL, PRIMARY KEY (symbol))")
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS packets (symbol VARCHAR NOT NULL, kind VARCHAR NOT NULL, data_as_of DATE NOT NULL, built_at TIMESTAMP NOT NULL, "
             "flags VARCHAR NOT NULL, payload VARCHAR NOT NULL, PRIMARY KEY (symbol, kind))"
@@ -167,6 +170,23 @@ class Warehouse:
             raise
         return len(data)
 
+    def put_screen(self, rows: Iterable[Mapping[str, Any]], now: datetime, replace_all: bool = False) -> int:
+        """Store the flat screen rows. `replace_all` first drops every row held, so a symbol that has gone inactive does not linger."""
+        names = list(SCREEN_COLUMNS)
+        data = [[row[name] for name in names] + [_naive(now)] for row in rows]
+        self._con.execute("BEGIN")
+        try:
+            if replace_all:
+                self._con.execute("DELETE FROM screen")
+            if data:
+                marks = ", ".join("?" for _ in range(len(names) + 1))
+                self._con.executemany(f"INSERT OR REPLACE INTO screen VALUES ({marks})", data)
+            self._con.execute("COMMIT")
+        except Exception:
+            self._con.execute("ROLLBACK")
+            raise
+        return len(data)
+
     def put_packets(self, rows: Iterable[tuple[str, str, date, list[str], Mapping[str, Any]]], now: datetime) -> int:
         """Store (symbol, kind, the day of the last price, flags, packet) rows, replacing what was held for the same symbol and kind."""
         stamp = _naive(now)
@@ -193,6 +213,18 @@ class Warehouse:
         )
 
     # ---- reading
+    def screen_rows(self, kinds: Iterable[str] | None = None) -> list[dict[str, Any]]:
+        """Every screen row (or those of the given kinds) as a dict, with `built_at` when it was computed."""
+        sql = "SELECT * FROM screen"
+        params: list[Any] = []
+        if kinds is not None:
+            wanted = list(kinds)
+            sql += f" WHERE kind IN ({', '.join('?' for _ in wanted)})"
+            params = wanted
+        cursor = self._con.execute(sql + " ORDER BY symbol", params)
+        names = [d[0] for d in cursor.description]
+        return [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
+
     def packet(self, symbol: str, kind: str) -> dict[str, Any] | None:
         """A stored packet with where it came from: {"packet", "flags", "data_as_of", "built_at"}, or None."""
         row = self._con.execute("SELECT data_as_of, built_at, flags, payload FROM packets WHERE symbol = ? AND kind = ?", [symbol, kind]).fetchone()
