@@ -3,6 +3,7 @@ DuckDB file, built each evening from the exchange's price files and read by char
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import duckdb
 
 from athena.contracts import Bar
 from athena.pit.bhavcopy import SOURCE, Row
+from athena.price_integrity.actions import CorporateAction, parse_subject
 
 DEFAULT_PATH = Path(".athena") / "warehouse.duckdb"
 LOADED, NO_SESSION, PENDING = "loaded", "no_session", "pending"
@@ -46,6 +48,10 @@ class Warehouse:
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS universe (symbol VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL, name VARCHAR, isin VARCHAR, updated_at TIMESTAMP NOT NULL)"
         )
+        self._con.execute(
+            "CREATE TABLE IF NOT EXISTS actions (symbol VARCHAR NOT NULL, ex_date DATE NOT NULL, subject VARCHAR NOT NULL, face_value DOUBLE, "
+            "series VARCHAR, isin VARCHAR, fetched_at TIMESTAMP NOT NULL, PRIMARY KEY (symbol, ex_date, subject))"
+        )
 
     # ---- writing
     def upsert_day(self, day: date, rows: Mapping[str, Row], now: datetime) -> int:
@@ -54,10 +60,11 @@ class Warehouse:
         self._con.execute("BEGIN")
         try:
             self._con.execute("DELETE FROM bars WHERE day = ?", [day])
-            self._con.executemany(
-                "INSERT INTO bars VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [[r.symbol, day, r.open, r.high, r.low, r.close, r.volume, r.series, SOURCE, stamp] for r in rows.values()],
-            )
+            if rows:
+                self._con.executemany(
+                    "INSERT INTO bars VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [[r.symbol, day, r.open, r.high, r.low, r.close, r.volume, r.series, SOURCE, stamp] for r in rows.values()],
+                )
             self._con.execute("INSERT OR REPLACE INTO days VALUES (?, ?, ?, ?)", [day, LOADED, len(rows), stamp])
             self._con.execute("COMMIT")
         except Exception:
@@ -78,7 +85,24 @@ class Warehouse:
         self._con.execute("BEGIN")
         try:
             self._con.execute("DELETE FROM universe")
-            self._con.executemany("INSERT INTO universe VALUES (?, ?, ?, ?, ?)", data)
+            if data:
+                self._con.executemany("INSERT INTO universe VALUES (?, ?, ?, ?, ?)", data)
+            self._con.execute("COMMIT")
+        except Exception:
+            self._con.execute("ROLLBACK")
+            raise
+        return len(data)
+
+    def replace_actions(self, rows: Iterable[tuple[str, date, str, float | None, str, str]], first: date, last: date, now: datetime) -> int:
+        """Replace every corporate action with an ex-date from `first` to `last` by `rows` (symbol, ex-date, the exchange's wording,
+        face value, series, ISIN). An action the exchange has since withdrawn or reworded does not linger. All or nothing."""
+        stamp = _naive(now)
+        data = [[s, d, subject, fv, series, isin, stamp] for s, d, subject, fv, series, isin in rows]
+        self._con.execute("BEGIN")
+        try:
+            self._con.execute("DELETE FROM actions WHERE ex_date BETWEEN ? AND ?", [first, last])
+            if data:
+                self._con.executemany("INSERT OR REPLACE INTO actions VALUES (?, ?, ?, ?, ?, ?, ?)", data)
             self._con.execute("COMMIT")
         except Exception:
             self._con.execute("ROLLBACK")
@@ -86,6 +110,21 @@ class Warehouse:
         return len(data)
 
     # ---- reading
+    def actions(self, symbol: str) -> list[CorporateAction]:
+        """The symbol's corporate actions read from the exchange's wording (splits, bonuses, demergers, rights, buybacks), oldest first."""
+        out = []
+        for day, subject, face_value in self._con.execute(
+            "SELECT ex_date, subject, face_value FROM actions WHERE symbol = ? ORDER BY ex_date", [symbol]
+        ).fetchall():
+            action = parse_subject(day, subject)
+            if action is not None:
+                out.append(replace(action, face_value=face_value))
+        return out
+
+    def actions_status(self) -> dict[str, Any]:
+        row = self._con.execute("SELECT count(*), count(DISTINCT symbol), min(ex_date), max(ex_date), max(fetched_at) FROM actions").fetchone()
+        return {"rows": row[0], "symbols": row[1], "first_ex": row[2], "last_ex": row[3], "fetched_at": row[4].replace(tzinfo=_UTC) if row[4] else None}
+
     def day_status(self, first: date, last: date) -> dict[date, str]:
         rows = self._con.execute("SELECT day, status FROM days WHERE day BETWEEN ? AND ?", [first, last]).fetchall()
         return {day: status for day, status in rows}
@@ -136,7 +175,7 @@ class Warehouse:
         out: dict[str, Any] = {
             "days": counts, "last_loaded_day": latest, "bars_from": row[0], "bars_to": row[1], "bar_rows": row[2],
             "symbols_on_last_day": len(self.symbols_on(latest)) if latest else 0, "universe": universe,
-            "last_load": loaded_at.replace(tzinfo=_UTC) if loaded_at else None,
+            "last_load": loaded_at.replace(tzinfo=_UTC) if loaded_at else None, "actions": self.actions_status(),
         }
         if first is not None and last is not None:
             out["gaps"] = self.gaps(first, last)

@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from athena.clock import utc_now
+from athena.warehouse.actions import ingest_actions
 from athena.warehouse.ingest import ingest_prices, ingest_universe, ready_through
 from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse
 
@@ -39,6 +40,7 @@ def format_status(status: dict, first: date) -> str:
         f"({status['symbols_on_last_day']:,} symbols that day)",
         f"days: {days.get('loaded', 0)} loaded, {days.get('no_session', 0)} with no session, {days.get('pending', 0)} pending",
         f"universe: " + (", ".join(f"{count:,} {kind}" for kind, count in sorted(status["universe"].items())) or "empty"),
+        f"actions: {status['actions']['rows']:,} corporate actions for {status['actions']['symbols']:,} symbols, ex-dates {status['actions']['first_ex']} to {status['actions']['last_ex']}",
         f"gaps since {first}: " + (f"{len(gaps)} weekdays not settled, e.g. {', '.join(d.isoformat() for d in gaps[:5])}" if gaps else "none"),
     ]
     return "\n".join(lines)
@@ -55,10 +57,15 @@ def main(argv: list[str] | None = None) -> int:
     warehouse = Warehouse(Path(args.db))
     try:
         if not args.status:
-            from athena.pit.bhavcopy import BhavcopyStore
+            from athena.pit.bhavcopy import ArchiveClient, BhavcopyStore
 
-            summary = ingest_prices(warehouse, BhavcopyStore(), first, now, on_progress=print)
+            client = ArchiveClient()
+            summary = ingest_prices(warehouse, BhavcopyStore(client), first, now, on_progress=print)
             print({k: v for k, v in summary.items() if v})
+            try:
+                print("corporate actions:", ingest_actions(warehouse, client.get, ready_through(now), now, since=first))
+            except Exception as exc:  # the price days already loaded stay good; the next run asks again
+                print(f"corporate actions not refreshed: {type(exc).__name__}: {exc}")
             try:
                 equity, etf = masters()
                 print(f"universe: {ingest_universe(warehouse, equity, etf, now)} symbols")

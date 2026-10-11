@@ -149,3 +149,78 @@ def test_the_real_store_leaves_no_marker_for_a_late_file(tmp_path):
     assert store.day(date(2026, 10, 12), remember_missing=False) is None
     assert not list(tmp_path.iterdir())
     assert store.day(date(2026, 10, 12)) is None and len(list(tmp_path.iterdir())) == 1  # remembered only when asked to
+
+
+# ---- corporate actions
+import json  # noqa: E402
+
+from athena.warehouse.actions import fetch_actions, ingest_actions, rows_to_actions  # noqa: E402
+from athena.warehouse.history import adjusted_history, market_price_flags  # noqa: E402
+
+
+def nse_row(symbol, ex, subject, face="10"):
+    return {"symbol": symbol, "exDate": ex, "subject": subject, "faceVal": face, "series": "EQ", "isin": "INE000"}
+
+
+def reply(rows):
+    return lambda url: json.dumps(rows).encode()
+
+
+def test_rows_become_actions_and_unusable_rows_are_counted_not_guessed():
+    rows, skipped = rows_to_actions([nse_row("TCS", "14-Jan-2026", "Bonus 1:1"), {"symbol": "X", "subject": "Bonus 1:1"}, nse_row("Y", "bad", "Bonus 1:1"), nse_row("", "14-Jan-2026", "Bonus 1:1")])
+    assert [(s, d.isoformat(), subj) for s, d, subj, *_ in rows] == [("TCS", "2026-01-14", "Bonus 1:1")] and skipped == 3
+
+
+def test_the_request_asks_for_the_whole_market_over_a_date_window():
+    asked = []
+    fetch_actions(lambda url: asked.append(url) or b"[]", date(2024, 10, 1), date(2026, 12, 31))
+    assert "index=equities" in asked[0] and "from_date=01-10-2024" in asked[0] and "to_date=31-12-2026" in asked[0] and "symbol" not in asked[0]
+
+
+def test_a_reply_that_is_not_a_list_is_an_error():
+    for bad in (None, b"<html>denied</html>", b'{"a": 1}'):
+        with pytest.raises(AthenaError):
+            fetch_actions(lambda url, bad=bad: bad, date(2026, 1, 1), date(2026, 2, 1))
+
+
+def test_actions_are_read_back_parsed_with_their_face_value():
+    w = Warehouse(":memory:")
+    ingest_actions(w, reply([nse_row("KOTAKBANK", "14-Jan-2026", "Face Value Split (Sub-Division) - From Rs 5/- Per Share To Re 1/- Per Share", "1"), nse_row("TCS", "05-Feb-2026", "Dividend - Rs 10 Per Share")]), date(2026, 2, 1), NOW)
+    kotak = w.actions("KOTAKBANK")
+    assert [(a.day, a.kind, a.ratio, a.face_value) for a in kotak] == [(date(2026, 1, 14), "split", 5.0, 1.0)]
+    assert w.actions("TCS") == []  # an ordinary dividend does not change the price series we adjust
+    assert w.actions_status()["rows"] == 2 and w.actions_status()["symbols"] == 2
+
+
+def test_a_later_run_replaces_the_window_so_a_withdrawn_action_does_not_linger():
+    w = Warehouse(":memory:")
+    ingest_actions(w, reply([nse_row("A", "14-Jan-2026", "Bonus 1:1"), nse_row("B", "20-Jan-2026", "Bonus 1:1")]), date(2026, 2, 1), NOW, since=date(2026, 1, 1))
+    ingest_actions(w, reply([nse_row("A", "14-Jan-2026", "Bonus 1:1")]), date(2026, 2, 1), NOW)  # B was withdrawn: the recheck window covers both
+    assert [a.kind for a in w.actions("A")] == ["bonus"] and w.actions("B") == []
+
+
+def test_the_first_run_reaches_back_two_years_and_later_runs_only_the_recent_past():
+    w = Warehouse(":memory:")
+    asked = []
+    ingest_actions(w, lambda url: asked.append(url) or json.dumps([nse_row("A", "14-Jan-2026", "Bonus 1:1")]).encode(), date(2026, 10, 12), NOW)
+    ingest_actions(w, lambda url: asked.append(url) or b"[]", date(2026, 10, 12), NOW)
+    assert "from_date=12-10-2024" in asked[0] and "from_date=28-08-2026" in asked[1]
+
+
+def test_adjusted_history_applies_a_recorded_split_and_a_split_with_a_bonus_the_same_day(tmp_path):
+    w = Warehouse(":memory:")
+    closes = {date(2026, 1, 12): 100.0, date(2026, 1, 13): 100.0, date(2026, 1, 14): 10.0, date(2026, 1, 15): 10.0}  # a tenth after a 10-to-2 split plus a 1:1 bonus
+    for day, close in closes.items():
+        w.upsert_day(day, {"ACME": row("ACME", close)}, NOW)
+    ingest_actions(w, reply([nse_row("ACME", "14-Jan-2026", "Face Value Split (Sub-Division) - From Rs 10/- Per Share To Rs 2/- Per Share"), nse_row("ACME", "14-Jan-2026", "Bonus 1:1")]), date(2026, 1, 20), NOW, since=date(2026, 1, 1))
+    history = adjusted_history(w)
+    assert [round(b.close, 4) for b in history("ACME")] == [10.0, 10.0, 10.0, 10.0]
+    assert market_price_flags(w, ["ACME"]) == {}
+
+
+def test_a_break_with_no_record_is_flagged_and_left_alone():
+    w = Warehouse(":memory:")
+    for day, close in {date(2026, 1, 12): 100.0, date(2026, 1, 13): 20.0}.items():
+        w.upsert_day(day, {"ACME": row("ACME", close)}, NOW)
+    assert list(market_price_flags(w, ["ACME"])) == ["ACME"]
+    assert [b.close for b in adjusted_history(w)("ACME")] == [100.0, 20.0]
