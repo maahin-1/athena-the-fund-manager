@@ -252,9 +252,10 @@ def render_market(path: Path | str) -> None:
         grid = st.columns(3)
         for i, (column, (label, unit, _)) in enumerate(RANGE_FILTERS.items()):
             with grid[i % 3]:
+                st.caption(f"{label} ({unit})")
                 low, high = st.columns(2)
-                low.text_input(f"{label} min ({unit})", key=_limit_key(column, "min"))
-                high.text_input(f"{label} max ({unit})", key=_limit_key(column, "max"))
+                low.text_input(f"{label} min", key=_limit_key(column, "min"), placeholder="min", label_visibility="collapsed")
+                high.text_input(f"{label} max", key=_limit_key(column, "max"), placeholder="max", label_visibility="collapsed")
         more = st.columns(3)
         more[0].checkbox("Trend aligned up only", key=TREND_KEY)
         more[1].checkbox("Hide symbols with a data flag", key=CLEAN_KEY)
