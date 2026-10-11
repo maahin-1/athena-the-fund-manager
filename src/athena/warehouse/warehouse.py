@@ -3,7 +3,8 @@ DuckDB file, built each evening from the exchange's price files and read by char
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+import time
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -35,11 +36,38 @@ def weekdays(first: date, last: date) -> list[date]:
     return out
 
 
+def _open(path: str | Path, read_only: bool, wait_seconds: float, sleep: Callable[[float], None]) -> duckdb.DuckDBPyConnection:
+    """DuckDB lets one process write, or many read, never both. A process that finds the file in use for the other purpose waits
+    and tries again for up to `wait_seconds` (a long job holds the file only for its short writes), then raises."""
+    waited = 0.0
+    while True:
+        try:
+            return duckdb.connect(str(path), read_only=read_only)
+        except duckdb.IOException:
+            if waited >= wait_seconds:
+                raise
+            sleep(1.0)
+            waited += 1.0
+
+
 class Warehouse:
-    def __init__(self, path: str | Path = DEFAULT_PATH):
-        if str(path) != ":memory:":
+    def __init__(
+        self, path: str | Path = DEFAULT_PATH, read_only: bool = False, wait_seconds: float = 0, sleep: Callable[[float], None] = time.sleep
+    ):
+        """`read_only` for charts, screens and reports, which may run beside a job that writes in short bursts: open, read, close."""
+        if str(path) != ":memory:" and not read_only:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._con = duckdb.connect(str(path))
+        self._con = _open(path, read_only, wait_seconds, sleep)
+        if not read_only:
+            self._create_tables()
+
+    def __enter__(self) -> Warehouse:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+    def _create_tables(self) -> None:
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS bars (symbol VARCHAR NOT NULL, day DATE NOT NULL, open DOUBLE, high DOUBLE, low DOUBLE, "
             "close DOUBLE, volume DOUBLE, series VARCHAR, source VARCHAR, loaded_at TIMESTAMP NOT NULL, PRIMARY KEY (symbol, day))"
