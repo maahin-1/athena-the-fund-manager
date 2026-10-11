@@ -274,3 +274,15 @@ def test_a_failed_fetch_leaves_nothing_cached(tmp_path):
     with pytest.raises(AthenaError):
         CachedFilings(None, tmp_path, fetch=refuse).filings("ACME")
     assert not list(tmp_path.glob("index_*"))
+
+
+def test_a_diluted_line_left_at_zero_falls_back_to_the_basic_line():
+    filing = parse_filing(xbrl(
+        current={
+            "DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations": "0.00", "DilutedEarningsLossPerShareFromContinuingOperations": "0.00",
+            "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations": "31.14",
+        },
+        whole={"DilutedEarningsLossPerShareFromContinuingOperations": "0.00", "BasicEarningsLossPerShareFromContinuingOperations": "115.19"},
+    ))
+    assert filing.income["Diluted EPS"] == 31.14
+    assert filing.cumulative["Diluted EPS"] == 115.19

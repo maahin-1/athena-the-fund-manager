@@ -17,9 +17,12 @@ INCOME_TAGS: dict[str, tuple[str, ...]] = {
         "ProfitLossForPeriod", "ProfitLossForThePeriod",
     ),
     "Pretax Income": ("ProfitBeforeTax", "ProfitLossFromOrdinaryActivitiesBeforeTax"),
+    # Some filers (TCS in 2022-23) leave the diluted line at 0.00 and report the figure on the basic line; the basic line is used then
     "Diluted EPS": (
         "DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations", "DilutedEarningsLossPerShareFromContinuingOperations",
         "DilutedEarningsPerShareAfterExtraordinaryItems", "DilutedEarningsPerShareBeforeExtraordinaryItems",
+        "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations", "BasicEarningsLossPerShareFromContinuingOperations",
+        "BasicEarningsPerShareAfterExtraordinaryItems", "BasicEarningsPerShareBeforeExtraordinaryItems",
     ),
     "Interest Expense": ("FinanceCosts", "InterestExpended"),
     "Depreciation And Amortization": ("DepreciationDepletionAndAmortisationExpense",),
