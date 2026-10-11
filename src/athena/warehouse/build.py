@@ -12,6 +12,7 @@ from pathlib import Path
 from athena.clock import utc_now
 from athena.warehouse.actions import ingest_actions
 from athena.warehouse.ingest import ingest_prices, ingest_universe, ready_through
+from athena.warehouse.statements import refresh_statements
 from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse
 
 BACKFILL_DAYS = 730
@@ -40,6 +41,7 @@ def format_status(status: dict, first: date) -> str:
         f"({status['symbols_on_last_day']:,} symbols that day)",
         f"days: {days.get('loaded', 0)} loaded, {days.get('no_session', 0)} with no session, {days.get('pending', 0)} pending",
         f"universe: " + (", ".join(f"{count:,} {kind}" for kind, count in sorted(status["universe"].items())) or "empty"),
+        f"statements: " + (", ".join(f"{count:,} {name}" for name, count in sorted(status["statements"].items())) or "none fetched yet"),
         f"actions: {status['actions']['rows']:,} corporate actions for {status['actions']['symbols']:,} symbols, ex-dates {status['actions']['first_ex']} to {status['actions']['last_ex']}",
         f"gaps since {first}: " + (f"{len(gaps)} weekdays not settled, e.g. {', '.join(d.isoformat() for d in gaps[:5])}" if gaps else "none"),
     ]
@@ -51,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--since", help="first day to load, YYYY-MM-DD (default: two years back)")
     parser.add_argument("--db", default=str(DEFAULT_PATH))
     parser.add_argument("--status", action="store_true", help="only report what the database holds")
+    parser.add_argument("--statements", type=int, default=300, help="how many stocks' statements to fetch this run (0: none)")
     args = parser.parse_args(argv)
     now = utc_now()
     first = date.fromisoformat(args.since) if args.since else ready_through(now) - timedelta(days=BACKFILL_DAYS)
@@ -71,6 +74,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"universe: {ingest_universe(warehouse, equity, etf, now)} symbols")
             except Exception as exc:  # the lists are on the exchange's archive host; the prices already loaded are still good
                 print(f"universe not refreshed: {type(exc).__name__}: {exc}")
+            if args.statements:
+                from athena.loaders.fundamentals import default_fetch
+
+                print("statements:", refresh_statements(warehouse, default_fetch, now, args.statements, on_progress=print))
         print(format_status(warehouse.status(first, ready_through(now)), first))
     finally:
         warehouse.close()

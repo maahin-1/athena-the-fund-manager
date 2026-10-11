@@ -2,6 +2,7 @@
 DuckDB file, built each evening from the exchange's price files and read by charts, screens and analysts alike."""
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from athena.price_integrity.actions import CorporateAction, parse_subject
 
 DEFAULT_PATH = Path(".athena") / "warehouse.duckdb"
 LOADED, NO_SESSION, PENDING = "loaded", "no_session", "pending"
+STATEMENT_OK, STATEMENT_EMPTY, STATEMENT_ERROR = "ok", "empty", "error"
 STOCK, ETF, SME, OTHER = "stock", "etf", "sme", "other"
 _UTC = timezone.utc
 
@@ -47,6 +49,10 @@ class Warehouse:
         )
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS universe (symbol VARCHAR PRIMARY KEY, kind VARCHAR NOT NULL, name VARCHAR, isin VARCHAR, updated_at TIMESTAMP NOT NULL)"
+        )
+        self._con.execute(
+            "CREATE TABLE IF NOT EXISTS statements (symbol VARCHAR PRIMARY KEY, fetched_at TIMESTAMP, tried_at TIMESTAMP NOT NULL, "
+            "status VARCHAR NOT NULL, error VARCHAR, attempts INTEGER NOT NULL, payload VARCHAR)"
         )
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS actions (symbol VARCHAR NOT NULL, ex_date DATE NOT NULL, subject VARCHAR NOT NULL, face_value DOUBLE, "
@@ -109,7 +115,44 @@ class Warehouse:
             raise
         return len(data)
 
+    def put_statement(self, symbol: str, status: str, payload: Mapping[str, Any] | None, error: str, now: datetime) -> None:
+        """Keep the result of one statements fetch: `ok` with the payload, `empty` (the source has none for this symbol), or `error`
+        (the fetch failed; the attempt count grows until a fetch succeeds). A failed fetch keeps the payload and the time it was
+        fetched, so old data never looks new."""
+        if status not in (STATEMENT_OK, STATEMENT_EMPTY, STATEMENT_ERROR):
+            raise ValueError(f"unknown status {status!r}")
+        row = self._con.execute("SELECT attempts, payload, fetched_at FROM statements WHERE symbol = ?", [symbol]).fetchone()
+        if status == STATEMENT_ERROR:
+            attempts, body, fetched = (row[0] + 1 if row else 1), (row[1] if row else None), (row[2] if row else None)
+        elif status == STATEMENT_OK:
+            attempts, body, fetched = 0, json.dumps(payload, sort_keys=True), _naive(now)
+        else:
+            attempts, body, fetched = 0, None, None
+        self._con.execute(
+            "INSERT OR REPLACE INTO statements VALUES (?, ?, ?, ?, ?, ?, ?)", [symbol, fetched, _naive(now), status, error, attempts, body]
+        )
+
     # ---- reading
+    def statement(self, symbol: str) -> tuple[dict[str, Any], datetime] | None:
+        """The symbol's statements payload and when it was fetched, or None when none is held."""
+        row = self._con.execute("SELECT payload, fetched_at FROM statements WHERE symbol = ?", [symbol]).fetchone()
+        if row is None or row[0] is None or row[1] is None:
+            return None
+        return json.loads(row[0]), row[1].replace(tzinfo=_UTC)
+
+    def statement_state(self) -> dict[str, tuple[str, datetime | None, datetime, int]]:
+        """symbol -> (status, when the payload held was fetched or None, when it was last tried, failed attempts in a row)."""
+        return {
+            s: (status, fetched.replace(tzinfo=_UTC) if fetched else None, tried.replace(tzinfo=_UTC), n)
+            for s, status, fetched, tried, n in self._con.execute(
+                "SELECT symbol, status, fetched_at, tried_at, attempts FROM statements"
+            ).fetchall()
+        }
+
+    def traded_value(self, day: date) -> dict[str, float]:
+        """symbol -> close x volume on `day`: how liquid each was, for deciding what to refresh first."""
+        return {s: v for s, v in self._con.execute("SELECT symbol, close * volume FROM bars WHERE day = ?", [day]).fetchall()}
+
     def actions(self, symbol: str) -> list[CorporateAction]:
         """The symbol's corporate actions read from the exchange's wording (splits, bonuses, demergers, rights, buybacks), oldest first."""
         out = []
@@ -176,6 +219,7 @@ class Warehouse:
             "days": counts, "last_loaded_day": latest, "bars_from": row[0], "bars_to": row[1], "bar_rows": row[2],
             "symbols_on_last_day": len(self.symbols_on(latest)) if latest else 0, "universe": universe,
             "last_load": loaded_at.replace(tzinfo=_UTC) if loaded_at else None, "actions": self.actions_status(),
+            "statements": dict(self._con.execute("SELECT status, count(*) FROM statements GROUP BY status").fetchall()),
         }
         if first is not None and last is not None:
             out["gaps"] = self.gaps(first, last)
