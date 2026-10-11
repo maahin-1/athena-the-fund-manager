@@ -124,8 +124,9 @@ class BhavcopyStore:
         self._fetch = fetch or (client or ArchiveClient()).get
         self._directory = directory
 
-    def day(self, day: date) -> dict[str, Row] | None:
-        """The day's rows by symbol, or None when the exchange has no file for it (a weekend or holiday)."""
+    def day(self, day: date, remember_missing: bool = True) -> dict[str, Row] | None:
+        """The day's rows by symbol, or None when the exchange has no file for it (a weekend or holiday). With
+        `remember_missing` False a missing file leaves nothing behind, so a file that was only late is asked for again."""
         path = self._directory / f"{day.isoformat()}.csv"
         if path.exists():
             text = path.read_text(encoding="utf-8")
@@ -136,6 +137,8 @@ class BhavcopyStore:
             if content is not None:
                 rows = parse_bhavcopy(_unzip(content))
                 break
+        if not rows and not remember_missing:
+            return None
         self._directory.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".part")
         temporary.write_text(_write_short(rows) if rows else "", encoding="utf-8")
