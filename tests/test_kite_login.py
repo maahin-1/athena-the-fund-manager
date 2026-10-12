@@ -73,3 +73,29 @@ def test_check_names_the_account_and_a_missing_key_stops_early(tmp_path, capsys)
     empty = tmp_path / "empty"
     empty.write_text("", encoding="utf-8")
     assert k.main(["--url", "--env-file", str(empty)]) == 1
+
+
+def test_the_listener_returns_the_request_token_from_the_redirect():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    import requests
+
+    server = HTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    port = server.server_port
+    threading.Timer(0.3, lambda: requests.get(f"http://127.0.0.1:{port}/?action=login&status=success&request_token=abc", timeout=5)).start()
+    try:
+        assert k.catch_request_token(server, seconds=10) == "abc"
+    finally:
+        server.server_close()
+
+
+def test_the_listener_gives_up_when_nothing_arrives():
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    server = HTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    try:
+        with pytest.raises(AthenaError):
+            k.catch_request_token(server, seconds=1)
+    finally:
+        server.server_close()
