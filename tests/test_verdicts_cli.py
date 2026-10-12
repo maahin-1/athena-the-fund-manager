@@ -26,7 +26,7 @@ def test_a_verdict_is_described_with_its_analysts_and_what_did_not_run():
 
 def test_the_calibration_is_listed_per_analyst():
     text = cli.format_calibration(Calibration({"valuation": {63: Measure(100, 0.4, 0.5)}}))
-    assert "valuation: trust 0.80" in text and "63d: 40% vs 50% fixed over 100" in text
+    assert "valuation: trust 0.10" in text and "63d: 40% vs 50% fixed over 100" in text
     assert cli.format_calibration(Calibration()) == "nothing measured"
 
 

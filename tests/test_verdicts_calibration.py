@@ -1,6 +1,6 @@
 import json
 
-from athena.verdicts.calibration import UNCALIBRATED_CAP, UNMEASURED_TRUST, Calibration, Measure, dampen
+from athena.verdicts.calibration import MIN_TRUST, UNCALIBRATED_CAP, UNMEASURED_TRUST, Calibration, Measure, dampen
 
 
 def rows(analyst, horizon, calls):
@@ -15,13 +15,15 @@ def verdict(conviction=80):
     return {"verdict": "Buy", "conviction": conviction, "key_risks": ["x"], "resolution_path": "blend"}
 
 
-def test_trust_is_accuracy_over_the_best_fixed_answer_and_unmeasured_is_half():
+def test_trust_is_half_at_the_best_fixed_answer_and_moves_with_the_edge_over_it():
     log = rows("valuation", 63, [("bullish", "outperform"), ("bullish", "outperform"), ("bearish", "outperform"), ("neutral", "underperform")])
     cal = Calibration.from_log_rows(log)
     m = cal.measures["valuation"][63]
     assert m.cases == 4 and m.accuracy == 0.5 and m.best_fixed == 0.75
-    assert round(cal.trust("valuation"), 3) == round(0.5 / 0.75, 3)
+    assert cal.trust("valuation") == MIN_TRUST  # 25 points below the best fixed answer
     assert cal.trust("nobody") == UNMEASURED_TRUST
+    level = Calibration({"a": {63: Measure(400, 0.4, 0.4)}, "b": {63: Measure(400, 0.5, 0.4)}, "c": {63: Measure(400, 0.35, 0.4)}})
+    assert level.trust("a") == 0.5 and round(level.trust("b"), 3) == 1.0 and round(level.trust("c"), 3) == 0.25
 
 
 def test_nobody_is_calibrated_with_few_cases_or_no_edge():

@@ -16,7 +16,9 @@ from athena.evaluation.pit_score import calls_from_rows, score
 
 CALIBRATION_PATH = Path(".athena") / "calibration.json"
 UNCALIBRATED_CAP = 50  # the most conviction a verdict shows before it is calibrated
-UNMEASURED_TRUST = 0.5  # trust in an analyst nobody has measured
+UNMEASURED_TRUST = 0.5  # trust in an analyst nobody has measured, and in one that only matches the best fixed answer: no skill shown either way
+TRUST_SPAN = 0.20  # accuracy points above or below the best fixed answer that move trust from 0.5 to 1 or to 0
+MIN_TRUST = 0.1  # the least trust a measured analyst gets, so a verdict never shows a conviction of exactly zero from trust alone
 MIN_CASES = 300  # measured cases per horizon before an analyst can count as calibrated
 MIN_EDGE = 0.05  # accuracy above the best fixed answer needed at every horizon
 UNCALIBRATED, CALIBRATED = "uncalibrated", "calibrated"
@@ -35,12 +37,13 @@ class Calibration:
     measures: Mapping[str, Mapping[int, Measure]] = field(default_factory=dict)  # analyst -> horizon -> measure
 
     def trust(self, analyst: str) -> float:
-        """Measured accuracy over the best fixed answer's, averaged over the horizons, at most 1."""
+        """Half when the analyst only matches the best fixed answer (as when it is unmeasured), rising to 1 at 10 points above it and falling to
+        the floor at 10 points below, averaged over the horizons."""
         per_horizon = self.measures.get(analyst)
         if not per_horizon:
             return UNMEASURED_TRUST
-        ratios = [min(1.0, m.accuracy / m.best_fixed) if m.best_fixed else UNMEASURED_TRUST for m in per_horizon.values()]
-        return sum(ratios) / len(ratios)
+        shares = [max(MIN_TRUST, min(1.0, UNMEASURED_TRUST + (m.accuracy - m.best_fixed) / TRUST_SPAN)) for m in per_horizon.values()]
+        return sum(shares) / len(shares)
 
     def calibrated(self, analysts: Iterable[str]) -> bool:
         names = list(analysts)
