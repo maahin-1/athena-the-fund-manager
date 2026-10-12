@@ -65,3 +65,8 @@ def test_logs_are_read_from_json_lines(tmp_path):
     path = tmp_path / "log.jsonl"
     path.write_text("\n".join(json.dumps(r) for r in rows("valuation", 63, [("bullish", "outperform")])) + "\n", encoding="utf-8")
     assert Calibration.from_logs([path]).measures["valuation"][63].cases == 1
+
+
+def test_plain_baselines_in_a_log_are_not_measured_as_analysts():
+    log = rows("quant_technical", 63, [("bullish", "outperform")]) + rows("rule_trend", 63, [("bullish", "outperform")])
+    assert set(Calibration.from_log_rows(log).measures) == {"quant_technical"}

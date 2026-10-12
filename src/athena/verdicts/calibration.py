@@ -20,6 +20,7 @@ UNMEASURED_TRUST = 0.5  # trust in an analyst nobody has measured
 MIN_CASES = 300  # measured cases per horizon before an analyst can count as calibrated
 MIN_EDGE = 0.05  # accuracy above the best fixed answer needed at every horizon
 UNCALIBRATED, CALIBRATED = "uncalibrated", "calibrated"
+BASELINES = frozenset({"rule_trend"})  # plain rules scored beside the analysts in the logs; they never take part in a verdict
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,7 @@ class Calibration:
 
     @classmethod
     def from_log_rows(cls, rows: Iterable[Mapping[str, Any]]) -> "Calibration":
-        calls = calls_from_rows(rows)
+        calls = [c for c in calls_from_rows(rows) if c.specialist not in BASELINES]
         measures: dict[str, dict[int, Measure]] = {}
         for analyst in sorted({c.specialist for c in calls}):
             for horizon in sorted({c.horizon for c in calls if c.specialist == analyst}):
