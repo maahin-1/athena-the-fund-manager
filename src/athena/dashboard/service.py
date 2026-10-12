@@ -107,7 +107,7 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     """The dashboard wired to real sources. The market series for the risk panel and the backtest, and the NIFTY 50
     valuation history, are loaded once when the service is built, so a session left open across days should be
     restarted."""
-    sources = live_sources(env_file)
+    sources = live_sources(env_file, warehouse=DEFAULT_WAREHOUSE)
     refresh_risk_data(sources.store, since=ist_date(utc_now()) - timedelta(days=365 * BACKTEST_YEARS))
     orchestrator = build_orchestrator(
         sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals,
@@ -117,7 +117,7 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     long_history = lru_cache(maxsize=8)(checked_long_history)
     return DashboardService(
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
-        long_history=long_history, backtest_notes=checked_long_history.notes, price_notes=lambda symbol: sources.history.notes(symbol) + sources.warnings,
+        long_history=long_history, backtest_notes=checked_long_history.notes, price_notes=lambda symbol: sources.history.notes(symbol) + (sources.served.notes(symbol) if sources.served else ()) + sources.warnings,
         event_notes=EventConfirmer(sources.news, sources.history.events_found) if sources.news is not None else None,
         market_db=DEFAULT_WAREHOUSE, verdicts=live_runner(DEFAULT_WAREHOUSE, router=sources.llm_router),
     )

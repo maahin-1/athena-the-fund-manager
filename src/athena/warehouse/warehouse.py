@@ -356,6 +356,10 @@ class Warehouse:
         """Every symbol with a bar on `day`, with the series it traded in."""
         return {s: series for s, series in self._con.execute("SELECT symbol, series FROM bars WHERE day = ?", [day]).fetchall()}
 
+    def first_loaded_day(self) -> date | None:
+        row = self._con.execute("SELECT min(day) FROM days WHERE status = ?", [LOADED]).fetchone()
+        return row[0] if row else None
+
     def last_loaded_day(self) -> date | None:
         row = self._con.execute("SELECT max(day) FROM days WHERE status = ?", [LOADED]).fetchone()
         return row[0] if row else None

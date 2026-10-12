@@ -24,7 +24,8 @@ from athena.loaders.index_valuation import IndexValuationLoader, valuation_histo
 from athena.loaders.nse_holidays import DATASET as HOLIDAY_DATASET
 from athena.loaders.nse_holidays import NseHolidayLoader, load_calendar, refresh_with_retry
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET, NseMasterLoader
-from athena.orchestrator.builders import RequestCache, history_fetcher, technical_packet_builder
+from athena.orchestrator.builders import HISTORY_DAYS, RequestCache, history_fetcher, technical_packet_builder
+from athena.warehouse.serve import WarehouseFirst
 from athena.orchestrator.fundamentals_source import LiveFundamentals
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
 from athena.orchestrator.report import format_result
@@ -100,9 +101,10 @@ class LiveSources:
     actions: Callable[[str], Sequence[CorporateAction]]  # NSE's own corporate-action rows (demergers, rights, buybacks)
     warnings: tuple[str, ...] = ()  # what could not be loaded at start, for every view to show
     news: NewsHub | None = None  # NSE announcements, publisher feeds and (when switched on) Google News
+    served: WarehouseFirst | None = None  # prices, actions and statements read from the market warehouse when it can serve them
 
 
-def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
+def live_sources(env_file: Path | str = DEFAULT_ENV_FILE, warehouse: Path | str | None = None) -> LiveSources:
     """Everything wired to real sources: NSE master lists, holidays and index valuation, jugaad-data then Yahoo for
     prices, Yahoo for statements, and whichever LLM providers have keys. Loads into a fresh in-memory store on every
     call."""
@@ -119,13 +121,17 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE) -> LiveSources:
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
     IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
     events, actions = live_price_checks()
-    history = CheckedHistory(history_fetcher(chain), events, actions)
+    live_bars = history_fetcher(chain)
+    served = WarehouseFirst(warehouse, live_bars, events, actions, HISTORY_DAYS) if warehouse is not None else None
+    history = CheckedHistory(served.bars, served.events, served.actions) if served else CheckedHistory(live_bars, events, actions)
     google_on = read_setting(GOOGLE_NEWS_SETTING, env_file).strip() == "1"  # off unless the owner switches it on
     announcements = NseAnnouncements()
     news = NewsHub(default_sources(announcements, PublisherFeeds(), GoogleNews(enabled=google_on)))
     bars = RequestCache(history)
-    fundamentals = LiveFundamentals(FundamentalsLoader(store), valuation_history(store), bars, filings=announcements)
-    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions, warnings, news)
+    fundamentals = LiveFundamentals(
+        FundamentalsLoader(store), valuation_history(store), bars, filings=announcements, stored=served.statement if served else None
+    )
+    return LiveSources(resolver, llm_router, chain, store, bars, fundamentals, history, events, actions, warnings, news, served)
 
 
 def live_orchestrator(env_file: Path | str = DEFAULT_ENV_FILE) -> Orchestrator:

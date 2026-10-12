@@ -97,3 +97,10 @@ def test_no_scheme_filing_adds_no_flag_and_an_unreachable_source_says_so_without
 
 def test_without_a_filings_source_nothing_is_added():
     assert make()[0](RESOLUTION)["data_quality_flags"] == []
+
+
+def test_a_stored_payload_is_used_without_asking_the_source():
+    source, statements, _ = make()
+    stored = LiveFundamentals(source._loader, index_history(), lambda symbol: make_bars([PRICE - 1, PRICE]), clock=lambda: NOW, stored=lambda symbol: (ACME, NOW))
+    packet = stored(RESOLUTION)
+    assert statements.fetches == [] and packet["metrics"]["pe_trailing"]["value"] == pytest.approx(20.0, abs=1e-3)

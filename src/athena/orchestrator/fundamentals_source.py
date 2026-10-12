@@ -29,22 +29,29 @@ class LiveFundamentals:
         fetch_bars: Callable[[str], list[Bar]],
         clock: Callable[[], datetime] = utc_now,
         filings: Callable[[str, date, date], list[NewsItem]] | None = None,
+        stored: Callable[[str], tuple[dict[str, Any], datetime] | None] | None = None,
     ):
         self._loader = loader
         self._index_history = index_history
         self._fetch_bars = fetch_bars
         self._clock = clock
         self._filings = filings  # the exchange's announcements for a symbol between two dates, to find mergers and schemes
+        self._stored = stored  # a recent payload and its fetch time held elsewhere (the market warehouse), used before asking the source
         self._packets: dict[str, dict[str, Any]] = {}
 
     def __call__(self, resolution: Resolution) -> dict[str, Any]:
         symbol = resolution.identifier
         if symbol not in self._packets:
-            self._loader.refresh(symbol=symbol)
-            record = self._loader.read(DATASET, symbol)
+            held = self._stored(symbol) if self._stored is not None else None
+            if held is not None:
+                payload, as_of = held
+            else:
+                self._loader.refresh(symbol=symbol)
+                record = self._loader.read(DATASET, symbol)
+                payload, as_of = record.payload, record.as_of
             bars = self._fetch_bars(symbol)
             price = bars[-1].close if bars else None
-            packet = build_fundamentals_packet(symbol, record.as_of, record.payload, price, self._clock(), self._index_history)
+            packet = build_fundamentals_packet(symbol, as_of, payload, price, self._clock(), self._index_history)
             packet["data_quality_flags"] = packet["data_quality_flags"] + self._scheme_flags(symbol)
             self._packets[symbol] = packet
         return self._packets[symbol]
