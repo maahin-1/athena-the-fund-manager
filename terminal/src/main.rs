@@ -1,5 +1,7 @@
 mod angel;
 mod config;
+mod hub;
+mod quote;
 mod totp;
 
 use std::path::PathBuf;
