@@ -5,6 +5,8 @@ edition = "2021"
 description = "Athena terminal: local server that holds the live price feed and pushes it to a docked page"
 
 [dependencies]
+hmac = "0.12"
+sha1 = "0.10"
 
 [profile.release]
 lto = "thin"
