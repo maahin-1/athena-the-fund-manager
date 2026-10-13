@@ -13,19 +13,21 @@ import argparse
 import json
 import math
 from collections.abc import Mapping, Sequence
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from athena.contracts import AthenaError, Bar
 from athena.evaluation.pit_cases import month_ends
-from athena.evaluation.pit_market import Market, load
+from athena.evaluation.pit_market import Market, load, rule_trend
 from athena.evaluation.pit_run import RUN_DIR, read_rows, report
 from athena.price_integrity.history import CheckedHistory
 from athena.trading_calendar import ist_date
-from athena.warehouse.warehouse import DEFAULT_PATH
+from athena.warehouse.packets import BENCHMARK
+from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse
 
 KRONOS_DIR = Path(".athena") / "kronos"
+STOCKS_FILE = KRONOS_DIR / "stocks.json"  # the stocks the export used: the draw depends on the latest day loaded, so it is pinned
 HORIZONS = (63, 126)  # trading days; 252 is not forecast
 LOOKBACK = 400
 MIN_LOOKBACK = 200
@@ -139,8 +141,15 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return read_rows(path)
 
 
+def market_for(path: Path, symbols: Sequence[str]) -> Market:
+    with Warehouse(path, read_only=True, wait_seconds=300) as warehouse:
+        return Market({s: warehouse.bars(s) for s in symbols}, {s: warehouse.actions(s) for s in symbols}, warehouse.index_close(BENCHMARK))
+
+
 def export(db: Path, first: date, last: date, out: Path, top: int, mid: int) -> int:
     symbols, market = load(db, first, top, mid)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    STOCKS_FILE.write_text(json.dumps({"symbols": symbols, "chosen_on": date.today().isoformat()}), encoding="utf-8")
     bars = adjusted_bars(market)
     out.parent.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -156,31 +165,38 @@ def export(db: Path, first: date, last: date, out: Path, top: int, mid: int) -> 
 
 
 def score(db: Path, first: date, last: date, forecasts_path: Path, name: str, top: int, mid: int) -> int:
-    symbols, market = load(db, first, top, mid)
+    market = market_for(db, json.loads(STOCKS_FILE.read_text(encoding="utf-8"))["symbols"])
     builder, bars = market.builder(), adjusted_bars(market)
     forecasts = {(r["symbol"], r["as_of"]): r for r in read_jsonl(forecasts_path)}
     if not forecasts:
         raise AthenaError(f"no forecasts in {forecasts_path}")
     outcomes: dict[tuple[str, str, int], tuple[str, float]] = {}
     momentum: dict[tuple[str, str, int], float] = {}
+    rule: list[dict[str, Any]] = []
     for symbol, day_text in sorted(forecasts):
         day = date.fromisoformat(day_text)
         try:
             case = builder.build(symbol, day, False)
         except AthenaError:
             continue
+        signal = rule_trend(case.packets["quant_technical"])["signal"]
         for horizon in HORIZONS:
             outcome = case.outcomes.get(horizon)
             if outcome is not None:
                 outcomes[(symbol, day_text, horizon)] = (outcome.label, outcome.excess)
+                rule.append({
+                    "symbol": symbol, "as_of": day_text, "specialist": "rule_trend", "run": 0, "blinded": False, "source": "warehouse", "signal": signal,
+                    "confidence": 0, "coverage": "full", "error": "", "notes": [], "horizon": horizon, "label": outcome.label, "excess": round(outcome.excess, 4),
+                })
             back = past_return(bars[symbol], day, horizon)
             if back is not None:
                 momentum[(symbol, day_text, horizon)] = back
     rows, ics = score_rows(forecasts, outcomes, momentum)
+    rows += rule
     path = RUN_DIR / f"{name}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
-    print(report(read_rows(path), ["kronos", "rank_momentum"]))
+    print(report(read_rows(path), ["kronos", "rank_momentum", "rule_trend"]))
     print()
     print(ic_summary(ics))
     return 0
