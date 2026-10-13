@@ -52,7 +52,7 @@ Studied for behaviour and layout ideas only. No code, asset, icon, name or data 
 
 1. **Read-only.** No order, position or funds call exists in the program. It subscribes to prices only.
 2. **Secrets.** Keys, PIN, TOTP secret and tokens are never printed, logged, put in an error or sent to the page. The page cannot read them.
-3. **Local only.** The server listens on 127.0.0.1 and rejects WebSocket and API requests from any other origin.
+3. **Local only.** The server listens on 127.0.0.1. Every WebSocket and API request must carry a Host header naming this server (blocks DNS-rebinding pages); a WebSocket must also carry this server's own Origin, and an API request must carry it or none (a same-origin GET sends none). Anything else is refused with 403.
 4. **Fresh or fall back.** The stream is used while its last tick for a symbol is at most 15 seconds old by arrival time; otherwise, while connecting, or if login or the stream fails, the exchange's polled quote is used and the top bar says so. A broken feed never stops the page opening.
 5. **Same quote shape and rules as 2j** for series fallback (`-EQ`, `-BE`, `-BZ`, `-SM`, `-ST`), circuit limits and market-closed behaviour.
 6. **Not in the verdict.** Nothing from the stream reaches an analyst or a verdict.

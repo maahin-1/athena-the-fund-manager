@@ -1,20 +1,39 @@
 mod angel;
 mod config;
+mod fake;
 mod hub;
 mod poll;
 mod quote;
+mod server;
 mod totp;
 
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
+
+use crate::angel::stream::FeedStatus;
+use crate::hub::Hub;
+use crate::server::{router, AppState};
 
 struct Args {
     settings_file: PathBuf,
     check_login: bool,
+    fake_feed: bool,
+    port: u16,
+    web_dir: PathBuf,
 }
 
 fn args() -> Args {
-    let mut out = Args { settings_file: PathBuf::from(".env"), check_login: false };
+    let mut out = Args {
+        settings_file: PathBuf::from(".env"),
+        check_login: false,
+        fake_feed: false,
+        port: 8700,
+        web_dir: PathBuf::from("terminal/web/dist"),
+    };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -24,6 +43,17 @@ fn args() -> Args {
                 }
             }
             "--check-login" => out.check_login = true,
+            "--fake-feed" => out.fake_feed = true,
+            "--port" => {
+                if let Some(v) = it.next().and_then(|v| v.parse().ok()) {
+                    out.port = v;
+                }
+            }
+            "--web-dir" => {
+                if let Some(v) = it.next() {
+                    out.web_dir = PathBuf::from(v);
+                }
+            }
             _ => {}
         }
     }
@@ -32,6 +62,46 @@ fn args() -> Args {
 
 fn now_unix() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Log in, load the instrument list and run the stream; if the feed stays down for ten minutes (an expired login, for instance) start over.
+/// Nothing here can stop the server: every failure is a short status phrase and a retry.
+async fn supervise(settings_file: PathBuf, hub: Hub, status: watch::Sender<FeedStatus>, shutdown: CancellationToken) {
+    let client = reqwest::Client::new();
+    let retry = Duration::from_secs(60);
+    while !shutdown.is_cancelled() {
+        let _ = status.send(FeedStatus::Connecting);
+        let attempt: Result<(angel::login::Session, Arc<angel::master::Master>), &'static str> = async {
+            let settings = config::read(&settings_file).map_err(|_| "settings missing")?;
+            let session = angel::login::login(&client, &settings, now_unix()).await.map_err(|_| "login failed")?;
+            let master = angel::master::load(&client, std::path::Path::new(".athena/angel_master.json"))
+                .await
+                .map_err(|_| "instrument list unavailable")?;
+            Ok((session, Arc::new(master)))
+        }
+        .await;
+        match attempt {
+            Err(reason) => {
+                let _ = status.send(FeedStatus::Off(reason));
+                tokio::select! { _ = shutdown.cancelled() => return, _ = tokio::time::sleep(retry) => {} }
+            }
+            Ok((session, master)) => {
+                let child = shutdown.child_token();
+                let stream = tokio::spawn(angel::stream::run_stream(session, master, hub.clone(), status.clone(), child.clone()));
+                let mut off_since: Option<Instant> = None;
+                loop {
+                    tokio::select! { _ = shutdown.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(30)) => {} }
+                    let down = matches!(*status.borrow(), FeedStatus::Off(_));
+                    off_since = if down { off_since.or(Some(Instant::now())) } else { None };
+                    if off_since.is_some_and(|t| t.elapsed() > Duration::from_secs(600)) {
+                        break;
+                    }
+                }
+                child.cancel();
+                let _ = stream.await;
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -58,5 +128,34 @@ async fn main() {
         }
         return;
     }
-    println!("athena-terminal (nothing to run yet)");
+
+    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", args.port)).await {
+        Ok(l) => l,
+        Err(_) => {
+            println!("error: port {} is in use", args.port);
+            std::process::exit(1);
+        }
+    };
+    let port = listener.local_addr().map(|a| a.port()).unwrap_or(args.port);
+    let hub = Hub::new();
+    let (status, _keep) = watch::channel(if args.fake_feed { FeedStatus::On } else { FeedStatus::Connecting });
+    let shutdown = CancellationToken::new();
+    if args.fake_feed {
+        tokio::spawn(fake::run_fake(hub.clone(), shutdown.clone()));
+    } else {
+        tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), status.clone(), shutdown.clone()));
+        tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
+    }
+    let state = AppState { hub, status, port, web_dir: args.web_dir };
+    println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
+    let stop = shutdown.clone();
+    let result = axum::serve(listener, router(state))
+        .with_graceful_shutdown(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            stop.cancel();
+        })
+        .await;
+    if result.is_err() {
+        println!("error: the server stopped");
+    }
 }
