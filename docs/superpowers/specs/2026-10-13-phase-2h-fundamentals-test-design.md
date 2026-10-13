@@ -25,3 +25,15 @@ Do the valuation, moat and quality, and earnings analysts, reading a point-in-ti
 ## Not in 2h
 
 Changing any analyst's prompt or packet (that follows from the result), banks' book value before the FY24 filings (withheld on purpose), and the news analyst.
+
+## Result (run finished 2026-10-13)
+
+40 pinned stocks, 19 month-ends (2024-01-31 to 2026-06-30), 2,000 analyst runs each. Errors: 54 to 84 runs per analyst (3 to 4 percent). Accuracy against the best fixed answer ("always bullish"), measured on these stocks and dates in a rising market:
+
+| Analyst | 63 days | 126 days | 252 days |
+|---|---|---|---|
+| valuation | 32% vs 41% | 27% vs 43% | 30% vs 37% |
+| moat_quality | 34% vs 41% | 32% vs 43% | 38% vs 37% |
+| earnings_intelligence | 39% vs 40% | 34% vs 40% | 32% vs 37% |
+
+None beat the best fixed answer by the 5-point margin at every horizon, so verdicts stay uncalibrated. Valuation says bearish about 70 percent of the time while 63 to 74 percent of stocks did not underperform; that looks like a systematic bias and is the first thing to examine. Calibration was rebuilt from the v2 unblinded, technical and fundamentals logs; trust is now valuation 0.13, moat_quality 0.29, earnings_intelligence 0.31, quant_technical 0.43 (before: 0.11, 0.14, 0.10, 0.43). The earlier file is kept at `.athena/calibration.before_2h.json`.
