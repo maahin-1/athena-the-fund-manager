@@ -9,9 +9,10 @@ docs/superpowers/specs/2026-10-12-phase-2e-technical-test-design.md."""
 from __future__ import annotations
 
 import argparse
+import json
 import random
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -38,8 +39,12 @@ class Market:
     raw: Mapping[str, list[Bar]]
     actions: Mapping[str, list[Any]]
     index: Mapping[date, float]
+    valuation: Mapping[date, Mapping[str, float]] = field(default_factory=dict)  # the NIFTY 50's P/E, P/B and yield by day
+    statements: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # Yahoo payloads as stored today (a case after the filings end reads them)
 
-    def builder(self) -> PitCaseBuilder:
+    def builder(
+        self, filings: Callable[[str], Any] | None = None, load_filing: Callable[[Any], Any] | None = None
+    ) -> PitCaseBuilder:
         history = CheckedHistory(lambda symbol: list(self.raw[symbol]), lambda symbol: (), lambda symbol: self.actions.get(symbol, []))
         adjusted: dict[str, list[Bar]] = {}
 
@@ -51,8 +56,14 @@ class Market:
         def no_filing(_: Any) -> Any:
             raise AthenaError("the warehouse test has no filings")
 
+        def yahoo(symbol: str) -> Mapping[str, Any]:
+            if symbol not in self.statements:
+                raise AthenaError(f"no statements stored for {symbol}")
+            return self.statements[symbol]
+
         return PitCaseBuilder(
-            lambda symbol: self.raw[symbol], adjusted_bars, dict(self.index), {}, lambda symbol: [], no_filing, None, unadjusted_sources=None
+            lambda symbol: self.raw[symbol], adjusted_bars, dict(self.index), dict(self.valuation), filings or (lambda symbol: []),
+            load_filing or no_filing, yahoo if self.statements else None, unadjusted_sources=None,
         )
 
 
@@ -102,10 +113,48 @@ def choose_stocks(
     return chosen, {s: raw[s] for s in chosen}, {s: actions[s] for s in chosen}
 
 
-def load(path: Path, first: date, want_top: int, want_mid: int) -> tuple[list[str], Market]:
+def market_of(warehouse: Warehouse, symbols: Sequence[str], raw: Mapping[str, list[Bar]] | None = None, actions: Mapping[str, list[Any]] | None = None) -> Market:
+    held = {s: p for s in symbols if (statement := warehouse.statement(s)) is not None for p in [statement[0]]}
+    return Market(
+        raw or {s: warehouse.bars(s) for s in symbols}, actions or {s: warehouse.actions(s) for s in symbols},
+        warehouse.index_close(BENCHMARK), warehouse.index_valuation(BENCHMARK), held,
+    )
+
+
+def load(path: Path, first: date, want_top: int, want_mid: int, pinned: Sequence[str] | None = None) -> tuple[list[str], Market]:
+    """The stocks by rule, or the `pinned` list as it stands (the rule's draw moves with the latest day loaded, so a run that must be
+    repeatable pins its list)."""
     with Warehouse(path, read_only=True, wait_seconds=300) as warehouse:
+        if pinned is not None:
+            return list(pinned), market_of(warehouse, pinned)
         symbols, raw, actions = choose_stocks(warehouse, first, want_top, want_mid)
-        return symbols, Market(raw, actions, warehouse.index_close(BENCHMARK))
+        return symbols, market_of(warehouse, symbols, raw, actions)
+
+
+FUNDAMENTALS = ("valuation", "moat_quality", "earnings_intelligence")
+FUNDAMENTALS_PACKET_FOR = {name: "fundamentals" for name in FUNDAMENTALS}
+
+
+def live_fundamentals_analysts() -> dict[str, Callable[[dict[str, Any]], Mapping[str, Any]]]:
+    from athena.agents.base import Specialist
+    from athena.agents.earnings_intelligence import EARNINGS_INTELLIGENCE
+    from athena.agents.moat_quality import MOAT_QUALITY
+    from athena.agents.valuation import VALUATION
+    from athena.llm.router import build_router
+
+    client = build_router().client_for("specialist")
+    specs = {"valuation": VALUATION, "moat_quality": MOAT_QUALITY, "earnings_intelligence": EARNINGS_INTELLIGENCE}
+    return {name: Specialist(spec, client).analyze for name, spec in specs.items()}
+
+
+def exchange_filings() -> tuple[Callable[[str], Any], Callable[[Any], Any]]:
+    """The exchange's results filings for a symbol and one filing's statements, both cached on disk."""
+    from functools import lru_cache
+
+    from athena.pit.nse_results import CachedFilings, FilingStore, NseResults
+
+    results = NseResults()
+    return lru_cache(maxsize=64)(CachedFilings(results).filings), FilingStore(results).filing
 
 
 def live_analyst() -> Callable[[dict[str, Any]], Mapping[str, Any]]:
@@ -126,20 +175,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", default="wh_tech")
     parser.add_argument("--no-blind", action="store_true")
     parser.add_argument("--report", metavar="NAME")
+    parser.add_argument("--fundamentals", action="store_true", help="test the valuation, moat and earnings analysts (exchange filings up to 2025-03-31, stored statements after)")
+    parser.add_argument("--stocks", metavar="FILE", help="a JSON file {\"symbols\": [...]} to use as it stands instead of drawing stocks by rule")
     args = parser.parse_args(argv)
+    fundamentals = args.fundamentals
+    packet_for = FUNDAMENTALS_PACKET_FOR if fundamentals else PACKET_FOR
     if args.report:
-        print(report(read_rows(RUN_DIR / f"{args.report}.jsonl"), PACKET_FOR))
+        print(report(read_rows(RUN_DIR / f"{args.report}.jsonl"), packet_for))
         return 0
     first, last = date.fromisoformat(args.start), date.fromisoformat(args.end)
-    symbols, market = load(Path(args.db), first, args.top, args.mid)
+    pinned = json.loads(Path(args.stocks).read_text(encoding="utf-8"))["symbols"] if args.stocks else None
+    symbols, market = load(Path(args.db), first, args.top, args.mid, pinned)
     print(f"{len(symbols)} stocks: {', '.join(symbols)}", flush=True)
-    analysts = {"quant_technical": live_analyst(), "rule_trend": rule_trend}
+    if fundamentals:
+        filings, load_filing = exchange_filings()
+        builder, analysts = market.builder(filings, load_filing), live_fundamentals_analysts()
+    else:
+        builder, analysts = market.builder(), {"quant_technical": live_analyst(), "rule_trend": rule_trend}
     made = run_cases(
-        market.builder(), analysts, symbols, month_ends(first, last), RUN_DIR / f"{args.out}.jsonl", 1, not args.no_blind,
-        lambda text: print(text, flush=True), PACKET_FOR,
+        builder, analysts, symbols, month_ends(first, last), RUN_DIR / f"{args.out}.jsonl", 1, not args.no_blind,
+        lambda text: print(text, flush=True), packet_for,
     )
     print(f"{made} analyst runs made")
-    print(report(read_rows(RUN_DIR / f"{args.out}.jsonl"), PACKET_FOR))
+    print(report(read_rows(RUN_DIR / f"{args.out}.jsonl"), packet_for))
     return 0
 
 
