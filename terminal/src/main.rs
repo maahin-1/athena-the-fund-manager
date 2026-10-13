@@ -1,4 +1,5 @@
 mod angel;
+mod bars;
 mod config;
 mod fake;
 mod hub;
@@ -24,6 +25,7 @@ struct Args {
     fake_feed: bool,
     port: u16,
     web_dir: PathBuf,
+    warehouse: PathBuf,
 }
 
 fn args() -> Args {
@@ -33,6 +35,7 @@ fn args() -> Args {
         fake_feed: false,
         port: 8700,
         web_dir: PathBuf::from("terminal/web/dist"),
+        warehouse: PathBuf::from(".athena/warehouse.duckdb"),
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -47,6 +50,11 @@ fn args() -> Args {
             "--port" => {
                 if let Some(v) = it.next().and_then(|v| v.parse().ok()) {
                     out.port = v;
+                }
+            }
+            "--warehouse" => {
+                if let Some(v) = it.next() {
+                    out.warehouse = PathBuf::from(v);
                 }
             }
             "--web-dir" => {
@@ -146,7 +154,8 @@ async fn main() {
         tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), status.clone(), shutdown.clone()));
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
     }
-    let state = AppState { hub, status, port, web_dir: args.web_dir };
+    let bars = Arc::new(bars::Bars { warehouse: args.warehouse, intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())) });
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))

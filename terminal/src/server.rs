@@ -1,9 +1,10 @@
 //! The local server: the page, the push WebSocket and a small API. Local only: requests from other hosts or origins are refused.
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Request, State};
+use axum::extract::{Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -14,6 +15,7 @@ use tokio::time::{interval, MissedTickBehavior};
 use tower_http::services::ServeDir;
 
 use crate::angel::stream::FeedStatus;
+use crate::bars::{daily_bars, yahoo_params, Bars, DEFAULT_LIMIT};
 use crate::hub::Hub;
 
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(16);
@@ -24,6 +26,7 @@ pub struct AppState {
     pub status: watch::Sender<FeedStatus>,
     pub port: u16,
     pub web_dir: PathBuf,
+    pub bars: Arc<Bars>,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -70,6 +73,39 @@ async fn api_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     let mut v = status_json(&state.status.borrow());
     v["clients"] = state.hub.client_count().into();
     Json(v)
+}
+
+#[derive(serde::Deserialize)]
+struct BarsQuery {
+    symbol: String,
+    tf: Option<String>,
+    limit: Option<usize>,
+}
+
+fn symbol_ok(symbol: &str) -> bool {
+    !symbol.is_empty() && symbol.len() <= 24 && symbol.chars().all(|c| c.is_ascii_alphanumeric() || " &-^".contains(c))
+}
+
+async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> Response {
+    if !symbol_ok(&q.symbol) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let symbol = q.symbol.to_ascii_uppercase();
+    let tf = q.tf.unwrap_or_else(|| "1D".to_string());
+    let (bars, source, note) = if tf == "1D" {
+        let path = state.bars.warehouse.clone();
+        let (sym, limit) = (symbol.clone(), q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 5000));
+        match tokio::task::spawn_blocking(move || daily_bars(&path, &sym, limit)).await {
+            Ok(Ok(bars)) => (bars, "warehouse", ""),
+            _ => (Vec::new(), "warehouse", "warehouse busy"),
+        }
+    } else if yahoo_params(&tf).is_some() {
+        let (bars, loading) = state.bars.intraday.get(&symbol, &tf);
+        (bars, "yahoo", if loading { "loading" } else { "" })
+    } else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note})).into_response()
 }
 
 async fn ws_upgrade(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
@@ -128,6 +164,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/api/status", get(api_status))
+        .route("/api/bars", get(api_bars))
         .fallback_service(ServeDir::new(state.web_dir.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), guard))
         .with_state(state)
@@ -160,7 +197,9 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (status, _rx) = watch::channel(FeedStatus::On);
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir() };
+        let fetch: crate::bars::Fetcher = Arc::new(|_s, _t| Box::pin(async { None }));
+        let bars = Arc::new(Bars { warehouse: PathBuf::from("no/such.duckdb"), intraday: crate::bars::Intraday::new(fetch) });
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
