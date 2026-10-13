@@ -1,0 +1,185 @@
+import { describe, expect, it } from 'vitest';
+import { applyTick, barTime, type Bar } from '../src/bars';
+import { parse } from '../src/command';
+import { age, compact, pct, price, signed } from '../src/format';
+import { bollinger, ema, macd, rsi, sma } from '../src/indicators';
+import { deserialize, LayoutError, PRESETS, PRESET_NAMES, serialize } from '../src/layout';
+import { LinkBus, nextGroup } from '../src/links';
+import { barLimit, RANGES } from '../src/ranges';
+
+const ctx = { layouts: ['Mine-1', 'Day trading'] };
+
+describe('command line', () => {
+  it('reads symbols and commands', () => {
+    expect(parse('SBIN', ctx)).toEqual({ kind: 'symbol', symbol: 'SBIN' });
+    expect(parse('  sbin  ', ctx)).toEqual({ kind: 'symbol', symbol: 'SBIN' });
+    expect(parse('sbin chart', ctx)).toEqual({ kind: 'chart', symbol: 'SBIN' });
+    expect(parse('add tcs', ctx)).toEqual({ kind: 'add', symbol: 'TCS' });
+    expect(parse('REMOVE TCS', ctx)).toEqual({ kind: 'remove', symbol: 'TCS' });
+    expect(parse('M&M', ctx)).toEqual({ kind: 'symbol', symbol: 'M&M' });
+  });
+  it('switches layouts by preset or saved name', () => {
+    expect(parse('layout b', ctx)).toEqual({ kind: 'layout', name: 'B' });
+    expect(parse('layout day trading', ctx)).toEqual({ kind: 'layout', name: 'Day trading' });
+    expect(parse('mine-1', ctx)).toEqual({ kind: 'layout', name: 'Mine-1' });
+    expect(parse('layout nothing', ctx).kind).toBe('error');
+  });
+  it('rejects nonsense with a message', () => {
+    const empty = parse('', ctx);
+    expect(empty).toEqual({ kind: 'error', message: 'type a symbol or a command' });
+    expect(parse('@@', ctx).kind).toBe('error');
+    expect(parse('ADD', ctx).kind).toBe('error');
+    expect(parse('ADD A B', ctx).kind).toBe('error');
+    expect(parse('SBIN HELLO', ctx).kind).toBe('error');
+  });
+});
+
+describe('link groups', () => {
+  it('moves panels in the same colour and leaves the rest', () => {
+    const bus = new LinkBus();
+    const seen: string[] = [];
+    bus.subscribe('blue', (s) => seen.push(`blue:${s}`));
+    bus.subscribe('red', (s) => seen.push(`red:${s}`));
+    bus.setSymbol('blue', 'SBIN');
+    expect(seen).toEqual(['blue:SBIN']);
+    expect(bus.symbolOf('blue')).toBe('SBIN');
+    expect(bus.symbolOf('red')).toBeNull();
+  });
+  it('treats none as private', () => {
+    const bus = new LinkBus();
+    let called = false;
+    bus.subscribe('none', () => (called = true));
+    bus.setSymbol('none', 'SBIN');
+    expect(called).toBe(false);
+    expect(bus.symbolOf('none')).toBeNull();
+  });
+  it('unsubscribes and cycles', () => {
+    const bus = new LinkBus();
+    let n = 0;
+    const off = bus.subscribe('green', () => n++);
+    bus.setSymbol('green', 'A');
+    off();
+    bus.setSymbol('green', 'B');
+    expect(n).toBe(1);
+    expect(nextGroup('none')).toBe('red');
+    expect(nextGroup('blue')).toBe('none');
+  });
+});
+
+describe('layouts', () => {
+  it('round-trips every preset', () => {
+    for (const name of PRESET_NAMES) {
+      const m = PRESETS[name]();
+      expect(deserialize(serialize(m))).toEqual(m);
+    }
+  });
+  it('presets hold the panels the spec lists', () => {
+    const types = (n: 'A' | 'B' | 'C') => Object.values(PRESETS[n]().panels).map((p) => p.type).sort();
+    expect(types('A')).toEqual(['chart', 'depth', 'quote', 'tape', 'watchlist']);
+    expect(types('B')).toEqual(['chart', 'chart', 'chart', 'chart', 'tape']);
+    expect(types('C')).toEqual(['chart', 'depth', 'quote', 'tape', 'watchlist']);
+  });
+  it('every placement refers to a panel that exists and to an earlier one', () => {
+    for (const name of PRESET_NAMES) {
+      const m = PRESETS[name]();
+      const seen = new Set<string>();
+      for (const p of m.arrangement ?? []) {
+        expect(m.panels[p.id]).toBeDefined();
+        if (p.ref) expect(seen.has(p.ref)).toBe(true);
+        seen.add(p.id);
+      }
+      expect(seen.size).toBe(Object.keys(m.panels).length);
+    }
+  });
+  it('rejects a wrong version, an unknown panel type, a bad group and bad JSON', () => {
+    const good = PRESETS.A();
+    expect(() => deserialize(JSON.stringify({ ...good, version: 2 }))).toThrow(LayoutError);
+    expect(() => deserialize(JSON.stringify({ ...good, panels: { x: { type: 'bogus', group: 'none' } } }))).toThrow(LayoutError);
+    expect(() => deserialize(JSON.stringify({ ...good, panels: { x: { type: 'chart', group: 'pink' } } }))).toThrow(LayoutError);
+    expect(() => deserialize('{nope')).toThrow(LayoutError);
+  });
+});
+
+describe('ranges', () => {
+  it('maps each label to a bar size', () => {
+    const tf = Object.fromEntries(RANGES.map((r) => [r.label, r.tf]));
+    expect(tf).toEqual({ '1D': '1m', '5D': '5m', '1M': '15m', '3M': '1D', '6M': '1D', YTD: '1D', '1Y': '1D', '5Y': '1D', All: '1D' });
+  });
+  it('computes year-to-date bars from the date', () => {
+    const ytd = RANGES.find((r) => r.label === 'YTD')!;
+    expect(barLimit(ytd, new Date(Date.UTC(2026, 0, 1)))).toBe(1);
+    const october = barLimit(ytd, new Date(Date.UTC(2026, 9, 14)))!;
+    expect(october).toBeGreaterThan(170);
+    expect(october).toBeLessThan(200);
+    expect(barLimit(RANGES.find((r) => r.label === 'All')!, new Date())).toBeNull();
+  });
+});
+
+describe('indicators', () => {
+  it('sma and ema', () => {
+    expect(sma([1, 2, 3, 4, 5], 3)).toEqual([null, null, 2, 3, 4]);
+    expect(ema([1, 2, 3, 4, 5], 3)).toEqual([null, null, 2, 3, 4]);
+  });
+  it('bollinger bands are symmetric around the mean', () => {
+    const b = bollinger([1, 2, 3, 4, 5], 3, 2);
+    expect(b.mid[2]).toBe(2);
+    const sd = Math.sqrt(2 / 3);
+    expect(b.upper[2]).toBeCloseTo(2 + 2 * sd, 10);
+    expect(b.lower[2]).toBeCloseTo(2 - 2 * sd, 10);
+    expect(b.upper[1]).toBeNull();
+  });
+  it('rsi is 100 on a rising series and 0 on a falling one', () => {
+    const up = rsi([1, 2, 3, 4, 5, 6, 7, 8], 3);
+    expect(up.slice(0, 3)).toEqual([null, null, null]);
+    expect(up[3]).toBe(100);
+    expect(up[7]).toBe(100);
+    expect(rsi([8, 7, 6, 5, 4, 3, 2, 1], 3)[5]).toBe(0);
+  });
+  it('macd histogram is macd minus signal', () => {
+    const values = Array.from({ length: 60 }, (_, i) => 100 + Math.sin(i / 3) * 5 + i * 0.1);
+    const m = macd(values, 12, 26, 9);
+    const i = 50;
+    expect(m.hist[i]).toBeCloseTo((m.macd[i] as number) - (m.signal[i] as number), 10);
+    expect(m.macd[24]).toBeNull();
+    expect(m.macd[25]).not.toBeNull();
+    expect(m.signal[32]).toBeNull();
+    expect(m.signal[33]).not.toBeNull();
+  });
+});
+
+describe('bar times and ticks', () => {
+  it('floors to the bar start', () => {
+    expect(barTime(1_000_030, '1m')).toBe(1_000_020);
+    expect(barTime(1_000_030, '5m')).toBe(999_900);
+    expect(barTime(1_000_030, '15m')).toBe(999_900);
+    // 2026-10-13 21:00 UTC is 2026-10-14 02:30 IST, so the daily bar is the 14th at midnight UTC
+    expect(barTime(1_791_849_600 + 21 * 3600, '1D')).toBe(1_791_936_000);
+    expect(barTime(1_791_849_600 + 4 * 3600, '1D')).toBe(1_791_849_600);
+  });
+  const bar: Bar = { t: 960, o: 10, h: 12, l: 9, c: 11, v: 100 };
+  it('updates the bar a tick falls in', () => {
+    expect(applyTick(bar, 13, 1000, '1m', 5)).toEqual({ t: 960, o: 10, h: 13, l: 9, c: 13, v: 105 });
+    expect(applyTick(bar, 8, 1000, '1m')).toEqual({ t: 960, o: 10, h: 12, l: 8, c: 8, v: 100 });
+  });
+  it('opens a new bar across the boundary and ignores a late tick', () => {
+    expect(applyTick(bar, 14, 1030 + 60, '1m')).toEqual({ t: 1080, o: 14, h: 14, l: 14, c: 14, v: 0 });
+    expect(applyTick(bar, 14, 100, '1m')).toBe(bar);
+    expect(applyTick(undefined, 5, 1000, '1m').t).toBe(960);
+  });
+});
+
+describe('format', () => {
+  it('formats prices, changes and ages', () => {
+    expect(price(1234567.5)).toBe('12,34,567.50');
+    expect(price(812.4)).toBe('812.40');
+    expect(signed(1.2)).toBe('+1.20');
+    expect(signed(-0.3)).toBe('-0.30');
+    expect(signed(0)).toBe('0.00');
+    expect(pct(0.094)).toBe('+0.09%');
+    expect(pct(-1.5)).toBe('-1.50%');
+    expect(age(2000)).toBe('2s');
+    expect(age(180_000)).toBe('3m');
+    expect(compact(4_200_000)).toBe('42.00L');
+    expect(compact(980)).toBe('980');
+  });
+});
