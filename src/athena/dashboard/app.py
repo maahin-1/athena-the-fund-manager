@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 import streamlit as st
 
 from athena.contracts import AthenaError
 from athena.backtest.rules import RULES, Rule, SeriesRule
 from athena.dashboard.backtest_view import BacktestView
+from athena.dashboard.live_panel import render_live
 from athena.dashboard.market import render_market
 from athena.dashboard.risk_form import risk_controls
 from athena.dashboard.strategy_form import strategy_controls
@@ -58,7 +59,7 @@ def _panel(panel: Panel) -> None:
             hide_index=True, width="stretch",
         )
     if panel.missing:
-        with st.expander(f"{len(panel.missing)} figure(s) not available"):
+        with st.expander(f"{len(panel.missing)} figure(s) not available", expanded=True):
             for name, why in panel.missing.items():
                 st.write(f"{name}: {why}")
 
@@ -106,7 +107,7 @@ def _reset_indicators() -> None:
 def _indicator_controls() -> list[Selected]:
     """The Indicators section: each chosen indicator with its settings and a remove button, an add picker, a reset."""
     chosen = _chosen()
-    with st.expander("Indicators"):  # a fixed label: a changing one would collapse the section after every click
+    with st.expander("Indicators", expanded=True):  # a fixed label: a changing one would collapse the section after every click
         for item in chosen:
             spec = REGISTRY[item["key"]]
             columns = st.columns([2, *([1] * len(spec.params)), 1])
@@ -154,8 +155,8 @@ def _at_a_glance(view: DashboardView) -> None:
             column.plotly_chart(figure, width="stretch")
 
 
-def render(view: DashboardView) -> None:
-    """Draw one `DashboardView`: verdict, specialist views, charts, then each metric panel with its as-of and coverage."""
+def render(view: DashboardView, live: Any = None) -> None:
+    """Draw one `DashboardView`: verdict, live price (when a quote source is given), specialist views, charts, then each metric panel with its as-of and coverage."""
     if view.status == NEEDS_CLARIFICATION:
         st.warning(f"{view.query!r} could be more than one instrument ({' '.join(view.notes)}). Click a row below, or type the exact symbol.")
         st.caption(f"{len(view.candidates)} matches. Click a row to analyse it.")
@@ -182,9 +183,12 @@ def render(view: DashboardView) -> None:
     if view.status == NO_VIEW:
         st.warning("No specialist had enough data to form a view.")
 
+    if live is not None and view.asset_class in BACKTESTABLE:
+        render_live(live, view.identifier)
+
     st.markdown("**Specialists**")
     for row in view.specialists:
-        with st.expander(f"{row.name}: {row.signal} {row.confidence}  (coverage {row.coverage})"):
+        with st.expander(f"{row.name}: {row.signal} {row.confidence}  (coverage {row.coverage})", expanded=True):
             st.write(row.reasoning)
             if row.missing:
                 st.caption("Missing: " + ", ".join(row.missing))
@@ -300,7 +304,7 @@ def _analyse(service: ViewService) -> None:
     except (AthenaError, ValueError) as exc:
         st.error(str(exc))
         return
-    render(view)
+    render(view, getattr(service, "live", None))
     if view.status != NEEDS_CLARIFICATION and view.asset_class in BACKTESTABLE:
         _backtest_section(service, view.identifier)
 

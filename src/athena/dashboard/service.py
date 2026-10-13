@@ -15,6 +15,7 @@ from athena.contracts import AthenaError, Bar
 from athena.dashboard.risk import RiskWorld, refresh_risk_data, risk_packet, risk_world_from_store
 from athena.dashboard.backtest_view import BacktestView, build_backtest_view
 from athena.dashboard.view import DashboardView, build_view
+from athena.live.quotes import LiveQuotes
 from athena.llm.envfile import DEFAULT_ENV_FILE
 from athena.orchestrator.builders import RequestCache, history_fetcher
 from athena.orchestrator.orchestrator import NEEDS_CLARIFICATION, Orchestrator
@@ -50,6 +51,7 @@ class DashboardService:
         event_notes: Callable[[str, str], Sequence[str]] | None = None,
         market_db: Path | None = None,
         verdicts: Any = None,
+        live: Any = None,
     ):
         self._orchestrator = orchestrator
         self._bars = bars
@@ -62,6 +64,7 @@ class DashboardService:
         self._event_notes = event_notes  # what the exchange and the press said about those events: (symbol, company name)
         self.market_db = market_db  # the market warehouse the screen tab reads, or None when there is none
         self.verdicts = verdicts  # makes verdicts from the warehouse packets for the screen tab, or None
+        self.live = live  # live quotes for the price panel, or None
 
     def view(self, query: str, overlay: Overlay | None = None, list_relatives: bool = False) -> DashboardView:
         self._bars.clear()
@@ -119,5 +122,5 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
         long_history=long_history, backtest_notes=checked_long_history.notes, price_notes=lambda symbol: sources.history.notes(symbol) + (sources.served.notes(symbol) if sources.served else ()) + sources.warnings,
         event_notes=EventConfirmer(sources.news, sources.history.events_found) if sources.news is not None else None,
-        market_db=DEFAULT_WAREHOUSE, verdicts=live_runner(DEFAULT_WAREHOUSE, router=sources.llm_router),
+        market_db=DEFAULT_WAREHOUSE, verdicts=live_runner(DEFAULT_WAREHOUSE, router=sources.llm_router), live=LiveQuotes(),
     )
