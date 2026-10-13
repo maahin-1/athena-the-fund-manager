@@ -408,6 +408,21 @@ def test_the_builder_turns_the_boxes_into_the_strategy_that_runs():
     assert rule.description.endswith("No protective stop.")
 
 
+def test_the_builder_passes_the_risk_options_into_the_strategy_and_its_description():
+    service, app = start_backtest()
+    choose(app, "Build my own")
+    app.number_input(key="builder_trailing").set_value(3.0).run()
+    app.number_input(key="builder_target").set_value(15.0).run()
+    app.number_input(key="builder_hold").set_value(60).run()
+    app.number_input(key="builder_size").set_value(50.0).run()
+    app.button(key="run_strategy").click().run()
+    (rule,) = service.rule_sets[-1]
+    assert (rule.stop_atr, rule.trailing_stop_atr, rule.take_profit_pct, rule.max_hold_bars, rule.position_pct) == (2.0, 3.0, 15.0, 60, 50.0)
+    for phrase in ("trailing stop follows the highest high 3 x ATR", "Take profit at 15% above", "Sell after 60 bars held", "Put 50% of cash"):
+        assert phrase in rule.description
+    assert not app.exception
+
+
 def test_several_conditions_can_be_required_all_together_or_any_one_of_them():
     service, app = start_backtest()
     choose(app, "Build my own")

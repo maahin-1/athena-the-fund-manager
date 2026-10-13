@@ -12,7 +12,9 @@ from athena.strategies.model import (
     MAX_DEPTH,
     MAX_NODES,
     MAX_SHIFT,
+    MAX_HOLD_BARS,
     MAX_STOP_ATR,
+    MAX_TAKE_PROFIT_PCT,
     MAX_WINDOW,
     PRICE_FIELDS,
     ROLLING_FNS,
@@ -177,10 +179,24 @@ def parse_strategy(data: Any) -> Strategy:
         raise StrategyError(f"this strategy is not valid ({type(exc).__name__})") from exc
 
 
+RISK_KEYS = ("stop_atr", "trailing_stop_atr", "take_profit_pct", "max_hold_bars", "position_pct")
+
+
+def _bounded(parser: "_Parser", top: dict, key: str, high: float, whole: bool = False) -> float | None:
+    """An optional risk number above 0 and at most `high` (a whole number from 1 when `whole`), or the path of what is wrong."""
+    if top.get(key) is None:
+        return None
+    value = float(parser.number(top[key], f"strategy.{key}"))
+    if not 0 < value <= high or (whole and value != int(value)):
+        limit = f"{high:g}"
+        raise StrategyError(f"strategy.{key}: must be {'a whole number from 1' if whole else 'above 0'} and at most {limit}")
+    return value
+
+
 def _parse(data: Any) -> Strategy:
     parser = _Parser()
     top = parser.mapping(data, "strategy")
-    extra = sorted(set(top) - {"version", "name", "entry", "exit", "stop_atr"})
+    extra = sorted(set(top) - {"version", "name", "entry", "exit", *RISK_KEYS})
     if extra:
         raise StrategyError(f"strategy: unexpected key {extra[0]!r}")
     if "version" in top and top["version"] != VERSION:
@@ -191,12 +207,15 @@ def _parse(data: Any) -> Strategy:
     for side in ("entry", "exit"):
         if side not in top:
             raise StrategyError(f"strategy: missing {side!r}")
-    stop = top.get("stop_atr")
-    if stop is not None:
-        stop = float(parser.number(stop, "strategy.stop_atr"))
-        if not 0 < stop <= MAX_STOP_ATR:
-            raise StrategyError(f"strategy.stop_atr: must be above 0 and at most {MAX_STOP_ATR:g}")
-    return Strategy(name.strip(), parser.condition(top["entry"], "entry", 1), parser.condition(top["exit"], "exit", 1), stop)
+    stop = _bounded(parser, top, "stop_atr", MAX_STOP_ATR)
+    trailing = _bounded(parser, top, "trailing_stop_atr", MAX_STOP_ATR)
+    target = _bounded(parser, top, "take_profit_pct", MAX_TAKE_PROFIT_PCT)
+    held = _bounded(parser, top, "max_hold_bars", MAX_HOLD_BARS, whole=True)
+    size = _bounded(parser, top, "position_pct", 100.0)
+    return Strategy(
+        name.strip(), parser.condition(top["entry"], "entry", 1), parser.condition(top["exit"], "exit", 1),
+        stop, trailing, target, int(held) if held is not None else None, size if size is not None else 100.0,
+    )
 
 
 def _expr_dict(expr: Expr) -> dict:
@@ -226,6 +245,8 @@ def _cond_dict(cond: Cond) -> dict:
 def to_dict(strategy: Strategy) -> dict:
     """Plain data that `parse_strategy` turns back into an equal strategy."""
     out = {"version": VERSION, "name": strategy.name, "entry": _cond_dict(strategy.entry), "exit": _cond_dict(strategy.exit)}
-    if strategy.stop_atr is not None:
-        out["stop_atr"] = strategy.stop_atr
+    for key in RISK_KEYS:
+        value = getattr(strategy, key)
+        if value is not None and not (key == "position_pct" and value == 100.0):
+            out[key] = value
     return out

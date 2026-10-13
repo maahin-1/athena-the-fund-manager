@@ -4,6 +4,7 @@ import pytest
 from bar_factory import make_bars
 
 from athena.strategies.model import LINE_NAMES, MAX_DEPTH, MAX_NODES, AllOf, Compare, Const, IndicatorRef, Not, Price, Rolling
+from athena.strategies.describe import describe
 from athena.strategies.parse import StrategyError, parse_strategy, to_dict
 from athena.strategies.presets import PRESET_DATA, PRESETS
 from athena.technicals.candles import candles_from_bars
@@ -169,3 +170,46 @@ HUGE = 10**400  # an integer no float can hold
 def test_input_no_float_can_hold_or_no_name_can_be_is_refused_with_a_message_naming_the_part(data, where):
     with pytest.raises(StrategyError, match=where):
         parse_strategy(data)
+
+
+RISK = {"trailing_stop_atr": 3, "take_profit_pct": 12.5, "max_hold_bars": 40, "position_pct": 50, "stop_atr": 2}
+
+
+def test_the_risk_options_are_read_checked_and_written_back_only_when_set():
+    strategy = parse_strategy({**BASIC, **RISK})
+    assert (strategy.trailing_stop_atr, strategy.take_profit_pct, strategy.max_hold_bars, strategy.position_pct) == (3.0, 12.5, 40, 50.0)
+    assert parse_strategy(to_dict(strategy)) == strategy
+    plain = parse_strategy(BASIC)
+    assert plain.position_pct == 100.0 and plain.max_hold_bars is None
+    assert set(to_dict(plain)) == {"version", "name", "entry", "exit"}  # nothing written for what was not set
+    assert "position_pct" not in to_dict(parse_strategy({**BASIC, "position_pct": 100}))
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"trailing_stop_atr": 0}, "strategy.trailing_stop_atr: must be above 0 and at most 10"),
+        ({"trailing_stop_atr": 11}, "strategy.trailing_stop_atr: must be above 0 and at most 10"),
+        ({"take_profit_pct": 0}, "strategy.take_profit_pct: must be above 0 and at most 1000"),
+        ({"take_profit_pct": 1001}, "strategy.take_profit_pct: must be above 0 and at most 1000"),
+        ({"take_profit_pct": "5"}, "strategy.take_profit_pct: must be a number"),
+        ({"max_hold_bars": 0}, "strategy.max_hold_bars: must be a whole number from 1 and at most 1000"),
+        ({"max_hold_bars": 2.5}, "strategy.max_hold_bars: must be a whole number from 1 and at most 1000"),
+        ({"max_hold_bars": 1001}, "strategy.max_hold_bars: must be a whole number from 1 and at most 1000"),
+        ({"position_pct": 0}, "strategy.position_pct: must be above 0 and at most 100"),
+        ({"position_pct": 101}, "strategy.position_pct: must be above 0 and at most 100"),
+        ({"position_pct": True}, "strategy.position_pct: must be a number"),
+        ({"max_hold_bars": 10**400}, "strategy.max_hold_bars"),
+    ],
+)
+def test_a_wrong_risk_option_is_refused_with_its_path(change, message):
+    with pytest.raises(StrategyError) as info:
+        parse_strategy({**BASIC, **change})
+    assert message in str(info.value)
+
+
+def test_the_plain_english_description_names_every_risk_option_used():
+    text = describe(parse_strategy({**BASIC, **RISK}))
+    assert "2 x ATR below the entry fill" in text and "trailing stop follows the highest high 3 x ATR" in text
+    assert "Take profit at 12.5% above" in text and "Sell after 40 bars held" in text and "Put 50% of cash" in text
+    assert "No protective stop." in describe(parse_strategy(BASIC)) and "Put " not in describe(parse_strategy(BASIC))

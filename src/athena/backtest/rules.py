@@ -37,12 +37,18 @@ class SeriesRule:
     """A long-only rule computed once over the whole history and read at each close. `prepare` must build signals in
     which the value at bar t uses only bars up to t (every indicator and rolling window the strategy format allows is
     causal), so reading index t is as safe as rebuilding the packet from the bars up to t. `stop_atr` is the
-    protective stop in ATR multiples (None for no stop) and replaces the run's default."""
+    protective stop in ATR multiples (None for no stop) and replaces the run's default; the other four are the strategy's risk
+    options (a trailing stop in ATR multiples, a profit target in percent, a limit on bars held, and the percent of cash per
+    entry) and replace the run's too."""
 
     name: str
     description: str
     prepare: Callable[[Sequence[Candle]], Signals]
     stop_atr: float | None = None
+    trailing_stop_atr: float | None = None
+    take_profit_pct: float | None = None
+    max_hold_bars: int | None = None
+    position_pct: float = 100.0
 
 
 def _trend_lost(packet: Mapping[str, Any]) -> bool:

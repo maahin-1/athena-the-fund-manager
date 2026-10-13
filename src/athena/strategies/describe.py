@@ -66,10 +66,22 @@ def _cond(cond: Cond, nested: bool = False) -> str:
     return f"({text})" if nested and len(parts) > 1 else text
 
 
+def _risk_sentences(strategy: Strategy) -> str:
+    parts = [
+        f"Stop out if the price falls {strategy.stop_atr:g} x ATR below the entry fill." if strategy.stop_atr is not None
+        else ("No protective stop." if strategy.trailing_stop_atr is None else "No fixed stop.")
+    ]
+    if strategy.trailing_stop_atr is not None:
+        parts.append(f"A trailing stop follows the highest high {strategy.trailing_stop_atr:g} x ATR below it, and only moves up.")
+    if strategy.take_profit_pct is not None:
+        parts.append(f"Take profit at {strategy.take_profit_pct:g}% above the entry fill.")
+    if strategy.max_hold_bars is not None:
+        parts.append(f"Sell after {_bars(strategy.max_hold_bars)} held, at the next open.")
+    if strategy.position_pct != 100.0:
+        parts.append(f"Put {strategy.position_pct:g}% of cash into each entry and keep the rest in cash.")
+    return " ".join(parts)
+
+
 def describe(strategy: Strategy) -> str:
     """The strategy in plain English, for the person to read and confirm before it runs."""
-    stop = (
-        f"Stop out if the price falls {strategy.stop_atr:g} x ATR below the entry fill." if strategy.stop_atr is not None
-        else "No protective stop."
-    )
-    return f"Buy when {_cond(strategy.entry)}. Sell when {_cond(strategy.exit)}. {stop}"
+    return f"Buy when {_cond(strategy.entry)}. Sell when {_cond(strategy.exit)}. {_risk_sentences(strategy)}"

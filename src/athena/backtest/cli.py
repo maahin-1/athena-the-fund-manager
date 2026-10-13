@@ -100,10 +100,20 @@ def run_rules(
 
 
 def stop_phrase(config: Config) -> str:
-    return (
+    """The run's risk setup in words: the fixed stop, then any trailing stop, profit target, time limit and position size."""
+    parts = [
         f"a stop {config.stop_atr_multiple:g} x ATR below the entry fill" if config.stop_atr_multiple is not None
         else "no protective stop"
-    )
+    ]
+    if config.trailing_stop_atr is not None:
+        parts.append(f"a trailing stop {config.trailing_stop_atr:g} x ATR below the highest high")
+    if config.take_profit_pct is not None:
+        parts.append(f"a profit target {config.take_profit_pct:g}% above the entry fill")
+    if config.max_hold_bars is not None:
+        parts.append(f"a sale after {config.max_hold_bars} bars held")
+    if config.position_pct != 100.0:
+        parts.append(f"{config.position_pct:g}% of cash per entry")
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
 def assumptions(config: Config = Config(), stop: str | None = None) -> str:

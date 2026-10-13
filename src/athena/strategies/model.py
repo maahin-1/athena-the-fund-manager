@@ -13,6 +13,8 @@ MAX_CONDITIONS = 8  # inside one all / any
 MAX_WINDOW = 1000
 MAX_SHIFT = 500
 MAX_STOP_ATR = 10.0
+MAX_TAKE_PROFIT_PCT = 1000.0
+MAX_HOLD_BARS = 1000
 
 # The names of an indicator's lines, in the order the registry computes them, so a strategy can say which one it means.
 LINE_NAMES: dict[str, tuple[str, ...]] = {
@@ -88,10 +90,15 @@ Cond = Compare | AllOf | AnyOf | Not
 
 @dataclass(frozen=True)
 class Strategy:
-    """A long-only strategy as data: when to buy, when to sell, and an optional protective stop. Nothing in it can run
-    code; it is validated by `parse_strategy` and turned into signals by `compile_strategy`."""
+    """A long-only strategy as data: when to buy, when to sell, and optional risk options (a protective stop, a trailing stop,
+    a profit target, a limit on bars held, and the share of cash per entry). Nothing in it can run code; it is validated by
+    `parse_strategy` and turned into signals by `compile_strategy`."""
 
     name: str
     entry: Cond
     exit: Cond
     stop_atr: float | None = None
+    trailing_stop_atr: float | None = None
+    take_profit_pct: float | None = None
+    max_hold_bars: int | None = None
+    position_pct: float = 100.0

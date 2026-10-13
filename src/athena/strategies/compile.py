@@ -124,4 +124,6 @@ def compile_strategy(strategy: Strategy, candles: Sequence[Candle]) -> CompiledS
 
 def strategy_rule(strategy: Strategy) -> SeriesRule:
     """The strategy as a rule the backtest engine can run, described in plain English."""
-    return SeriesRule(strategy.name, describe(strategy), lambda candles: compile_strategy(strategy, candles), strategy.stop_atr)
+    return SeriesRule(strategy.name, describe(strategy), lambda candles: compile_strategy(strategy, candles), strategy.stop_atr,
+        strategy.trailing_stop_atr, strategy.take_profit_pct, strategy.max_hold_bars, strategy.position_pct,
+    )

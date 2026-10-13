@@ -115,10 +115,26 @@ def _builder() -> dict:
     name = st.text_input("Name", value="My strategy", key="builder_name")
     entry = _side("entry", "Buy when", ENTRY_DEFAULT)
     exit_ = _side("exit", "Sell when", EXIT_DEFAULT)
+    st.markdown("**Risk options**")
     stop = st.number_input("Protective stop in ATR below the entry fill (0 for none)", 0.0, 10.0, DEFAULT_STOP, 0.5, key="builder_stop")
+    trailing = st.number_input(
+        "Trailing stop in ATR below the highest high since entry (0 for none)", 0.0, 10.0, 0.0, 0.5, key="builder_trailing",
+        help="It follows the price up and never comes down; the fixed stop above still applies, and the higher of the two is used.",
+    )
+    target = st.number_input("Take profit at this % above the entry fill (0 for none)", 0.0, 1000.0, 0.0, 1.0, key="builder_target")
+    held = st.number_input(
+        "Sell after this many daily closes held (0 for no limit)", 0, 1000, 0, 1, key="builder_hold",
+        help="The sale happens at the next open; the day of the purchase counts as the first.",
+    )
+    size = st.number_input("Share of cash put into each entry (%)", 1.0, 100.0, 100.0, 5.0, key="builder_size")
     data: dict = {"version": 1, "name": name, "entry": entry, "exit": exit_}
-    if stop:
-        data["stop_atr"] = float(stop)
+    for key, value in (("stop_atr", stop), ("trailing_stop_atr", trailing), ("take_profit_pct", target)):
+        if value:
+            data[key] = float(value)
+    if held:
+        data["max_hold_bars"] = int(held)
+    if size != 100.0:
+        data["position_pct"] = float(size)
     return data
 
 
