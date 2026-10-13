@@ -11,3 +11,6 @@ __pycache__/
 graphify-out/
 .athena/
 .superpowers/
+terminal/target/
+terminal/web/node_modules/
+terminal/web/dist/
