@@ -14,7 +14,7 @@ from athena.contracts import AthenaError
 from athena.live.quotes import Minute, Quote, market_is_open, staleness
 
 REFRESH_CHOICES = (1, 2, 5, 10, 30, 60)
-DEFAULT_REFRESH = 2
+DEFAULT_REFRESH = 1
 AUTO_KEY, EVERY_KEY = "live_auto", "live_every"
 NOTE = (
     "Live figures come from the exchange's own quote page (unofficial, can change) and Yahoo's minute bars (can lag). They are shown for "
@@ -73,7 +73,11 @@ def _draw_price(quotes: Any, symbol: str) -> None:
     state = "market open" if market_is_open(now) else "market closed"
     note = staleness(quote, now)
     updated = f"{quote.updated:%d %b %H:%M:%S} IST" if quote.updated else "time not given"
-    st.caption(f"Exchange quote at {updated}  |  {state}" + (f"  |  {note}" if note else ""))
+    status = quotes.stream_status() if hasattr(quotes, "stream_status") else ""
+    st.caption(
+        f"{quote.source} at {updated}  |  {state}" + (f"  |  {note}" if note else "")
+        + (f"  |  {status}" if status and quote.source != "Angel One live stream" else "")
+    )
 
 
 def _draw_chart(quotes: Any, symbol: str) -> None:

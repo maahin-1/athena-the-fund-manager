@@ -45,6 +45,7 @@ class Quote:
     updated: datetime | None  # the exchange's own timestamp, IST
     bids: tuple[tuple[float, float], ...]
     asks: tuple[tuple[float, float], ...]
+    source: str = "exchange quote page, polled"
 
     @property
     def change(self) -> float:
@@ -147,7 +148,9 @@ class LiveQuotes:
         quote_ttl: float = QUOTE_TTL,
         minutes_ttl: float = MINUTES_TTL,
         background: bool = True,
+        feed: Any = None,
     ):
+        self._feed = feed  # a live stream (athena.live.angel.AngelFeed) tried first, or None
         if get is None:
             session = requests.Session()
             session.headers.update(HEADERS)
@@ -176,6 +179,14 @@ class LiveQuotes:
             return None
 
     def quote(self, symbol: str) -> Quote:
+        if self._feed is not None:
+            try:
+                self._feed.watch(symbol)
+                streamed = self._feed.latest(symbol)
+            except Exception:  # a broken stream must never break the page: the polled quote below answers
+                streamed = None
+            if streamed is not None:
+                return streamed
         now = self._clock()
         with self._lock:
             held = self._quotes.get(symbol)
@@ -201,9 +212,24 @@ class LiveQuotes:
         return quote
 
     def ticks(self, symbol: str) -> list[tuple[datetime, float]]:
-        """Every distinct exchange answer seen for the symbol since this process started, oldest first."""
+        """Every distinct price seen for the symbol since this process started (streamed trades and polled answers), oldest first."""
         with self._lock:
-            return list(self._ticks.get(symbol, ()))
+            seen = set(self._ticks.get(symbol, ()))
+        if self._feed is not None:
+            try:
+                seen.update(self._feed.ticks(symbol))
+            except Exception:
+                pass
+        return sorted(seen)
+
+    def stream_status(self) -> str:
+        """A few words on the live stream, or nothing when none is configured."""
+        if self._feed is None:
+            return ""
+        try:
+            return self._feed.status()
+        except Exception:
+            return "stream unavailable"
 
     def _load_bars(self, symbol: str) -> None:
         try:
