@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, Request, State};
+use axum::body::Bytes;
+use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -17,6 +18,7 @@ use tower_http::services::ServeDir;
 use crate::angel::stream::FeedStatus;
 use crate::bars::{daily_bars, yahoo_params, Bars, DEFAULT_LIMIT};
 use crate::hub::Hub;
+use crate::layouts::{LayoutError, LayoutStore};
 
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
@@ -27,6 +29,7 @@ pub struct AppState {
     pub port: u16,
     pub web_dir: PathBuf,
     pub bars: Arc<Bars>,
+    pub layouts: Arc<LayoutStore>,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -108,6 +111,40 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
     Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note})).into_response()
 }
 
+fn layout_status(e: LayoutError) -> StatusCode {
+    match e {
+        LayoutError::BadName | LayoutError::NotAnObject => StatusCode::BAD_REQUEST,
+        LayoutError::TooBig => StatusCode::PAYLOAD_TOO_LARGE,
+        LayoutError::Missing => StatusCode::NOT_FOUND,
+        LayoutError::Io => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+async fn layouts_list(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({"names": state.layouts.list()}))
+}
+
+async fn layouts_get(State(state): State<AppState>, Path(name): Path<String>) -> Response {
+    match state.layouts.get(&name) {
+        Ok(body) => ([("content-type", "application/json")], body).into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+async fn layouts_put(State(state): State<AppState>, Path(name): Path<String>, body: Bytes) -> Response {
+    match state.layouts.put(&name, &body) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+async fn layouts_delete(State(state): State<AppState>, Path(name): Path<String>) -> Response {
+    match state.layouts.delete(&name) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
 async fn ws_upgrade(State(state): State<AppState>, upgrade: WebSocketUpgrade) -> Response {
     upgrade.on_upgrade(move |socket| client_loop(socket, state))
 }
@@ -165,6 +202,8 @@ pub fn router(state: AppState) -> Router {
         .route("/ws", get(ws_upgrade))
         .route("/api/status", get(api_status))
         .route("/api/bars", get(api_bars))
+        .route("/api/layouts", get(layouts_list))
+        .route("/api/layouts/:name", get(layouts_get).put(layouts_put).delete(layouts_delete))
         .fallback_service(ServeDir::new(state.web_dir.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), guard))
         .with_state(state)
@@ -199,7 +238,8 @@ mod tests {
         let (status, _rx) = watch::channel(FeedStatus::On);
         let fetch: crate::bars::Fetcher = Arc::new(|_s, _t| Box::pin(async { None }));
         let bars = Arc::new(Bars { warehouse: PathBuf::from("no/such.duckdb"), intraday: crate::bars::Intraday::new(fetch) });
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars };
+        let layouts = Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-layouts-{port}"))));
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -251,6 +291,25 @@ mod tests {
         assert!(tokio_tungstenite::connect_async(ws_request(port, "http://evil.test")).await.is_err());
         let plain = format!("ws://127.0.0.1:{port}/ws").into_client_request().unwrap();
         assert!(tokio_tungstenite::connect_async(plain).await.is_err());
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn layouts_save_list_load_and_delete_over_http() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let base = format!("http://127.0.0.1:{port}/api/layouts");
+        let put = client.put(format!("{base}/Mine-1")).header("Origin", &origin).body(r#"{"version":1}"#).send().await.unwrap();
+        assert_eq!(put.status(), 204);
+        let list: serde_json::Value = client.get(&base).header("Origin", &origin).send().await.unwrap().json().await.unwrap();
+        assert!(list["names"].as_array().unwrap().iter().any(|n| n == "Mine-1"));
+        let got = client.get(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap();
+        assert_eq!(got.text().await.unwrap(), r#"{"version":1}"#);
+        assert_eq!(client.put(format!("{base}/x")).header("Origin", &origin).body("[]").send().await.unwrap().status(), 400);
+        assert_eq!(client.put(format!("{base}/Mine-1")).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
+        assert_eq!(client.delete(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 204);
+        assert_eq!(client.get(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 404);
         stop.cancel();
     }
 

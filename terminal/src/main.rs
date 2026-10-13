@@ -3,6 +3,7 @@ mod bars;
 mod config;
 mod fake;
 mod hub;
+mod layouts;
 mod poll;
 mod quote;
 mod server;
@@ -155,7 +156,8 @@ async fn main() {
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
     }
     let bars = Arc::new(bars::Bars { warehouse: args.warehouse, intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())) });
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars };
+    let layouts = Arc::new(layouts::LayoutStore::new(PathBuf::from(".athena/terminal/layouts")));
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))
