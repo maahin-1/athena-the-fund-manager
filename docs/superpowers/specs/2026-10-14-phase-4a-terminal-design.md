@@ -26,6 +26,28 @@ A fast local trading-terminal page (TradingView and Bloomberg style): docked pan
 
 **Bars.** Daily bars from the warehouse; 1, 5 and 15 minute bars from Yahoo, cached; live ticks update the last bar.
 
+## Design references
+
+Studied for behaviour and layout ideas only. No code, asset, icon, name or data is copied; both products' terms forbid it. TradingView was observed with REA on its public chart page (viewport capture and accessibility tree of a signed-out page, no script sources read). Bloomberg's terminal cannot be opened by us, so its conventions below come from public descriptions, not observation.
+
+**From TradingView (observed):**
+- Top toolbar order: menu, symbol box, add-compare, interval, chart type, indicators, layout setup, alert, replay, undo and redo, then layout save and manager on the right, with settings, fullscreen and snapshot. Controls are icon-first with a text label only for the main actions.
+- Chart header: name, interval and exchange, then an OHLC legend that updates with the crosshair; volume as a coloured histogram at the foot of the same pane (not a separate panel); a live last-price tag on the price axis with a dotted line across the chart; a second tag for pre/post-market.
+- Range row under the chart: 1D 5D 1M 3M 6M YTD 1Y 5Y All, each tied to a sensible bar size (1D in 1-minute bars, 5D in 5-minute, 1M in 30-minute and so on), plus a clock with the exchange timezone and an adjusted-prices toggle.
+- Right side: a watchlist with columns Symbol, Last, Change, Change%, collapsible sections (Indices, Stocks), a coloured flag per row for link groups, and the selected row outlined. Below it a symbol detail block: large price, "last update" time, then facts.
+- A narrow icon rail on the far right opens widgets (watchlist, alerts, object tree, calendars); a slim left rail holds chart tools.
+- Light and dark themes; red and green candles.
+
+**From Bloomberg (public descriptions):**
+- A command line is the main way to move: type a symbol, then a function code (for example a quote, chart or fundamentals screen) and press enter. The function keys select panel groups.
+- Dense, four-panel screens on a black background with amber text for labels and green and red for moves; numbers dominate and chrome is minimal.
+- Panels are linked by colour group (red, yellow, green, blue): a symbol change in one panel moves every panel in the same group.
+
+**What 4a takes from each.**
+- TradingView: toolbar order, OHLC legend, volume inside the chart pane, last-price tag and line, range row with matching bar sizes, watchlist columns with collapsible sections and flags, light and dark themes.
+- Bloomberg: command line first, function keys, colour link groups, dense dark default.
+- Left out of 4a: the drawing tools rail, replay, buy and sell tiles (read-only), alerts, the right-hand widget rail beyond the panels already listed.
+
 ## Rules
 
 1. **Read-only.** No order, position or funds call exists in the program. It subscribes to prices only.
