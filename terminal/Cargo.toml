@@ -7,6 +7,10 @@ description = "Athena terminal: local server that holds the live price feed and 
 [dependencies]
 hmac = "0.12"
 sha1 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [profile.release]
 lto = "thin"
