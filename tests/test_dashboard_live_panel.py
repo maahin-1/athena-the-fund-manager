@@ -23,6 +23,9 @@ class FakeLive:
     def minutes(self, symbol):
         return [Minute(datetime(2026, 10, 13, 9, 15 + i, tzinfo=IST), 940.0 + i, 100.0) for i in range(5)]
 
+    def ticks(self, symbol):
+        return [(datetime(2026, 10, 13, 9, 20, 30, tzinfo=IST), 944.5), (datetime(2026, 10, 13, 9, 20, 35, tzinfo=IST), 944.7)]
+
     def now(self):
         return OPEN_TIME
 
@@ -79,5 +82,15 @@ def test_depth_rows_pair_bids_with_asks_and_the_chart_marks_the_previous_close()
         {"bid qty": "5", "bid": "946.80", "ask": "946.85", "ask qty": "98"},
         {"bid qty": "20", "bid": "946.70", "ask": "946.95", "ask qty": "128"},
     ]
-    figure = minutes_chart(FakeLive().minutes("SBIN"), 941.0)
+    live = FakeLive()
+    figure = minutes_chart(live.minutes("SBIN"), 941.0)
     assert len(figure.data[0].x) == 5 and figure.layout.shapes[0].y0 == 941.0
+
+
+def test_the_chart_runs_on_past_the_last_minute_bar_with_every_later_tick_and_works_from_ticks_alone():
+    live = FakeLive()
+    figure = minutes_chart(live.minutes("SBIN"), 941.0, live.ticks("SBIN"))
+    assert list(figure.data[0].y)[-2:] == [944.5, 944.7] and len(figure.data[0].y) == 7 and figure.data[1].y[0] == 944.7
+    only = minutes_chart([], 941.0, live.ticks("SBIN"))
+    assert list(only.data[0].y) == [944.5, 944.7]
+    assert len(minutes_chart([], 941.0).data) == 1

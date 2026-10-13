@@ -4,6 +4,7 @@ Display only. The analysts and verdicts read the stored daily prices, never thes
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 import plotly.graph_objects as go
@@ -21,8 +22,15 @@ NOTE = (
 )
 
 
-def minutes_chart(minutes: Sequence[Minute], previous_close: float) -> go.Figure:
-    figure = go.Figure(go.Scatter(x=[m.at for m in minutes], y=[m.close for m in minutes], mode="lines", name="price", line={"width": 2}))
+def minutes_chart(minutes: Sequence[Minute], previous_close: float, ticks: Sequence[tuple[datetime, float]] = ()) -> go.Figure:
+    """The minute bars, run on by every exchange answer seen since the last bar, so the line moves with the price."""
+    xs, ys = [m.at for m in minutes], [m.close for m in minutes]
+    after = [(at, price) for at, price in ticks if not xs or at > xs[-1]]
+    xs += [at for at, _ in after]
+    ys += [price for _, price in after]
+    figure = go.Figure(go.Scatter(x=xs, y=ys, mode="lines", name="price", line={"width": 2}))
+    if ys:
+        figure.add_trace(go.Scatter(x=[xs[-1]], y=[ys[-1]], mode="markers", marker={"size": 8}, name="last"))
     figure.add_hline(y=previous_close, line_dash="dot", annotation_text="previous close", annotation_position="bottom right")
     figure.update_layout(height=280, margin={"l": 10, "r": 10, "t": 10, "b": 10}, showlegend=False, xaxis_title=None, yaxis_title=None)
     return figure
@@ -48,7 +56,7 @@ def _crore(value: float | None) -> str:
     return "-" if value is None else f"{value / 1e7:,.0f} cr"
 
 
-def _draw(quotes: Any, symbol: str) -> None:
+def _draw_price(quotes: Any, symbol: str) -> None:
     try:
         quote = quotes.quote(symbol)
     except AthenaError as exc:
@@ -66,14 +74,24 @@ def _draw(quotes: Any, symbol: str) -> None:
     note = staleness(quote, now)
     updated = f"{quote.updated:%d %b %H:%M:%S} IST" if quote.updated else "time not given"
     st.caption(f"Exchange quote at {updated}  |  {state}" + (f"  |  {note}" if note else ""))
+
+
+def _draw_chart(quotes: Any, symbol: str) -> None:
+    try:
+        quote = quotes.quote(symbol)
+    except AthenaError:
+        return  # the price block above already says why
     chart, book = st.columns([3, 2])
     with chart:
+        ticks = quotes.ticks(symbol)
         try:
             minutes = quotes.minutes(symbol)
         except AthenaError as exc:
-            st.caption(f"No minute chart: {exc}")
-        else:
-            st.plotly_chart(minutes_chart(minutes, quote.previous_close), width="stretch")
+            minutes = []
+            if not ticks:
+                st.caption(f"No minute chart: {exc}")
+        if minutes or ticks:
+            st.plotly_chart(minutes_chart(minutes, quote.previous_close, ticks), width="stretch")
     with book:
         if quote.bids or quote.asks:
             st.dataframe(depth_rows(quote), hide_index=True, width="stretch")
@@ -87,15 +105,24 @@ def _draw(quotes: Any, symbol: str) -> None:
         st.caption("  |  ".join(extras))
 
 
-def _fragment_for(seconds: int):
-    def live(quotes: Any, symbol: str) -> None:
-        _draw(quotes, symbol)
+CHART_EVERY = 2  # the chart and book are heavier to redraw than the price line, so they refresh no faster than this
 
-    live.__qualname__ = f"live_panel_every_{seconds}s"  # a fragment is told apart by its function, so each interval gets its own
+
+def _fragment_for(name: str, draw: Any, seconds: int):
+    def live(quotes: Any, symbol: str) -> None:
+        draw(quotes, symbol)
+
+    live.__qualname__ = f"live_{name}_every_{seconds}s"  # a fragment is told apart by its function, so each kind and interval gets its own
     return st.fragment(run_every=seconds)(live)
 
 
-_FRAGMENTS: dict[int, Any] = {}
+_FRAGMENTS: dict[tuple[str, int], Any] = {}
+
+
+def _run(name: str, draw: Any, seconds: int, quotes: Any, symbol: str) -> None:
+    if (name, seconds) not in _FRAGMENTS:
+        _FRAGMENTS[(name, seconds)] = _fragment_for(name, draw, seconds)
+    _FRAGMENTS[(name, seconds)](quotes, symbol)
 
 
 def render_live(quotes: Any, symbol: str) -> None:
@@ -107,10 +134,10 @@ def render_live(quotes: Any, symbol: str) -> None:
         "Every (seconds)", REFRESH_CHOICES, index=REFRESH_CHOICES.index(DEFAULT_REFRESH), key=EVERY_KEY, disabled=not auto, label_visibility="collapsed"
     )
     if auto:
-        if seconds not in _FRAGMENTS:
-            _FRAGMENTS[seconds] = _fragment_for(seconds)
-        _FRAGMENTS[seconds](quotes, symbol)
+        _run("price", _draw_price, seconds, quotes, symbol)
+        _run("chart", _draw_chart, max(seconds, CHART_EVERY), quotes, symbol)
     else:
-        _draw(quotes, symbol)
+        _draw_price(quotes, symbol)
+        _draw_chart(quotes, symbol)
         st.button("Refresh now", key="live_refresh_now")
     st.caption(NOTE)

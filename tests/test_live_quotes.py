@@ -74,7 +74,7 @@ def test_a_quote_and_the_minutes_are_remembered_briefly_and_fetched_again_after(
         calls["minutes"] += 1
         return [Minute(OPEN_TIME.astimezone(IST), 946.0, 10.0)]
 
-    quotes = LiveQuotes(get=get, minutes=minutes, clock=lambda: clock["now"], quote_ttl=0.5, minutes_ttl=15.0)
+    quotes = LiveQuotes(get=get, minutes=minutes, clock=lambda: clock["now"], quote_ttl=0.5, minutes_ttl=15.0, background=False)
     quotes.quote("SBIN"), quotes.quote("SBIN"), quotes.minutes("SBIN"), quotes.minutes("SBIN")
     assert calls == {"quote": 1, "minutes": 1}
     clock["now"] += timedelta(seconds=1)
@@ -90,3 +90,58 @@ def test_an_unreadable_answer_becomes_an_athena_error_with_no_detail_that_could_
     with pytest.raises(AthenaError) as info:
         quotes.quote("NOPE")
     assert "could not be read" in str(info.value)
+
+
+def test_a_stock_outside_the_main_series_is_found_by_trying_the_others_and_the_series_is_remembered():
+    seen = []
+
+    def get(url, params, headers, timeout):
+        seen.append(params["series"])
+        return Reply(BODY if params["series"] == "SM" else {"equityResponse": []})
+
+    clock = {"now": OPEN_TIME}
+    quotes = LiveQuotes(get=get, minutes=lambda s: [], clock=lambda: clock["now"], background=False)
+    assert quotes.quote("SMEX").last == 946.85
+    assert seen == ["EQ", "SM"]
+    seen.clear()
+    clock["now"] += timedelta(seconds=2)
+    quotes.quote("SMEX")
+    assert seen == ["SM"]  # the known series first, nothing else needed
+
+
+def test_a_symbol_the_exchange_does_not_know_in_any_series_is_an_error_naming_what_was_tried():
+    quotes = LiveQuotes(get=lambda *a, **k: Reply({"equityResponse": []}), minutes=lambda s: [], clock=lambda: OPEN_TIME, background=False)
+    with pytest.raises(AthenaError) as info:
+        quotes.quote("GHOST")
+    assert "GHOST" in str(info.value) and "EQ" in str(info.value) and "ST" in str(info.value)
+
+
+def test_every_new_exchange_answer_is_kept_as_a_tick_and_a_repeat_is_not():
+    answers = [BODY, BODY, {"equityResponse": [{**BODY["equityResponse"][0], "tradeInfo": {**BODY["equityResponse"][0]["tradeInfo"], "lastPrice": 947.1},
+                                               "lastUpdateTime": "13-Oct-2026 14:07:20"}]}]
+    clock = {"now": OPEN_TIME}
+    calls = iter(answers)
+    quotes = LiveQuotes(get=lambda *a, **k: Reply(next(calls)), minutes=lambda s: [], clock=lambda: clock["now"], background=False)
+    for _ in range(3):
+        quotes.quote("SBIN")
+        clock["now"] += timedelta(seconds=1)
+    assert [price for _, price in quotes.ticks("SBIN")] == [946.85, 947.1]
+
+
+def test_minute_bars_come_back_at_once_after_the_first_load_and_a_failing_source_is_an_error_not_a_hang():
+    loads = []
+
+    def minutes(symbol):
+        loads.append(symbol)
+        return [Minute(OPEN_TIME.astimezone(IST), 946.0, 10.0)]
+
+    clock = {"now": OPEN_TIME}
+    quotes = LiveQuotes(get=lambda *a, **k: Reply(BODY), minutes=minutes, clock=lambda: clock["now"], background=False)
+    assert len(quotes.minutes("SBIN")) == 1 and len(quotes.minutes("SBIN")) == 1 and loads == ["SBIN"]
+
+    def failing(symbol):
+        raise AthenaError("Yahoo has no minute bars")
+
+    broken = LiveQuotes(get=lambda *a, **k: Reply(BODY), minutes=failing, clock=lambda: OPEN_TIME, background=False)
+    with pytest.raises(AthenaError):
+        broken.minutes("SME1")

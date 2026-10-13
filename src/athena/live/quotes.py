@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
+import threading
+
 import requests
 
 from athena.clock import utc_now
@@ -22,6 +24,8 @@ HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 STALE_AFTER = timedelta(minutes=5)  # an exchange update older than this while the market is open is flagged
 DEPTH = 5
 QUOTE_TTL, MINUTES_TTL = 0.5, 15.0  # seconds a quote and the minute bars are remembered
+SERIES = ("EQ", "SM", "BE", "BZ", "ST")  # the exchange's answer is empty unless the series is the stock's own; EQ first, as most are
+MAX_TICKS = 6000
 
 
 @dataclass(frozen=True)
@@ -131,8 +135,9 @@ def yahoo_minutes(symbol: str) -> list[Minute]:
 
 class LiveQuotes:
     """Fetches a quote and the day's minute bars. The quote is remembered for half a second (the exchange's own answer changes about every five
-    seconds, so polling faster shows nothing new); the minute bars for fifteen (a bar completes once a minute). Requests share one kept-alive
-    connection, which takes a quote from about 360 ms to about 40 ms."""
+    seconds, so polling faster shows nothing new); the minute bars are refetched in the background every fifteen (a bar completes once a
+    minute), so a slow Yahoo never holds up a refresh. Requests share one kept-alive connection, which takes a quote from about 360 ms to
+    about 40 ms. Every new exchange answer is kept as a tick so the chart can run on past the last minute bar."""
 
     def __init__(
         self,
@@ -141,40 +146,96 @@ class LiveQuotes:
         clock: Callable[[], datetime] = utc_now,
         quote_ttl: float = QUOTE_TTL,
         minutes_ttl: float = MINUTES_TTL,
+        background: bool = True,
     ):
         if get is None:
             session = requests.Session()
             session.headers.update(HEADERS)
             get = session.get
-        self._get, self._minutes, self._clock = get, minutes, clock
-        self._ttls = {"quote": quote_ttl, "minutes": minutes_ttl}
-        self._cache: dict[tuple[str, str], tuple[datetime, Any]] = {}
+        self._get, self._minutes, self._clock, self._background = get, minutes, clock, background
+        self._quote_ttl, self._minutes_ttl = quote_ttl, minutes_ttl
+        self._quotes: dict[str, tuple[datetime, Quote]] = {}
+        self._series: dict[str, str] = {}  # the series that last gave a price for a symbol
+        self._ticks: dict[str, list[tuple[datetime, float]]] = {}
+        self._bars: dict[str, tuple[datetime, list[Minute] | AthenaError]] = {}
+        self._refreshing: set[str] = set()
+        self._lock = threading.Lock()
 
-    def _fresh(self, kind: str, symbol: str, make: Callable[[], Any]) -> Any:
-        now = self._clock()
-        held = self._cache.get((kind, symbol))
-        if held is not None and (now - held[0]).total_seconds() < self._ttls[kind]:
-            return held[1]
-        value = make()
-        self._cache[(kind, symbol)] = (now, value)
-        return value
+    def _read(self, symbol: str, series: str) -> Quote | None:
+        try:
+            response = self._get(
+                QUOTE_URL, params={"functionName": "getSymbolData", "marketType": "N", "series": series, "symbol": symbol},
+                headers=HEADERS, timeout=15,
+            )
+            body = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise AthenaError(f"the exchange's quote could not be read: {type(exc).__name__}") from None
+        try:
+            return parse_quote(symbol, body)
+        except AthenaError:
+            return None
 
     def quote(self, symbol: str) -> Quote:
-        def fetch() -> Quote:
-            try:
-                response = self._get(
-                    QUOTE_URL, params={"functionName": "getSymbolData", "marketType": "N", "series": "EQ", "symbol": symbol},
-                    headers=HEADERS, timeout=15,
-                )
-                body = response.json()
-            except (requests.RequestException, ValueError) as exc:
-                raise AthenaError(f"the exchange's quote could not be read: {type(exc).__name__}") from None
-            return parse_quote(symbol, body)
+        now = self._clock()
+        with self._lock:
+            held = self._quotes.get(symbol)
+            if held is not None and (now - held[0]).total_seconds() < self._quote_ttl:
+                return held[1]
+            known = self._series.get(symbol)
+        quote = None
+        for series in ([known] if known else []) + [s for s in SERIES if s != known]:
+            quote = self._read(symbol, series)
+            if quote is not None:
+                with self._lock:
+                    self._series[symbol] = series
+                break
+        if quote is None:
+            raise AthenaError(f"the exchange gave no quote for {symbol} (tried series {', '.join(SERIES)})")
+        with self._lock:
+            self._quotes[symbol] = (now, quote)
+            ticks = self._ticks.setdefault(symbol, [])
+            stamp = quote.updated or now
+            if not ticks or ticks[-1][1] != quote.last or ticks[-1][0] != stamp:
+                ticks.append((stamp, quote.last))
+                del ticks[:-MAX_TICKS]
+        return quote
 
-        return self._fresh("quote", symbol, fetch)
+    def ticks(self, symbol: str) -> list[tuple[datetime, float]]:
+        """Every distinct exchange answer seen for the symbol since this process started, oldest first."""
+        with self._lock:
+            return list(self._ticks.get(symbol, ()))
+
+    def _load_bars(self, symbol: str) -> None:
+        try:
+            result: list[Minute] | AthenaError = self._minutes(symbol)
+        except AthenaError as exc:
+            result = exc
+        with self._lock:
+            self._bars[symbol] = (self._clock(), result)
+            self._refreshing.discard(symbol)
 
     def minutes(self, symbol: str) -> list[Minute]:
-        return self._fresh("minutes", symbol, lambda: self._minutes(symbol))
+        """Today's minute bars. The first call waits for them; after that the held bars are returned at once while a stale set is refreshed
+        in the background. An `AthenaError` when the source has none."""
+        now = self._clock()
+        with self._lock:
+            held = self._bars.get(symbol)
+            stale = held is None or (now - held[0]).total_seconds() >= self._minutes_ttl
+            start = stale and symbol not in self._refreshing
+            if start:
+                self._refreshing.add(symbol)
+        if start:
+            if held is None or not self._background:
+                self._load_bars(symbol)
+            else:
+                threading.Thread(target=self._load_bars, args=(symbol,), daemon=True).start()
+        with self._lock:
+            held = self._bars.get(symbol)
+        if held is None:
+            return []
+        if isinstance(held[1], AthenaError):
+            raise held[1]
+        return held[1]
 
     def now(self) -> datetime:
         return self._clock()
