@@ -44,6 +44,7 @@ _BANK_INCOME = (
     _l("interest", "Interest expended", "InterestExpended"),
     _l("operating_expenses", "Operating expenses", "OperatingExpenses"),
     _l("provisions", "Provisions and contingencies", "ProvisionsOtherThanTaxAndContingencies"),
+    _l("pre_provision_profit", "Operating profit before provisions", "OperatingProfitBeforeProvisionAndContingencies"),
     _l("exceptional", "Exceptional items", "ExceptionalItems"),
     _l("pbt", "Profit before tax", "ProfitLossFromOrdinaryActivitiesBeforeTax", "ProfitBeforeTax"),
     _l("tax", "Tax", "TaxExpense"),
