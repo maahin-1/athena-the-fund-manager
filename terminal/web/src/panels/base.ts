@@ -32,6 +32,7 @@ export interface AppContext {
   state(id: string): PanelState;
   changed(): void; // something worth saving changed
   openResearch(symbol: string): void; // switch to the Research page on this stock
+  showSymbol(symbol: string): void; // switch to the terminal and show this stock's chart
   retitle(id: string, text: string): void; // the panel's tab shows this
   linkChanged(id: string): void; // a panel's link colour changed
 }

@@ -111,6 +111,39 @@ pub fn analysis(path: &Path, symbol: &str) -> Result<Value, AnalysisError> {
     }))
 }
 
+/// The columns `screen_all` returns, in order. These are text; every other column is a number (or empty).
+const SCREEN_ALL: [&str; 26] = [
+    "symbol", "kind", "name", "sector", "close", "ret_1d", "ret_1m", "ret_3m", "ret_6m", "ret_1y", "from_52w_high", "from_52w_low", "traded_value_cr",
+    "rsi_14", "trend", "sma50_vs_200", "market_cap_cr", "pe", "pb", "roe", "net_margin", "debt_to_equity", "dividend_yield", "earnings_yield",
+    "revenue_growth", "flags",
+];
+const SCREEN_TEXT: [&str; 5] = ["symbol", "kind", "name", "sector", "trend"];
+
+/// Every row of the stored market screen (all stocks and ETFs) as `{columns, rows, market_day}`, for the page to filter and sort. A missing figure is `null`, never zero.
+pub fn screen_all(path: &Path) -> Result<Value, AnalysisError> {
+    let conn = connect(path)?;
+    let select: Vec<String> = SCREEN_ALL.iter().map(|c| format!("CAST({c} AS VARCHAR)")).collect();
+    let mut stmt = conn.prepare(&format!("SELECT {} FROM screen ORDER BY traded_value_cr DESC NULLS LAST", select.join(", "))).map_err(|_| AnalysisError::Busy)?;
+    let rows = stmt
+        .query_map([], |r| {
+            let mut out: Vec<Value> = Vec::with_capacity(SCREEN_ALL.len());
+            for (i, name) in SCREEN_ALL.iter().enumerate() {
+                let text: Option<String> = r.get(i)?;
+                out.push(match text {
+                    None => Value::Null,
+                    Some(t) if SCREEN_TEXT.contains(name) => Value::String(t),
+                    Some(t) => t.parse::<f64>().ok().filter(|n| n.is_finite()).map(|n| json!(n)).unwrap_or(Value::Null),
+                });
+            }
+            Ok(Value::Array(out))
+        })
+        .map_err(|_| AnalysisError::Busy)?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+    let market_day: Option<String> = conn.query_row("SELECT CAST(max(day) AS VARCHAR) FROM days WHERE status = 'loaded'", [], |r| r.get(0)).ok().flatten();
+    Ok(json!({"columns": SCREEN_ALL, "rows": rows, "market_day": market_day}))
+}
+
 /// Whether the warehouse knows a symbol: a stock or ETF in the universe, or an index it holds bars for. Lets the page refuse a typo instead of waiting for a quote that never comes.
 pub fn known(path: &Path, symbol: &str) -> Result<Value, AnalysisError> {
     let conn = connect(path)?;
@@ -192,6 +225,20 @@ mod tests {
         let a = analysis(&warehouse("flags"), "BRK").unwrap();
         let flags: Vec<&str> = a["technical"]["flags"].as_array().unwrap().iter().map(|f| f.as_str().unwrap()).collect();
         assert_eq!(flags, vec!["price break with no recorded action: 2026-02-27 (x0.1)", "thin trading"]);
+    }
+
+    #[test]
+    fn the_whole_screen_comes_back_as_rows_with_blanks_as_null() {
+        let a = screen_all(&warehouse("screen")).unwrap();
+        assert_eq!(a["columns"][0], "symbol");
+        assert_eq!(a["market_day"], "2026-10-16");
+        let cols: Vec<&str> = a["columns"].as_array().unwrap().iter().map(|c| c.as_str().unwrap()).collect();
+        let row = &a["rows"][0];
+        let at = |name: &str| row[cols.iter().position(|c| *c == name).unwrap()].clone();
+        assert_eq!(at("symbol"), "SBIN");
+        assert_eq!(at("pe"), 9.8);
+        assert_eq!(at("trend"), "up");
+        assert!(at("debt_to_equity").is_null()); // a blank is not a zero
     }
 
     #[test]

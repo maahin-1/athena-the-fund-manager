@@ -6,6 +6,7 @@ import { bollinger, ema, macd, rsi, sma } from '../src/indicators';
 import { deserialize, LayoutError, PRESETS, PRESET_NAMES, serialize } from '../src/layout';
 import { LinkBus, nextGroup } from '../src/links';
 import type { AnalysisData } from '../src/panels/analysis';
+import { dataNote, filterRows, noFilters, PRESETS as SCREEN_PRESETS, sortRows, toRows, type Row } from '../src/screenlogic';
 import { readVerdict } from '../src/verdictdata';
 import { barLimit, RANGES } from '../src/ranges';
 
@@ -273,5 +274,50 @@ describe('which ticks may move the chart', () => {
     expect(tickFitsChart({ ...bar, t: utc('2026-10-16T00:00:00Z') }, 962.6, utc('2026-10-16T10:38:10Z'), '1D')).toBe(true); // a daily bar may close up after the session
     expect(tickFitsChart(undefined, 100, utc('2026-10-16T05:00:00Z'), '1m')).toBe(true);
     expect(tickFitsChart(bar, 0, utc('2026-10-16T05:00:00Z'), '1m')).toBe(false);
+  });
+});
+
+describe('market screen rules', () => {
+  const cols = ['symbol', 'kind', 'name', 'sector', 'pe', 'pb', 'roe', 'trend', 'ret_1y', 'from_52w_high', 'market_cap_cr', 'flags'];
+  const rows: Row[] = toRows(cols, [
+    ['CHEAP', 'stock', 'Cheap Ltd', 'Banks', 9, 1.2, 0.18, 'aligned_up', 0.3, -0.05, 60000, 0],
+    ['DEAR', 'stock', 'Dear Ltd', 'IT', 40, 9, 0.3, 'aligned_down', 0.1, -0.5, 9000, 2],
+    ['NOEPS', 'stock', 'No Earnings Ltd', 'IT', null, null, null, null, 0.25, -0.02, 2000, 0],
+    ['FUND', 'etf', 'Some ETF', null, null, null, null, 'not_aligned', 0.12, -0.01, null, 0],
+  ]);
+  const preset = (label: string) => {
+    const p = SCREEN_PRESETS.find((x) => x.label === label)!;
+    return { ...noFilters(), ranges: p.ranges, kinds: p.kinds, trends: p.trends };
+  };
+  it('builds rows from the server form and keeps blanks as null', () => {
+    expect(rows[2].pe).toBeNull();
+    expect(rows[0].symbol).toBe('CHEAP');
+  });
+  it('a missing figure never passes a limit, and the Value preset keeps only cheap, profitable stocks', () => {
+    expect(filterRows(rows, preset('Value')).map((r) => r.symbol)).toEqual(['CHEAP']);
+  });
+  it('presets combine ranges, trend and kind', () => {
+    expect(filterRows(rows, preset('Momentum')).map((r) => r.symbol)).toEqual(['CHEAP']); // up over 20%, near the high, aligned up
+    expect(filterRows(rows, preset('Beaten down')).map((r) => r.symbol)).toEqual([]); // needs traded value, which these rows lack
+    expect(filterRows(rows, preset('Liquid large caps')).map((r) => r.symbol)).toEqual(['CHEAP']);
+    expect(filterRows(rows, { ...noFilters(), kinds: [] }).length).toBe(4); // stocks and ETFs
+  });
+  it('text, sector, flags and trend filters', () => {
+    expect(filterRows(rows, { ...noFilters(), text: 'dear' }).map((r) => r.symbol)).toEqual(['DEAR']);
+    expect(filterRows(rows, { ...noFilters(), sector: 'IT' }).length).toBe(2);
+    expect(filterRows(rows, { ...noFilters(), cleanOnly: true }).map((r) => r.symbol)).toEqual(['CHEAP', 'NOEPS']);
+    expect(filterRows(rows, { ...noFilters(), trends: ['aligned_down'] }).map((r) => r.symbol)).toEqual(['DEAR']);
+  });
+  it('sorts with missing figures last whichever way it runs', () => {
+    expect(sortRows(rows, 'pe', true).map((r) => r.symbol)).toEqual(['DEAR', 'CHEAP', 'NOEPS', 'FUND']);
+    expect(sortRows(rows, 'pe', false).map((r) => r.symbol)).toEqual(['CHEAP', 'DEAR', 'NOEPS', 'FUND']);
+    expect(sortRows(rows, 'symbol', false).map((r) => r.symbol)).toEqual(['CHEAP', 'DEAR', 'FUND', 'NOEPS']);
+  });
+  it('says how old the data is and what is missing', () => {
+    const note = dataNote(rows, '2026-10-16', new Date(Date.UTC(2026, 9, 18)));
+    expect(note).toContain('2 days old');
+    expect(note).toContain('2 of 3 stocks have statements');
+    expect(note).toContain('1 symbols carry a data flag');
+    expect(dataNote([], null, new Date())).toContain('No prices');
   });
 });

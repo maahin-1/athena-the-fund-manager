@@ -225,3 +225,29 @@ html, body { overflow: hidden; }
 @container (max-width: 210px) {
   .wl th:nth-child(4), .wl td:nth-child(4) { display: none; }
 }
+
+/* the market screen */
+.screen { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: 10px 12px; background: var(--bg); }
+.screen > .note { padding: 2px 0; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.presets .btn.on { border-color: var(--label); color: var(--label); }
+.sfilters { margin: 8px 0; padding: 8px 10px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; }
+.sfilter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+.ssearch { width: 200px; }
+.sclean { color: var(--fg-dim); display: inline-flex; align-items: center; gap: 4px; }
+.sranges { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; }
+.srange { display: grid; grid-template-columns: 1fr 64px 64px; align-items: center; gap: 6px; }
+.srange .k { color: var(--fg-dim); font-size: 11px; }
+.snum { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; font: inherit; width: 64px; }
+.snum:focus { outline: 1px solid var(--accent); }
+.saction { align-items: center; min-height: 28px; margin: 4px 0; }
+.ssel { font-weight: 600; margin-right: 6px; }
+.stable-host { overflow-x: auto; }
+.stable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.stable th { position: sticky; top: 0; background: var(--bg-bar); color: var(--fg-dim); font-weight: 600; text-align: left; padding: 5px 8px; white-space: nowrap; cursor: pointer; border-bottom: 1px solid var(--border); }
+.stable th.num, .stable td.num { text-align: right; }
+.stable th.sorted { color: var(--label); }
+.stable td { padding: 4px 8px; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid var(--grid); }
+.srow { cursor: pointer; }
+.srow:hover { background: var(--grid); }
+.srow.selected { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--grid); }

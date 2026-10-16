@@ -6,6 +6,7 @@ export type Command =
   | { kind: 'remove'; symbol: string }
   | { kind: 'research'; symbol: string | null } // the Research page, on a stock when one is given
   | { kind: 'terminal' }
+  | { kind: 'screen' }
   | { kind: 'error'; message: string };
 
 export interface CommandContext {
@@ -47,6 +48,7 @@ export function parse(input: string, ctx: CommandContext): Command {
     if (saved) return { kind: 'layout', name: saved };
     if (head === 'RESEARCH') return { kind: 'research', symbol: null };
     if (head === 'TERMINAL') return { kind: 'terminal' };
+    if (head === 'SCREEN') return { kind: 'screen' };
     return SYMBOL.test(head) ? { kind: 'symbol', symbol: head } : fail(`"${words[0]}" is not a symbol`);
   }
   if (head === 'RESEARCH' && words.length === 2) {

@@ -10,6 +10,7 @@ import {
 import { LinkBus } from './links';
 import { marketState } from './market';
 import { ResearchView } from './research';
+import { ScreenView } from './screen';
 import { el, TITLES, WatchlistStore, type AppContext, type Panel } from './panels/base';
 import { AnalysisPanel } from './panels/analysis';
 import { ChartPanel } from './panels/chart';
@@ -23,7 +24,7 @@ const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
 const VIEW_KEY = 'athena.terminal.view';
 const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'analysis', 'verdict', 'tape'];
-type View = 'terminal' | 'research';
+type View = 'terminal' | 'research' | 'screen';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
   watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel,
 };
@@ -53,6 +54,7 @@ class App implements AppContext {
   private viewTabs = new Map<View, HTMLButtonElement>();
   private dockHost = el('div', 'dock');
   private research!: ResearchView;
+  private screen!: ScreenView;
   private view: View = 'terminal';
   private lastPreset: PresetName = 'A';
   private titles = new Map<string, string>();
@@ -73,7 +75,8 @@ class App implements AppContext {
     const root = document.getElementById('app')!;
     const host = this.dockHost;
     this.research = new ResearchView(this);
-    root.append(this.buildBar(), host, this.research.element);
+    this.screen = new ScreenView(this);
+    root.append(this.buildBar(), host, this.research.element, this.screen.element);
     this.dock = createDockview(host, {
       theme: themeDark,
       createRightHeaderActionComponent: (group) => this.headerActions(group),
@@ -107,7 +110,12 @@ class App implements AppContext {
     } catch {
       /* storage can be blocked */
     }
-    this.setView(view === 'research' ? 'research' : 'terminal');
+    this.setView(view === 'research' || view === 'screen' ? view : 'terminal');
+  }
+
+  showSymbol(symbol: string): void {
+    this.setView('terminal');
+    void this.run(`${symbol} CHART`);
   }
 
   retitle(id: string, text: string): void {
@@ -138,10 +146,10 @@ class App implements AppContext {
     this.dockHost.hidden = view !== 'terminal';
     this.viewTabs.forEach((b, v) => b.classList.toggle('on', v === view));
     if (view === 'research') this.research.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
-    else {
-      this.research.hide();
-      this.dock?.layout(this.dockHost.clientWidth, this.dockHost.clientHeight);
-    }
+    else this.research.hide();
+    if (view === 'screen') void this.screen.show();
+    else this.screen.hide();
+    if (view === 'terminal') this.dock?.layout(this.dockHost.clientWidth, this.dockHost.clientHeight);
   }
 
   /** The symbol the focused panel shows, else the first panel that shows one. */
@@ -253,7 +261,7 @@ class App implements AppContext {
   private loadPreset(name: PresetName): void {
     this.lastPreset = name;
     this.load(PRESETS[name]());
-    if (this.view === 'research') this.setView('terminal');
+    if (this.view !== 'terminal') this.setView('terminal');
   }
 
   private async persist(): Promise<void> {
@@ -379,9 +387,9 @@ class App implements AppContext {
       this.setView('terminal');
       this.addPanel(t);
     });
-    for (const [v, label] of [['terminal', 'Terminal'], ['research', 'Research']] as [View, string][]) {
+    for (const [v, label] of [['terminal', 'Terminal'], ['research', 'Research'], ['screen', 'Screen']] as [View, string][]) {
       const b = el('button', 'vtab', label);
-      b.title = v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F5)' : 'Charts, depth and the dockable panels (F6)';
+      b.title = v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F6 cycles the views)' : v === 'screen' ? 'Screen every stock and ETF with presets and filters (F6 cycles the views)' : 'Charts, depth and the dockable panels (F6 cycles the views)';
       b.addEventListener('click', () => this.setView(v));
       this.viewTabs.set(v, b);
     }
@@ -484,6 +492,8 @@ class App implements AppContext {
         return this.setView('research', cmd.symbol ?? undefined);
       case 'terminal':
         return this.setView('terminal');
+      case 'screen':
+        return this.setView('screen');
       case 'layout':
         if (PRESET_NAMES.includes(cmd.name as PresetName)) this.loadPreset(cmd.name as PresetName);
         else void this.openSaved(cmd.name);
@@ -495,7 +505,7 @@ class App implements AppContext {
           this.bus.setSymbol('blue', cmd.symbol);
           return this.research.show(cmd.symbol);
         }
-        if (this.view === 'research') this.setView('terminal');
+        if (this.view !== 'terminal') this.setView('terminal');
         const target = this.focusTarget(cmd.kind === 'chart' ? 'chart' : null);
         if (!target) return this.say('no panel to show it in', true);
         this.say(cmd.symbol);
@@ -530,7 +540,7 @@ class App implements AppContext {
     }
     if (e.key === 'F6') {
       e.preventDefault();
-      this.setView(this.view === 'terminal' ? 'research' : 'terminal');
+      this.setView(this.view === 'terminal' ? 'research' : this.view === 'research' ? 'screen' : 'terminal');
       return;
     }
     const groups: Record<string, PanelType[]> = { F1: ['watchlist'], F2: ['chart'], F3: ['depth', 'quote'], F4: ['tape'] };

@@ -190,3 +190,33 @@ test('changing a panel to a link colour moves it to the symbol that colour shows
   }
   await expect(page.locator('.dv-tab', { hasText: 'Depth · INFY' })).toBeVisible();
 });
+
+test('the screen page filters the stored market with presets and opens a stock in Research', async ({ page }) => {
+  await page.getByRole('button', { name: 'Screen', exact: true }).click();
+  await expect(page.locator('.screen')).toBeVisible();
+  await expect(page.locator('.stable .srow').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.screen > .note').first()).toContainText('Prices to');
+  const all = await page.locator('.screen .count, .screen > .note').allTextContents();
+  expect(all.join(' ')).toMatch(/\d[\d,]* matches/);
+  await page.getByRole('button', { name: 'Value', exact: true }).click();
+  await expect(page.locator('.presets + .note')).toContainText('P/E under 15');
+  const rows = page.locator('.stable .srow');
+  expect(await rows.count()).toBeGreaterThan(0);
+  // every shown P/E meets the preset's limits (a blank never does)
+  const pes = await page.locator('.stable td:nth-child(7)').allTextContents(); // P/E is the 7th default column
+  for (const t of pes.slice(0, 40)) {
+    const n = Number(t);
+    expect(n).toBeGreaterThanOrEqual(0);
+    expect(n).toBeLessThanOrEqual(15);
+  }
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await page.getByLabel('search the screen').fill('hdfcbank');
+  await expect(page.locator('.stable .srow').first()).toHaveAttribute('data-symbol', 'HDFCBANK');
+  await page.locator('.stable .srow').first().click();
+  await page.locator('.saction').getByRole('button', { name: 'Research', exact: true }).click();
+  await expect(page.locator('.rsym')).toHaveText('HDFCBANK');
+  await page.locator('.vtab', { hasText: 'Screen' }).click();
+  await page.locator('.stable .srow').first().click();
+  await page.locator('.saction').getByRole('button', { name: 'Chart', exact: true }).click();
+  await expect(page.locator('.dv-tab', { hasText: 'Depth · HDFCBANK' })).toBeVisible();
+});

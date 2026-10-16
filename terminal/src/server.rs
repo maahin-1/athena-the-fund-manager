@@ -126,6 +126,14 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
     Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note})).into_response()
 }
 
+async fn api_screen(State(state): State<AppState>) -> Response {
+    let path = state.bars.warehouse.clone();
+    match tokio::task::spawn_blocking(move || crate::analysis::screen_all(&path)).await {
+        Ok(Ok(body)) => Json(body).into_response(),
+        _ => (StatusCode::SERVICE_UNAVAILABLE, "the warehouse is busy").into_response(),
+    }
+}
+
 async fn api_known(State(state): State<AppState>, Query(q): Query<SymbolQuery>) -> Response {
     let symbol = q.symbol.to_ascii_uppercase();
     if !symbol_ok(&symbol) {
@@ -260,6 +268,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/bars", get(api_bars))
         .route("/api/analysis", get(api_analysis))
         .route("/api/known", get(api_known))
+        .route("/api/screen", get(api_screen))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
         .route("/api/layouts", get(layouts_list))
