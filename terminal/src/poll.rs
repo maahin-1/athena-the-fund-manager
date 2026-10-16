@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use chrono::{FixedOffset, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDateTime, TimeZone, Timelike, Utc};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -14,6 +14,16 @@ pub const QUOTE_URL: &str = "https://www.nseindia.com/api/NextApi/apiClient/GetQ
 pub const SERIES: [&str; 5] = ["EQ", "SM", "BE", "BZ", "ST"];
 const EVERY: Duration = Duration::from_secs(3);
 const PER_ROUND: usize = 10;
+/// The exchange's snapshot changes about every five seconds while trading; outside trading hours it does not change, so look rarely.
+const GAP_OPEN: Duration = Duration::from_secs(5);
+const GAP_CLOSED: Duration = Duration::from_secs(300);
+
+/// Weekday trading hours in India (09:15 to 15:30 IST). It does not know exchange holidays; a stale snapshot shows those.
+pub fn market_open(now: DateTime<Utc>) -> bool {
+    let ist = now.with_timezone(&FixedOffset::east_opt(5 * 3600 + 1800).expect("IST offset"));
+    let minutes = ist.hour() * 60 + ist.minute();
+    ist.weekday().number_from_monday() <= 5 && (9 * 60 + 15..=15 * 60 + 30).contains(&minutes)
+}
 
 fn number(v: Option<&Value>) -> Option<f64> {
     let n = match v? {
@@ -100,18 +110,28 @@ async fn read(client: &reqwest::Client, symbol: &str, series: &str) -> Option<Qu
 /// Every few seconds, ask the exchange for a few of the wanted symbols that the stream is not delivering.
 pub async fn run_poller(hub: Hub, client: reqwest::Client, shutdown: CancellationToken) {
     let mut series: HashMap<String, &'static str> = HashMap::new();
+    let mut last_polled: HashMap<String, Instant> = HashMap::new();
     let mut cursor = 0usize;
     loop {
         tokio::select! {
             _ = shutdown.cancelled() => return,
             _ = tokio::time::sleep(EVERY) => {}
         }
-        let stale = hub.stale_symbols(Instant::now());
+        let gap = if market_open(Utc::now()) { GAP_OPEN } else { GAP_CLOSED };
+        let now = Instant::now();
+        let stale: Vec<String> = hub
+            .stale_symbols(now)
+            .into_iter()
+            .filter(|s| last_polled.get(s).is_none_or(|t| now.saturating_duration_since(*t) >= gap))
+            .collect();
         if stale.is_empty() {
             continue;
         }
         let take: Vec<String> = (0..stale.len().min(PER_ROUND)).map(|i| stale[(cursor + i) % stale.len()].clone()).collect();
         cursor = cursor.wrapping_add(PER_ROUND);
+        for symbol in &take {
+            last_polled.insert(symbol.clone(), now);
+        }
         let jobs = take.into_iter().map(|symbol| {
             let known = series.get(&symbol).copied();
             let client = client.clone();
@@ -164,6 +184,17 @@ mod tests {
         let mut b = body();
         b["equityResponse"][0]["tradeInfo"]["lastPrice"] = json!(0);
         assert!(parse_quote("SBIN", &b).is_none());
+    }
+
+    #[test]
+    fn the_market_is_open_on_weekday_trading_hours_only() {
+        let utc = |y, m, d, h, mi| Utc.with_ymd_and_hms(y, m, d, h, mi, 0).unwrap();
+        // Wednesday 14 Oct 2026: 09:15 IST is 03:45 UTC, 15:30 IST is 10:00 UTC
+        assert!(market_open(utc(2026, 10, 14, 3, 45)));
+        assert!(market_open(utc(2026, 10, 14, 10, 0)));
+        assert!(!market_open(utc(2026, 10, 14, 3, 44)));
+        assert!(!market_open(utc(2026, 10, 14, 10, 1)));
+        assert!(!market_open(utc(2026, 10, 17, 5, 0))); // Saturday
     }
 
     #[test]

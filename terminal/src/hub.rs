@@ -90,6 +90,13 @@ impl Hub {
                 previous_stream_at
             }
         };
+        // An identical quote changes nothing for the pages, so it keeps its revision (no frame is sent); only the stream's freshness moves.
+        if let Some(e) = g.quotes.get_mut(&quote.symbol) {
+            if e.quote == quote {
+                e.stream_at = stream_at;
+                return;
+            }
+        }
         g.rev += 1;
         let rev = g.rev;
         let symbol = quote.symbol.clone();
@@ -245,6 +252,23 @@ mod tests {
         hub.update(sample("SBIN", 810.0, Source::Stream), t0);
         hub.update(sample("SBIN", 790.0, Source::Poll), t0 + Duration::from_secs(5));
         assert_eq!(hub.frame(c).unwrap().0[0].last, 810.0);
+    }
+
+    #[test]
+    fn an_identical_quote_sends_no_new_frame_but_keeps_the_stream_fresh() {
+        let hub = Hub::new();
+        let c = hub.register_client();
+        hub.watch(c, &["SBIN".into()]);
+        let t0 = Instant::now();
+        hub.update(sample("SBIN", 810.0, Source::Stream), t0);
+        assert!(hub.frame(c).is_some());
+        hub.update(sample("SBIN", 810.0, Source::Stream), t0 + Duration::from_secs(10));
+        assert!(hub.frame(c).is_none());
+        assert!(hub.stale_symbols(t0 + Duration::from_secs(20)).is_empty()); // the repeat counted as a fresh stream message
+        let mut changed = sample("SBIN", 810.0, Source::Stream);
+        changed.volume = Some(5.0);
+        hub.update(changed, t0 + Duration::from_secs(11));
+        assert!(hub.frame(c).is_some());
     }
 
     #[test]

@@ -50,11 +50,14 @@ export abstract class Panel {
   private dot = el('button', 'dot');
   private offLink: (() => void) | null = null;
   private offQuotes: (() => void) | null = null;
+  private own: PanelState;
+  protected disposed = false;
 
   constructor(
     protected id: string,
     protected ctx: AppContext,
   ) {
+    this.own = ctx.state(id); // kept, so a panel that outlives its entry in the layout (a closing panel) still has a state
     const head = el('div', 'ph');
     this.dot.title = 'Link colour: panels with the same colour follow one symbol (click to change)';
     this.dot.addEventListener('click', () => this.setGroup(nextGroup(this.state.group)));
@@ -63,7 +66,7 @@ export abstract class Panel {
   }
 
   protected get state(): PanelState {
-    return this.ctx.state(this.id);
+    return this.own;
   }
 
   protected get symbol(): string {
@@ -123,6 +126,7 @@ export abstract class Panel {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.offLink?.();
     this.offQuotes?.();
     this.ctx.feed.release(this.id);

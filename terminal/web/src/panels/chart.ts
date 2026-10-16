@@ -128,7 +128,7 @@ export class ChartPanel extends Panel {
 
   private async load(attempt = 0): Promise<void> {
     const symbol = this.symbol;
-    if (!symbol || !this.chart) return;
+    if (!symbol || !this.chart || this.disposed) return;
     const token = ++this.loadToken;
     this.titleEl.textContent = `${symbol} · ${this.range.label}`;
     const today = new Date();
@@ -141,7 +141,7 @@ export class ChartPanel extends Panel {
       this.note.textContent = 'could not reach the server';
       return;
     }
-    if (token !== this.loadToken) return; // a newer request replaced this one
+    if (token !== this.loadToken || this.disposed) return; // a newer request replaced this one, or the panel is gone
     let bars = body.bars;
     if (this.tf !== '1D' && typeof this.range.bars === 'number') bars = bars.slice(-this.range.bars);
     this.bars = bars;
@@ -149,7 +149,7 @@ export class ChartPanel extends Panel {
     this.note.textContent = notes.filter(Boolean).join(' ');
     if (body.note === 'loading' && attempt < 6) {
       this.note.textContent = 'loading intraday bars…';
-      setTimeout(() => void this.load(attempt + 1), 1500);
+      setTimeout(() => !this.disposed && void this.load(attempt + 1), 1500);
     } else if (!bars.length && !this.note.textContent) this.note.textContent = `no ${this.tf} bars for ${symbol}`;
     this.paintBars();
   }
@@ -224,7 +224,7 @@ export class ChartPanel extends Panel {
 
   protected onQuotes(quotes: Quote[]): void {
     const q = quotes.find((x) => x.s === this.symbol);
-    if (!q || !this.candles || this.bars.length === 0) return;
+    if (this.disposed || !q || !this.candles || this.bars.length === 0) return;
     const ts = q.t ? q.t / 1000 : Date.now() / 1000;
     const last = this.bars[this.bars.length - 1];
     const next = applyTick(last, q.l, ts, this.tf);
@@ -236,7 +236,7 @@ export class ChartPanel extends Panel {
     if (!this.repaint) {
       this.repaint = requestAnimationFrame(() => {
         this.repaint = 0;
-        if ((this.state.indicators ?? []).length) this.drawIndicators();
+        if (!this.disposed && (this.state.indicators ?? []).length) this.drawIndicators();
       });
     }
   }
