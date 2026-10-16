@@ -23,7 +23,7 @@ Method: the real-feed terminal (port 8700, market shut) driven in a browser (Jev
 | B4 | Each panel has two title rows (tab and the panel header); wastes about 25 px of height per panel | **F** one title row; link dot on the tab bar |
 | B5 | F5 is captured for the Research view, so the browser's reload key no longer works | **F** view toggle moved to F6 |
 | B6 | Delete layout uses a browser `prompt()` | **F** delete lists saved layouts |
-| B7 | Light theme: chart pane, tab bars and teal accents were not tuned; unchecked in detail | O |
+| B7 | Light theme: checked on Terminal, Research and Screen; no defects found | **F** (checked) |
 
 ## C. Data shown
 
