@@ -5,6 +5,8 @@ import { age, compact, pct, price, signed } from '../src/format';
 import { bollinger, ema, macd, rsi, sma } from '../src/indicators';
 import { deserialize, LayoutError, PRESETS, PRESET_NAMES, serialize } from '../src/layout';
 import { LinkBus, nextGroup } from '../src/links';
+import type { AnalysisData } from '../src/panels/analysis';
+import { readVerdict } from '../src/verdictdata';
 import { barLimit, RANGES } from '../src/ranges';
 
 const ctx = { layouts: ['Mine-1', 'Day trading'] };
@@ -24,6 +26,14 @@ describe('command line', () => {
     expect(parse('layout day trading', ctx)).toEqual({ kind: 'layout', name: 'Day trading' });
     expect(parse('mine-1', ctx)).toEqual({ kind: 'layout', name: 'Mine-1' });
     expect(parse('layout nothing', ctx).kind).toBe('error');
+  });
+  it('opens the research page, on a stock when one is given', () => {
+    expect(parse('research', ctx)).toEqual({ kind: 'research', symbol: null });
+    expect(parse('research tcs', ctx)).toEqual({ kind: 'research', symbol: 'TCS' });
+    expect(parse('tcs research', ctx)).toEqual({ kind: 'research', symbol: 'TCS' });
+    expect(parse('terminal', ctx)).toEqual({ kind: 'terminal' });
+    expect(parse('research @@', ctx).kind).toBe('error');
+    expect(parse('research', { layouts: ['Research'] })).toEqual({ kind: 'layout', name: 'Research' }); // a saved layout of that name wins
   });
   it('rejects nonsense with a message', () => {
     const empty = parse('', ctx);
@@ -201,5 +211,41 @@ describe('market state', async () => {
     expect(at('2026-10-16T12:00:00Z').text).toContain('opens Mon'); // Friday evening
     expect(at('2026-10-17T06:00:00Z').text).toContain('opens Mon'); // Saturday
     expect(at('2026-10-18T06:00:00Z').open).toBe(false); // Sunday
+  });
+});
+
+describe('stored verdict', () => {
+  const data = (payload: Record<string, unknown>, marketDay = '2026-10-16'): AnalysisData => ({
+    symbol: 'X', name: null, kind: 'stock', market_day: marketDay, screen: null, technical: null, fundamentals: null,
+    verdict: { made_at: '2026-10-13 08:34:00', data_as_of: '2026-10-12', close: 1, payload },
+  });
+  it('reads the band, conviction, analysts, risks and what did not run', () => {
+    const v = readVerdict(
+      data({
+        verdict: { verdict: 'Underweight', conviction: 5, raw_conviction: 23, calibration: 'uncalibrated', trust: 0.229, key_risks: ['a risk'] },
+        specialists: {
+          valuation: { signal: 'bullish', confidence: 70, data_coverage: 'full', reasoning: 'cheap', missing: [] },
+          moat_quality: { signal: 'bearish', confidence: 60, data_coverage: 'full', reasoning: 'weak roe', missing: ['leverage'] },
+        },
+        skipped: { news_sentiment: 'not built yet' },
+        conflict: { bullish: ['valuation'], bearish: ['moat_quality'] },
+        notes: ['only 2 ran'],
+      }),
+    )!;
+    expect(v.band).toBe('Underweight');
+    expect(v.tone).toBe('dn');
+    expect([v.conviction, v.raw, v.trust]).toEqual([5, 23, 0.229]);
+    expect(v.analysts.map((a) => [a.name, a.tone, a.confidence])).toEqual([['valuation', 'up', 70], ['moat quality', 'dn', 60]]);
+    expect(v.analysts[1].missing).toEqual(['leverage']);
+    expect(v.skipped).toEqual([{ name: 'news sentiment', reason: 'not built yet' }]);
+    expect(v.disagree).toEqual(['bullish: valuation', 'bearish: moat quality']);
+    expect(v.newerDays).toBe(4);
+  });
+  it('copes with a bare list for skipped and a missing verdict block', () => {
+    const v = readVerdict(data({ skipped: ['news_sentiment'], specialists: {} }))!;
+    expect(v.band).toBe('no view');
+    expect(v.skipped).toEqual([{ name: 'news sentiment', reason: '' }]);
+    expect(v.analysts).toEqual([]);
+    expect(readVerdict({ ...data({}), verdict: null })).toBeNull();
   });
 });

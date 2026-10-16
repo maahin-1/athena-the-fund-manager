@@ -100,8 +100,10 @@ export class ChartPanel extends Panel {
       upColor: css('--up'), downColor: css('--dn'), borderVisible: false, wickUpColor: css('--up'), wickDownColor: css('--dn'),
       priceLineStyle: LineStyle.Dotted, lastValueVisible: true,
     });
-    this.volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: '', lastValueVisible: false, priceLineVisible: false });
-    this.volume.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    // prices keep the top 70% of the pane and volume the bottom 18%, so the bars never sit on top of the candles
+    this.candles.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.3 } });
+    this.volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'volume', lastValueVisible: false, priceLineVisible: false });
+    this.volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
     chart.subscribeCrosshairMove((p) => {
       const d = p.seriesData.get(this.candles as ISeriesApi<SeriesType>) as { open: number; high: number; low: number; close: number } | undefined;
       if (d && p.time !== undefined) {

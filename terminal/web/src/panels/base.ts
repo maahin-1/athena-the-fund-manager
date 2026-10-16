@@ -31,6 +31,7 @@ export interface AppContext {
   watchlist: WatchlistStore;
   state(id: string): PanelState;
   changed(): void; // something worth saving changed
+  openResearch(symbol: string): void; // switch to the Research page on this stock
 }
 
 export const TITLES: Record<PanelType, string> = { watchlist: 'Watchlist', chart: 'Chart', depth: 'Depth', quote: 'Quote', tape: 'Tape', analysis: 'Analysis', verdict: 'Verdict' };

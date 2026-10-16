@@ -1,4 +1,4 @@
-import { createDockview, themeDark, themeLight, type DockviewApi, type IContentRenderer } from 'dockview-core';
+import { createDockview, themeDark, themeLight, type DockviewApi, type DockviewGroupPanel, type IContentRenderer, type IHeaderActionsRenderer } from 'dockview-core';
 import './dockview.css';
 import './style.css';
 import { parse } from './command';
@@ -9,6 +9,7 @@ import {
 } from './layout';
 import { LinkBus } from './links';
 import { marketState } from './market';
+import { ResearchView } from './research';
 import { el, TITLES, WatchlistStore, type AppContext, type Panel } from './panels/base';
 import { AnalysisPanel } from './panels/analysis';
 import { ChartPanel } from './panels/chart';
@@ -20,6 +21,9 @@ import { WatchlistPanel } from './panels/watchlist';
 
 const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
+const VIEW_KEY = 'athena.terminal.view';
+const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'analysis', 'verdict', 'tape'];
+type View = 'terminal' | 'research';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
   watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel,
 };
@@ -38,10 +42,18 @@ class App implements AppContext {
   private bar = el('div', 'bar');
   private statusLine = el('span', 'statusline');
   private health = el('span', 'health');
-  private market = el('span', 'market');
+  private idle = '';
+  private message = '';
+  private messageTimer: ReturnType<typeof setTimeout> | null = null;
   private layoutSelect = el('select', 'layout-select');
   private command = el('input', 'cmd');
   private nameBox = el('input', 'namebox');
+  private addSelect = el('select', 'add-select');
+  private viewTabs = new Map<View, HTMLButtonElement>();
+  private dockHost = el('div', 'dock');
+  private research!: ResearchView;
+  private view: View = 'terminal';
+  private lastPreset: PresetName = 'A';
 
   state(id: string): PanelState {
     return this.states[id];
@@ -55,10 +67,12 @@ class App implements AppContext {
 
   async start(): Promise<void> {
     const root = document.getElementById('app')!;
-    const host = el('div', 'dock');
-    root.append(this.buildBar(), host);
+    const host = this.dockHost;
+    this.research = new ResearchView(this);
+    root.append(this.buildBar(), host, this.research.element);
     this.dock = createDockview(host, {
       theme: themeDark,
+      createRightHeaderActionComponent: (group) => this.headerActions(group),
       createComponent: (options): IContentRenderer => {
         const panel = new BUILDERS[options.name as PanelType](options.id, this);
         this.panels.set(options.id, panel);
@@ -75,6 +89,86 @@ class App implements AppContext {
     window.addEventListener('keydown', (e) => this.hotkeys(e));
     await this.refreshLayoutList();
     await this.restore();
+    let view: string | null = null;
+    try {
+      view = localStorage.getItem(VIEW_KEY);
+    } catch {
+      /* storage can be blocked */
+    }
+    this.setView(view === 'research' ? 'research' : 'terminal');
+  }
+
+  openResearch(symbol: string): void {
+    this.bus.setSymbol('blue', symbol);
+    this.setView('research', symbol);
+  }
+
+  private setView(view: View, symbol?: string): void {
+    this.view = view;
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+    } catch {
+      /* the view is a convenience */
+    }
+    this.dockHost.hidden = view !== 'terminal';
+    this.viewTabs.forEach((b, v) => b.classList.toggle('on', v === view));
+    if (view === 'research') this.research.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
+    else {
+      this.research.hide();
+      this.dock?.layout(this.dockHost.clientWidth, this.dockHost.clientHeight);
+    }
+  }
+
+  /** The symbol the focused panel shows, else the first panel that shows one. */
+  private shownSymbol(): string | undefined {
+    const active = this.dock?.activePanel?.id;
+    return (active && this.states[active]?.symbol) || Object.values(this.states).find((s) => s.symbol)?.symbol;
+  }
+
+  /** The buttons on the right of each group's tab bar: maximise (fill the window) and float (a window you move and resize). */
+  private headerActions(group: DockviewGroupPanel): IHeaderActionsRenderer {
+    const element = el('div', 'group-actions');
+    const max = el('button', 'gbtn', '⤢');
+    const float = el('button', 'gbtn', '⧉');
+    const paint = () => {
+      const maximized = group.api.isMaximized();
+      const floating = group.api.location.type === 'floating';
+      max.textContent = maximized ? '⤡' : '⤢';
+      max.title = maximized ? 'Restore the panel to its place (Esc)' : 'Maximise: fill the whole window';
+      float.textContent = floating ? '⇲' : '⧉';
+      float.title = floating ? 'Dock this window back into the layout' : 'Float: detach as a window you can move and resize';
+    };
+    max.addEventListener('click', () => {
+      if (group.api.isMaximized()) group.api.exitMaximized();
+      else group.api.maximize();
+      paint();
+    });
+    float.addEventListener('click', () => {
+      if (group.api.location.type === 'floating') {
+        const target = this.dock.groups.find((g) => g.api.location.type === 'grid' && g !== group);
+        group.api.moveTo(target ? { group: target, position: 'right' } : { position: 'right' });
+      } else this.dock.addFloatingGroup(group, { width: Math.min(560, this.dockHost.clientWidth - 40), height: Math.min(420, this.dockHost.clientHeight - 40) });
+      paint();
+    });
+    element.append(max, float);
+    paint();
+    return { element, init: paint, dispose: () => {} };
+  }
+
+  /** A new panel, split off to the right of the one in focus, showing the symbol the blue group follows. */
+  private addPanel(type: PanelType): void {
+    let n = 1;
+    while (this.states[`${type}-${n}`]) n++;
+    const id = `${type}-${n}`;
+    const symbol = this.bus.symbolOf('blue') ?? this.watchlist.items[0] ?? 'SBIN';
+    const state: PanelState = { type, group: type === 'tape' ? 'none' : 'blue' };
+    if (type !== 'watchlist' && type !== 'tape') state.symbol = symbol;
+    if (type === 'chart') state.range = '6M';
+    this.states[id] = state;
+    const ref = this.dock.activePanel?.id;
+    this.dock.addPanel({ id, component: type, title: TITLES[type], ...(ref ? { position: { referencePanel: ref, direction: 'right' as const } } : {}) });
+    this.dock.getPanel(id)?.api.setActive();
+    this.say(`added a ${TITLES[type].toLowerCase()} panel; drag its tab to move it, drag the thin lines between panels to resize`);
   }
 
   // ---- layouts -------------------------------------------------------------------------------------------------------------------------
@@ -118,7 +212,13 @@ class App implements AppContext {
         this.say(`the saved layout could not be used (${e instanceof LayoutError ? e.message : 'unknown error'}); showing layout A`, true);
       }
     }
-    this.load(PRESETS.A());
+    this.loadPreset('A');
+  }
+
+  private loadPreset(name: PresetName): void {
+    this.lastPreset = name;
+    this.load(PRESETS[name]());
+    if (this.view === 'research') this.setView('terminal');
   }
 
   private async persist(): Promise<void> {
@@ -185,7 +285,7 @@ class App implements AppContext {
     this.layoutSelect.addEventListener('change', () => {
       const [kind, name] = this.layoutSelect.value.split(/:(.*)/s);
       this.layoutSelect.value = '';
-      if (kind === 'preset') this.load(PRESETS[name as PresetName]());
+      if (kind === 'preset') this.loadPreset(name as PresetName);
       else if (kind === 'saved') void this.openSaved(name);
     });
     const save = el('button', 'btn', 'Save');
@@ -221,9 +321,31 @@ class App implements AppContext {
       this.setTheme(this.theme === 'dark' ? 'light' : 'dark');
       this.changed();
     });
+    const reset = el('button', 'btn', 'Reset');
+    reset.title = 'Put the panels back where the last preset (or layout A) puts them';
+    reset.addEventListener('click', () => {
+      this.loadPreset(this.lastPreset);
+      this.say(`layout ${this.lastPreset} restored`);
+    });
+    this.addSelect.append(new Option('+ Panel', ''));
+    NEW_PANEL_TYPES.forEach((t) => this.addSelect.append(new Option(TITLES[t], t)));
+    this.addSelect.title = 'Add a panel to the terminal';
+    this.addSelect.addEventListener('change', () => {
+      const t = this.addSelect.value as PanelType;
+      this.addSelect.value = '';
+      if (!t) return;
+      this.setView('terminal');
+      this.addPanel(t);
+    });
+    for (const [v, label] of [['terminal', 'Terminal'], ['research', 'Research']] as [View, string][]) {
+      const b = el('button', 'vtab', label);
+      b.title = v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F5)' : 'Charts, depth and the dockable panels (F5)';
+      b.addEventListener('click', () => this.setView(v));
+      this.viewTabs.set(v, b);
+    }
     const full = el('button', 'btn', 'Fullscreen');
     full.addEventListener('click', () => (document.fullscreenElement ? void document.exitFullscreen() : void document.documentElement.requestFullscreen()));
-    this.bar.append(el('b', 'brand', 'ATHENA'), this.layoutSelect, save, this.nameBox, del, this.command, this.statusLine, this.market, this.health, theme, full);
+    this.bar.append(el('b', 'brand', 'ATHENA'), ...this.viewTabs.values(), this.layoutSelect, this.addSelect, reset, save, this.nameBox, del, this.command, this.statusLine, this.health, theme, full);
     this.paintMarket();
     setInterval(() => this.paintMarket(), 30_000);
     this.paintHealth();
@@ -232,8 +354,8 @@ class App implements AppContext {
 
   private paintMarket(): void {
     const s = marketState(new Date());
-    this.market.textContent = s.open ? '' : s.text;
-    this.market.className = 'market';
+    this.idle = s.open ? '' : s.text;
+    this.paintStatus();
   }
 
   private setTheme(theme: 'dark' | 'light'): void {
@@ -257,9 +379,24 @@ class App implements AppContext {
     this.health.className = `health ${cls}`;
   }
 
+  /** A message from the last action stays for 10 seconds, then the market state (when it is shut) shows again. */
   private say(text: string, bad = false): void {
-    this.statusLine.textContent = text;
+    this.message = text;
     this.statusLine.className = `statusline${bad ? ' bad' : ''}`;
+    this.statusLine.textContent = text;
+    this.statusLine.title = text;
+    if (this.messageTimer) clearTimeout(this.messageTimer);
+    this.messageTimer = setTimeout(() => {
+      this.message = '';
+      this.paintStatus();
+    }, 10_000);
+  }
+
+  private paintStatus(): void {
+    if (this.message) return;
+    this.statusLine.className = 'statusline';
+    this.statusLine.textContent = this.idle;
+    this.statusLine.title = this.idle;
   }
 
   // ---- commands and keys ---------------------------------------------------------------------------------------------------------------
@@ -277,12 +414,24 @@ class App implements AppContext {
         this.watchlist.remove(cmd.symbol);
         this.changed();
         return this.say(`removed ${cmd.symbol}`);
+      case 'research':
+        this.say(cmd.symbol ? `research ${cmd.symbol}` : 'research');
+        if (cmd.symbol) this.bus.setSymbol('blue', cmd.symbol);
+        return this.setView('research', cmd.symbol ?? undefined);
+      case 'terminal':
+        return this.setView('terminal');
       case 'layout':
-        if (PRESET_NAMES.includes(cmd.name as PresetName)) this.load(PRESETS[cmd.name as PresetName]());
+        if (PRESET_NAMES.includes(cmd.name as PresetName)) this.loadPreset(cmd.name as PresetName);
         else void this.openSaved(cmd.name);
         return;
       case 'symbol':
       case 'chart': {
+        if (this.view === 'research' && cmd.kind === 'symbol') {
+          this.say(cmd.symbol);
+          this.bus.setSymbol('blue', cmd.symbol);
+          return this.research.show(cmd.symbol);
+        }
+        if (this.view === 'research') this.setView('terminal');
         const target = this.focusTarget(cmd.kind === 'chart' ? 'chart' : null);
         if (!target) return this.say('no panel to show it in', true);
         this.say(cmd.symbol);
@@ -309,6 +458,15 @@ class App implements AppContext {
       e.preventDefault();
       this.command.focus();
       this.command.select();
+      return;
+    }
+    if (e.key === 'Escape' && !typing && this.dock.hasMaximizedGroup()) {
+      this.dock.exitMaximizedGroup();
+      return;
+    }
+    if (e.key === 'F5') {
+      e.preventDefault();
+      this.setView(this.view === 'terminal' ? 'research' : 'terminal');
       return;
     }
     const groups: Record<string, PanelType[]> = { F1: ['watchlist'], F2: ['chart'], F3: ['depth', 'quote'], F4: ['tape'] };

@@ -4,6 +4,8 @@ export type Command =
   | { kind: 'layout'; name: string }
   | { kind: 'add'; symbol: string }
   | { kind: 'remove'; symbol: string }
+  | { kind: 'research'; symbol: string | null } // the Research page, on a stock when one is given
+  | { kind: 'terminal' }
   | { kind: 'error'; message: string };
 
 export interface CommandContext {
@@ -39,7 +41,16 @@ export function parse(input: string, ctx: CommandContext): Command {
   if (words.length === 1) {
     const saved = ctx.layouts.find((l) => l.toUpperCase() === words[0].toUpperCase());
     if (saved) return { kind: 'layout', name: saved };
+    if (head === 'RESEARCH') return { kind: 'research', symbol: null };
+    if (head === 'TERMINAL') return { kind: 'terminal' };
     return SYMBOL.test(head) ? { kind: 'symbol', symbol: head } : fail(`"${words[0]}" is not a symbol`);
+  }
+  if (head === 'RESEARCH' && words.length === 2) {
+    const symbol = words[1].toUpperCase();
+    return SYMBOL.test(symbol) ? { kind: 'research', symbol } : fail(`"${words[1]}" is not a symbol`);
+  }
+  if (words.length === 2 && words[1].toUpperCase() === 'RESEARCH') {
+    return SYMBOL.test(head) ? { kind: 'research', symbol: head } : fail(`"${words[0]}" is not a symbol`);
   }
   if (words.length === 2 && words[1].toUpperCase() === 'CHART') {
     return SYMBOL.test(head) ? { kind: 'chart', symbol: head } : fail(`"${words[0]}" is not a symbol`);
