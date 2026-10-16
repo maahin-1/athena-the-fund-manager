@@ -4,12 +4,13 @@ one JSON request per line on stdin with one JSON line on stdout.
     python -m athena.dashboard.worker
 
     in:   {"id": 1, "op": "view", "query": "TCS", "relatives": false}
+          {"id": 2, "op": "backtest", "symbol": "TCS"}      (the built-in rules over up to eight years, each against buy and hold)
     out:  {"ready": true}                                         (once, when the service is built)
           {"id": 1, "ok": true, "result": {...the DashboardView...}}
-          {"id": 1, "ok": false, "error": "AthenaError: ..."}
+          {"id": 1, "ok": false, "error": "..."}   (only the project's own messages; any other failure says "the analysis failed (ClassName)")
 
 `relatives` lists related instruments for a typed ticker (the dashboard does this for a typed box and not for a chosen row). Anything the
-libraries print goes to stderr, so stdout carries only protocol lines. The terminal starts this on the first analysis and keeps it."""
+libraries print goes to stderr, so stdout carries only protocol lines. The terminal starts this on the first analysis or backtest and keeps it."""
 from __future__ import annotations
 
 import dataclasses
@@ -23,6 +24,22 @@ from athena.contracts import AthenaError
 MAX_QUERY = 60
 
 
+def backtest_json(view: Any) -> dict[str, Any]:
+    """A `BacktestView` as plain data. The plotting figure stays behind; the page draws the `curve` itself."""
+    return {
+        "identifier": view.identifier,
+        "assumptions": view.assumptions,
+        "notes": list(view.notes),
+        "panels": [
+            {
+                "rule": p.rule, "description": p.description, "rows": [list(r) for r in p.rows], "facts": list(p.facts),
+                "blinded_identical": p.blinded_identical, "curve": dataclasses.asdict(p.curve) if p.curve else None,
+            }
+            for p in view.panels
+        ],
+    }
+
+
 def handle(service: Any, request: dict[str, Any]) -> dict[str, Any]:
     """The reply to one request. Never raises: a failure is a reply with `ok` false and the exception's class and message."""
     reply: dict[str, Any] = {"id": request.get("id")}
@@ -34,6 +51,11 @@ def handle(service: Any, request: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"the query must be 1 to {MAX_QUERY} characters")
             view = service.view(query, None, bool(request.get("relatives")))
             reply.update(ok=True, result=dataclasses.asdict(view))
+        elif op == "backtest":
+            symbol = str(request.get("symbol", "")).strip()
+            if not symbol or len(symbol) > MAX_QUERY:
+                raise ValueError(f"the symbol must be 1 to {MAX_QUERY} characters")
+            reply.update(ok=True, result=backtest_json(service.backtest(symbol)))
         else:
             raise ValueError(f"unknown operation {op!r}")
     except (AthenaError, ValueError) as exc:  # the project's own messages are written to be shown

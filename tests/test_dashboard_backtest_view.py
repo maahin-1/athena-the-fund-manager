@@ -57,3 +57,11 @@ def test_the_notes_the_caller_gives_are_the_views_notes_and_there_are_none_by_de
     notes = ("Prices adjusted for 1 recorded split or bonus event(s), each confirmed by the price gap: 2024-10-28 (x0.5, yahoo).",)
     assert build_backtest_view("SBIN", RUNS, "", notes).notes == notes
     assert build_backtest_view("SBIN", RUNS, "").notes == ()
+
+
+def test_each_panel_carries_the_numbers_of_its_curve_for_a_page_that_draws_its_own():
+    panel = build_backtest_view("SBIN", RUNS, "").panels[0]
+    result = RUNS[0].result
+    assert panel.curve.days == tuple(day.isoformat() for day in result.days)
+    assert panel.curve.strategy == tuple(result.equity) and panel.curve.buy_and_hold == tuple(result.benchmark)
+    assert panel.curve.entries == tuple(t.entry_day.isoformat() for t in result.trades)

@@ -261,3 +261,13 @@ html, body { overflow: hidden; }
 .live .rname { margin-bottom: 6px; }
 .live .agrid { margin: 10px 0; }
 .cands { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* backtest */
+.backtest .btpanel { margin: 10px 0 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.backtest .btpanel:last-of-type { border-bottom: none; }
+.btrule { font-weight: 600; font-size: 14px; text-transform: capitalize; margin-bottom: 2px; }
+.bttable { border-collapse: collapse; margin: 8px 0; min-width: min(100%, 460px); font-variant-numeric: tabular-nums; }
+.bttable th { text-align: left; color: var(--fg-dim); font-weight: 600; padding: 3px 14px 3px 0; }
+.bttable td { padding: 3px 14px 3px 0; }
+.bttable th.num, .bttable td.num { text-align: right; }
+.curve { height: 280px; margin-top: 8px; }

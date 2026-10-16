@@ -1,5 +1,6 @@
 import type { Quote } from './feed';
 import { pct, price, signed } from './format';
+import { renderBacktest, runBacktest } from './backtestview';
 import { analyseLive, renderLive, type LiveView } from './live';
 import { loadAnalysis, overviewView, packetView, type AnalysisData } from './panels/analysis';
 import { el, type AppContext } from './panels/base';
@@ -26,6 +27,9 @@ export class ResearchView {
   private liveViews = new Map<string, LiveView>();
   private liveTimer: ReturnType<typeof setInterval> | null = null;
   private liveBusy = false;
+  private btButton = el('button', 'btn', 'Backtest');
+  private btSlot = el('div', 'liveslot');
+  private btDispose: (() => void) | null = null;
   private symbol = '';
   private token = 0;
   private stopJob: (() => void) | null = null;
@@ -52,8 +56,10 @@ export class ResearchView {
     this.liveButton.title = 'Runs every analyst now (including news) and the risk and valuation panels, as the Streamlit Analyse tab did. It calls the language model and takes one to two minutes.';
     this.liveInput.addEventListener('keydown', (e) => e.key === 'Enter' && void this.runLive(this.liveInput.value.trim(), true));
     this.liveButton.addEventListener('click', () => void this.runLive(this.liveInput.value.trim() || this.symbol, Boolean(this.liveInput.value.trim())));
-    this.liveBox.append(this.liveInput, this.liveButton, this.liveStatus);
-    this.main.append(this.title, this.nav, this.liveBox, this.liveSlot, this.body);
+    this.btButton.title = 'Replays the built-in rules day by day over up to eight years and compares each with buy and hold. Takes a few seconds to a minute.';
+    this.btButton.addEventListener('click', () => void this.runBt());
+    this.liveBox.append(this.liveInput, this.liveButton, this.btButton, this.liveStatus);
+    this.main.append(this.title, this.nav, this.liveBox, this.liveSlot, this.btSlot, this.body);
     this.element.append(this.list, this.main);
     this.offQuotes = ctx.feed.onQuotes((qs) => this.onQuotes(qs));
     this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
@@ -138,7 +144,33 @@ export class ResearchView {
     this.showLive(view);
   }
 
+  private async runBt(): Promise<void> {
+    const symbol = this.symbol;
+    if (!symbol || this.liveBusy) return;
+    this.liveBusy = true;
+    this.btButton.disabled = this.liveButton.disabled = true;
+    this.liveStatus.className = 'note';
+    this.liveStatus.textContent = `Replaying ${symbol} day by day… (a few seconds to a minute; the first run also starts the analysis service)`;
+    const result = await runBacktest(symbol);
+    this.liveBusy = false;
+    this.btButton.disabled = this.liveButton.disabled = false;
+    if (!result.ok) {
+      this.liveStatus.className = 'note bad';
+      this.liveStatus.textContent = result.error;
+      return;
+    }
+    this.liveStatus.textContent = 'Backtest done.';
+    if (symbol !== this.symbol) return; // the user moved on while it ran
+    this.btDispose?.();
+    const card = renderBacktest(result.data);
+    this.btDispose = card.dispose;
+    this.btSlot.replaceChildren(card.element);
+  }
+
   private showLive(view: LiveView | undefined): void {
+    this.btDispose?.();
+    this.btDispose = null;
+    this.btSlot.replaceChildren();
     this.liveSlot.replaceChildren();
     if (view) this.liveSlot.append(renderLive(view, (id) => void this.runLive(id, false)));
   }

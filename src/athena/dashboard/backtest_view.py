@@ -11,6 +11,17 @@ from athena.dashboard.charts import equity_chart
 
 
 @dataclass(frozen=True)
+class Curve:
+    """The numbers behind the equity chart, for a page that draws its own: both curves start at 100, one value per day."""
+
+    days: tuple[str, ...]  # ISO dates
+    strategy: tuple[float, ...]
+    buy_and_hold: tuple[float, ...]
+    entries: tuple[str, ...]
+    exits: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class BacktestPanel:
     rule: str
     description: str
@@ -18,6 +29,7 @@ class BacktestPanel:
     facts: tuple[str, ...]
     blinded_identical: bool
     figure: go.Figure
+    curve: Curve | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +61,10 @@ def build_backtest_view(identifier: str, runs: Sequence[RuleRun], assumptions: s
             BacktestPanel(
                 s.rule, run.description, rows, tuple(facts), run.blinded_identical,
                 equity_chart(run.result, f"{identifier}: {s.rule} rule against buy and hold"),
+                Curve(
+                    tuple(d.isoformat() for d in run.result.days), tuple(run.result.equity), tuple(run.result.benchmark),
+                    tuple(t.entry_day.isoformat() for t in run.result.trades), tuple(t.exit_day.isoformat() for t in run.result.trades),
+                ),
             )
         )
     return BacktestView(identifier, tuple(panels), assumptions, tuple(notes))

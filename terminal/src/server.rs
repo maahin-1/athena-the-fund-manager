@@ -145,6 +145,22 @@ async fn api_analyse(State(state): State<AppState>, Json(body): Json<AnalyseBody
     }
 }
 
+#[derive(serde::Deserialize)]
+struct BacktestBody {
+    symbol: String,
+}
+
+/// The built-in rules replayed over the symbol's history (up to eight years), each against buy and hold. Takes a few seconds to a minute.
+async fn api_backtest(State(state): State<AppState>, Json(body): Json<BacktestBody>) -> Response {
+    use crate::analyse_worker::AnalyseError;
+    match state.analyse.backtest(&body.symbol).await {
+        Ok(view) => Json(view).into_response(),
+        Err(AnalyseError::BadQuery) => StatusCode::BAD_REQUEST.into_response(),
+        Err(AnalyseError::Unavailable) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "the analysis service did not answer; try again"}))).into_response(),
+        Err(AnalyseError::Failed(message)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": message}))).into_response(),
+    }
+}
+
 async fn api_screen(State(state): State<AppState>) -> Response {
     let path = state.bars.warehouse.clone();
     match tokio::task::spawn_blocking(move || crate::analysis::screen_all(&path)).await {
@@ -289,6 +305,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/known", get(api_known))
         .route("/api/screen", get(api_screen))
         .route("/api/analyse", axum::routing::post(api_analyse))
+        .route("/api/backtest", axum::routing::post(api_backtest))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
         .route("/api/layouts", get(layouts_list))

@@ -2,6 +2,9 @@ import io
 import json
 from dataclasses import dataclass
 
+from dash_fakes import trend_runs
+
+from athena.dashboard.backtest_view import build_backtest_view
 from athena.dashboard.worker import MAX_QUERY, handle, serve
 
 
@@ -46,3 +49,18 @@ def test_an_empty_or_long_query_is_refused_before_the_service_is_asked():
     assert not handle(service, {"id": 1, "op": "view", "query": "  "})["ok"]
     assert not handle(service, {"id": 2, "op": "view", "query": "X" * (MAX_QUERY + 1)})["ok"]
     assert service.calls == []
+
+
+def test_a_backtest_request_returns_the_tables_and_the_curves_without_the_plotting_figure():
+    class Service(FakeService):
+        def backtest(self, symbol, rules=None):
+            return build_backtest_view(symbol, list(trend_runs()), "assumed costs", ("a note",))
+
+    reply = handle(Service(), {"id": 4, "op": "backtest", "symbol": "SBIN"})
+    assert reply["ok"] and json.dumps(reply)  # plain data all the way down
+    result = reply["result"]
+    assert result["identifier"] == "SBIN" and result["assumptions"] == "assumed costs" and result["notes"] == ["a note"]
+    first = result["panels"][0]
+    assert first["rule"] == "trend" and first["rows"][0][0] == "Total return" and "figure" not in first
+    assert len(first["curve"]["days"]) == len(first["curve"]["strategy"]) == len(first["curve"]["buy_and_hold"])
+    assert not handle(Service(), {"id": 5, "op": "backtest", "symbol": ""})["ok"]

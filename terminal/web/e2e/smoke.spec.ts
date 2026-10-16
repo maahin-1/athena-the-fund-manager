@@ -263,3 +263,35 @@ test('a live analysis that cannot run says so and the page stays usable', async 
   await expect(page.getByRole('button', { name: 'Analyse live' })).toBeEnabled();
   (page as unknown as { errors: string[] }).errors.length = 0; // the browser logs the 502 it was meant to get
 });
+
+test('the research page runs a backtest and draws each rule against buy and hold', async ({ page }) => {
+  let asked = '';
+  await page.route('**/api/backtest', async (route) => {
+    asked = (route.request().postDataJSON() as { symbol: string }).symbol;
+    await route.fulfill({
+      json: {
+        identifier: asked, assumptions: 'costs of 0.1% a side are assumed', notes: ['Prices adjusted for 1 recorded split.'],
+        panels: [
+          {
+            rule: 'trend', description: 'Hold while the trend is aligned up.', rows: [['Total return', '+42.0%', '+31.0%'], ['Worst drawdown', '-12.0%', '-30.0%']],
+            facts: ['2018-10-16 to 2026-10-16 (1,960 trading days); excess over buy and hold +11.0%'], blinded_identical: true,
+            curve: { days: ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'], strategy: [100, 101, 103, 102, 106], buy_and_hold: [100, 99, 101, 103, 104], entries: ['2026-10-13'], exits: ['2026-10-15'] },
+          },
+          { rule: 'persona', description: 'A second rule.', rows: [['Total return', '+5.0%', '+31.0%']], facts: [], blinded_identical: false, curve: null },
+        ],
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'Research', exact: true }).click();
+  await page.getByRole('button', { name: 'Backtest', exact: true }).click();
+  await expect(page.locator('.backtest')).toBeVisible();
+  expect(asked).toBe('SBIN');
+  await expect(page.locator('.backtest .btpanel')).toHaveCount(2);
+  await expect(page.locator('.backtest .btpanel[data-rule="trend"] .bttable')).toContainText('+42.0%');
+  await expect(page.locator('.backtest .btpanel[data-rule="trend"] .curve canvas').first()).toBeAttached();
+  await expect(page.locator('.backtest .btpanel[data-rule="persona"] .flagline')).toContainText('DIFFERENT trades');
+  await expect(page.locator('.backtest .flagline').first()).toContainText('split');
+  // moving to another stock clears it
+  await page.locator('.ritem[data-symbol="TCS"]').click();
+  await expect(page.locator('.backtest')).toHaveCount(0);
+});

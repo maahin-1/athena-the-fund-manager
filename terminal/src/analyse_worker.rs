@@ -76,12 +76,26 @@ impl AnalyseWorker {
         if !query_ok(query) {
             return Err(AnalyseError::BadQuery);
         }
+        self.call(json!({"op": "view", "query": query.trim(), "relatives": relatives})).await
+    }
+
+    /// The built-in rules replayed over the symbol's history, each against buy and hold, with the numbers of each curve.
+    pub async fn backtest(&self, symbol: &str) -> Result<Value, AnalyseError> {
+        if !query_ok(symbol) {
+            return Err(AnalyseError::BadQuery);
+        }
+        self.call(json!({"op": "backtest", "symbol": symbol.trim()})).await
+    }
+
+    async fn call(&self, mut payload: Value) -> Result<Value, AnalyseError> {
         let mut guard = self.live.lock().await; // one request at a time: the worker is one process and the model calls are slow
         if guard.is_none() {
             *guard = Some(self.start().await.ok_or(AnalyseError::Unavailable)?);
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let request = json!({"id": id, "op": "view", "query": query.trim(), "relatives": relatives}).to_string() + "\n";
+        payload["id"] = json!(id);
+        let request = payload.to_string() + "
+";
         let outcome = {
             let live = guard.as_mut().expect("started above");
             tokio::time::timeout(ANSWER_LIMIT, async {
@@ -154,6 +168,21 @@ for line in sys.stdin:
         assert_eq!(w.view("TCS", true).await.unwrap(), json!({"query": "TCS", "relatives": true}));
         assert_eq!(w.view("BOOM", false).await, Err(AnalyseError::Failed("no such instrument".into())));
         assert_eq!(w.view("INFY", false).await.unwrap()["query"], "INFY"); // the same process went on
+    }
+
+    #[tokio::test]
+    async fn a_backtest_goes_through_the_same_worker() {
+        let script = r#"
+import json, sys
+print(json.dumps({"ready": True}), flush=True)
+for line in sys.stdin:
+    r = json.loads(line)
+    print(json.dumps({"id": r["id"], "ok": True, "result": {"op": r["op"], "symbol": r.get("symbol")}}), flush=True)
+"#;
+        let Some(w) = fake(script) else { return };
+        assert_eq!(w.backtest("SBIN").await.unwrap(), json!({"op": "backtest", "symbol": "SBIN"}));
+        assert_eq!(w.view("TCS", false).await.unwrap()["op"], "view");
+        assert_eq!(w.backtest("a;b").await, Err(AnalyseError::BadQuery));
     }
 
     #[tokio::test]
