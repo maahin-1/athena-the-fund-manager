@@ -33,7 +33,7 @@ export interface AppContext {
   changed(): void; // something worth saving changed
 }
 
-export const TITLES: Record<PanelType, string> = { watchlist: 'Watchlist', chart: 'Chart', depth: 'Depth', quote: 'Quote', tape: 'Tape' };
+export const TITLES: Record<PanelType, string> = { watchlist: 'Watchlist', chart: 'Chart', depth: 'Depth', quote: 'Quote', tape: 'Tape', analysis: 'Analysis', verdict: 'Verdict' };
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);

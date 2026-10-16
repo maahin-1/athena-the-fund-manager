@@ -122,3 +122,26 @@ html, body, #app { height: 100%; margin: 0; background: var(--bg); color: var(--
 .tape:hover .track { animation-play-state: paused; }
 .tcell { padding: 0 18px; font-variant-numeric: tabular-nums; }
 @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* analysis and verdict */
+.tabs { display: flex; gap: 2px; margin-bottom: 6px; }
+.tab { background: none; color: var(--fg-dim); border: 1px solid transparent; border-radius: 3px; padding: 2px 8px; cursor: pointer; font: inherit; }
+.tab.on { color: var(--fg); border-color: var(--border); background: var(--grid); }
+.content .group { color: var(--label); text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; margin: 8px 0 3px; }
+.flagline { color: var(--label); margin: 3px 0; line-height: 1.35; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--fg-dim); font-size: 11px; }
+.chip.up { color: var(--up); border-color: var(--up); }
+.chip.dn { color: var(--dn); border-color: var(--dn); }
+.chip.flat { color: var(--label); border-color: var(--label); }
+.vhead { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.vhead .chip { font-size: 15px; padding: 2px 12px; }
+.vconv { color: var(--fg-dim); }
+.analysts { margin: 6px 0; }
+.analyst { border-top: 1px solid var(--border); padding: 4px 0; }
+.atop { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.atop .an { flex: 1; text-transform: capitalize; }
+.atop .ac { color: var(--fg-dim); font-size: 11px; }
+.why { color: var(--fg-dim); line-height: 1.4; padding: 4px 0 2px; font-size: 11px; }
+.content .btn { margin-top: 8px; }
+.content .btn:disabled { opacity: 0.5; cursor: default; }
+.market { color: var(--fg-dim); white-space: nowrap; }

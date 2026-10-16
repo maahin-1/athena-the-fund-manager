@@ -65,3 +65,13 @@ Rust unit tests: TOTP code, tick decoding (the same sample packets the Python te
 ## Not in 4a
 
 Orders, portfolio, alerts, storing ticks, news, a heatmap, and the analyst and backtest panels (4b and 4c).
+
+## Addendum, 2026-10-16: 4b (analyst panels) and working with the market shut
+
+The user asked that charts, analysis and everything stay usable when the market is off. Added to release 1 so it holds together:
+
+- **Analysis panel** (tabs Overview, Technicals, Fundamentals) and **Verdict panel**, both reading only stored data from the warehouse through `GET /api/analysis?symbol=` (screen row, technical and fundamentals packets, newest verdict, last loaded day). No market data is needed.
+- **Make a verdict** button: `POST /api/verdict/<symbol>` runs the project's Python command (`python -m athena.verdicts.cli --symbol X`) one at a time with a five-minute limit; `GET /api/verdict-job` reports idle, running, done or failed with a fixed message (nothing from the command's output reaches the page). It calls the language model (about 45 seconds measured for INFY, stored as Overweight, conviction 8, raw 23).
+- **Layout D (research):** watchlist, chart (6M daily with EMA and SMA), analysis, verdict, tape.
+- **Market closed:** the top bar says so and when the market opens (weekday 09:15 to 15:30 IST; holidays are not known). The feed snapshot, the exchange poll (every 5 minutes when shut) and Yahoo's last session keep the watchlist, depth, quote and chart populated; if no intraday bars exist, the chart shows six months of daily bars with a note.
+- Verdict panel shows the calibration note, each analyst's call (click for its reasoning), risks, skipped analysts and how many days of newer prices exist since it was made.

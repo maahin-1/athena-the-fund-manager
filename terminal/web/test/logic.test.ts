@@ -20,6 +20,7 @@ describe('command line', () => {
   });
   it('switches layouts by preset or saved name', () => {
     expect(parse('layout b', ctx)).toEqual({ kind: 'layout', name: 'B' });
+    expect(parse('layout d', ctx)).toEqual({ kind: 'layout', name: 'D' });
     expect(parse('layout day trading', ctx)).toEqual({ kind: 'layout', name: 'Day trading' });
     expect(parse('mine-1', ctx)).toEqual({ kind: 'layout', name: 'Mine-1' });
     expect(parse('layout nothing', ctx).kind).toBe('error');
@@ -78,6 +79,8 @@ describe('layouts', () => {
     expect(types('A')).toEqual(['chart', 'depth', 'quote', 'tape', 'watchlist']);
     expect(types('B')).toEqual(['chart', 'chart', 'chart', 'chart', 'tape']);
     expect(types('C')).toEqual(['chart', 'depth', 'quote', 'tape', 'watchlist']);
+    expect(PRESETS.D().arrangement?.length).toBe(5);
+    expect(Object.values(PRESETS.D().panels).map((p) => p.type).sort()).toEqual(['analysis', 'chart', 'tape', 'verdict', 'watchlist']);
   });
   it('every placement refers to a panel that exists and to an earlier one', () => {
     for (const name of PRESET_NAMES) {
@@ -181,5 +184,22 @@ describe('format', () => {
     expect(age(180_000)).toBe('3m');
     expect(compact(4_200_000)).toBe('42.00L');
     expect(compact(980)).toBe('980');
+  });
+});
+
+describe('market state', async () => {
+  const { marketState } = await import('../src/market');
+  const at = (iso: string) => marketState(new Date(iso));
+  it('is open on weekday trading hours (IST)', () => {
+    expect(at('2026-10-14T04:00:00Z').open).toBe(true); // Wed 09:30 IST
+    expect(at('2026-10-14T03:45:00Z').open).toBe(true); // 09:15 IST
+    expect(at('2026-10-14T10:00:00Z').open).toBe(true); // 15:30 IST
+  });
+  it('says when it reopens when shut', () => {
+    expect(at('2026-10-14T10:01:00Z').text).toContain('opens Thu 09:15 IST'); // after close
+    expect(at('2026-10-14T03:00:00Z').text).toContain('opens today 09:15 IST'); // before open
+    expect(at('2026-10-16T12:00:00Z').text).toContain('opens Mon'); // Friday evening
+    expect(at('2026-10-17T06:00:00Z').text).toContain('opens Mon'); // Saturday
+    expect(at('2026-10-18T06:00:00Z').open).toBe(false); // Sunday
   });
 });

@@ -1,6 +1,6 @@
 import { GROUPS, type Group } from './links';
 
-export const PANEL_TYPES = ['watchlist', 'chart', 'depth', 'quote', 'tape'] as const;
+export const PANEL_TYPES = ['watchlist', 'chart', 'depth', 'quote', 'tape', 'analysis', 'verdict'] as const;
 export type PanelType = (typeof PANEL_TYPES)[number];
 
 export interface PanelState {
@@ -69,9 +69,9 @@ const base = (panels: Record<string, PanelState>, arrangement: Placement[]): Lay
   theme: 'dark',
 });
 
-export type PresetName = 'A' | 'B' | 'C';
+export type PresetName = 'A' | 'B' | 'C' | 'D';
 
-/** A: one stock. B: a chart grid with a tape. C: dense, everything about one stock on one screen. */
+/** A: one stock. B: a chart grid with a tape. C: dense, everything about one stock on one screen. D: research, the chart beside the stored analysis and verdict. */
 export const PRESETS: Record<PresetName, () => LayoutModel> = {
   A: () =>
     base(
@@ -124,6 +124,23 @@ export const PRESETS: Record<PresetName, () => LayoutModel> = {
         { id: 'tape-1', type: 'tape', ref: 'chart-1', direction: 'below', size: 40 },
       ],
     ),
+  D: () =>
+    base(
+      {
+        'watchlist-1': { type: 'watchlist', group: 'blue' },
+        'chart-1': { type: 'chart', group: 'blue', symbol: 'SBIN', range: '6M', indicators: ['EMA 20', 'SMA 50'] },
+        'analysis-1': { type: 'analysis', group: 'blue', symbol: 'SBIN' },
+        'verdict-1': { type: 'verdict', group: 'blue', symbol: 'SBIN' },
+        'tape-1': { type: 'tape', group: 'none' },
+      },
+      [
+        { id: 'chart-1', type: 'chart' },
+        { id: 'watchlist-1', type: 'watchlist', ref: 'chart-1', direction: 'left', size: 280 },
+        { id: 'analysis-1', type: 'analysis', ref: 'chart-1', direction: 'right', size: 420 },
+        { id: 'verdict-1', type: 'verdict', ref: 'analysis-1', direction: 'below', size: 380 },
+        { id: 'tape-1', type: 'tape', ref: 'chart-1', direction: 'below', size: 40 },
+      ],
+    ),
 };
 
-export const PRESET_NAMES: PresetName[] = ['A', 'B', 'C'];
+export const PRESET_NAMES: PresetName[] = ['A', 'B', 'C', 'D'];

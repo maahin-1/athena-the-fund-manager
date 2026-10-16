@@ -6,7 +6,7 @@ import { applyTick, type Bar } from '../bars';
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import { bollinger, ema, INDICATOR_NAMES, macd, rsi, sma, type Series } from '../indicators';
-import { barLimit, RANGES, type Range } from '../ranges';
+import { barLimit, RANGES, type Range, type Timeframe } from '../ranges';
 import { el, Panel, type AppContext } from './base';
 
 const IST_OFFSET = 19_800;
@@ -37,8 +37,10 @@ export class ChartPanel extends Panel {
     this.start();
   }
 
-  private get tf() {
-    return this.range.tf;
+  private tfOverride: Timeframe | null = null; // set when intraday bars are missing and daily bars are shown instead
+
+  private get tf(): Timeframe {
+    return this.tfOverride ?? this.range.tf;
   }
 
   private time(t: number): UTCTimestamp {
@@ -130,6 +132,7 @@ export class ChartPanel extends Panel {
     const symbol = this.symbol;
     if (!symbol || !this.chart || this.disposed) return;
     const token = ++this.loadToken;
+    if (attempt === 0) this.tfOverride = null;
     this.titleEl.textContent = `${symbol} · ${this.range.label}`;
     const today = new Date();
     const limit = this.tf === '1D' ? (barLimit(this.range, today) ?? 5000) : 0;
@@ -150,6 +153,13 @@ export class ChartPanel extends Panel {
     if (body.note === 'loading' && attempt < 6) {
       this.note.textContent = 'loading intraday bars…';
       setTimeout(() => !this.disposed && void this.load(attempt + 1), 1500);
+    } else if (!bars.length && this.tf !== '1D') {
+      // no intraday bars (Yahoo is down, or the symbol has none): show the last six months of daily bars so the chart is never empty
+      this.tfOverride = '1D';
+      const daily = await fetch(`/api/bars?symbol=${encodeURIComponent(symbol)}&tf=1D&limit=126`).then((r) => r.json()).catch(() => null) as { bars: Bar[] } | null;
+      if (token !== this.loadToken || this.disposed) return;
+      this.bars = daily?.bars ?? [];
+      this.note.textContent = this.bars.length ? 'No intraday bars are available right now; showing daily bars.' : `no bars for ${symbol}`;
     } else if (!bars.length && !this.note.textContent) this.note.textContent = `no ${this.tf} bars for ${symbol}`;
     this.paintBars();
   }

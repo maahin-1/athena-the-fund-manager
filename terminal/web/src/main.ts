@@ -8,17 +8,20 @@ import {
   type LayoutModel, type PanelState, type PanelType, type PresetName,
 } from './layout';
 import { LinkBus } from './links';
+import { marketState } from './market';
 import { el, TITLES, WatchlistStore, type AppContext, type Panel } from './panels/base';
+import { AnalysisPanel } from './panels/analysis';
 import { ChartPanel } from './panels/chart';
 import { DepthPanel } from './panels/depth';
 import { QuotePanel } from './panels/quote';
 import { TapePanel } from './panels/tape';
+import { VerdictPanel } from './panels/verdict';
 import { WatchlistPanel } from './panels/watchlist';
 
 const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
-  watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel,
+  watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel,
 };
 
 class App implements AppContext {
@@ -35,6 +38,7 @@ class App implements AppContext {
   private bar = el('div', 'bar');
   private statusLine = el('span', 'statusline');
   private health = el('span', 'health');
+  private market = el('span', 'market');
   private layoutSelect = el('select', 'layout-select');
   private command = el('input', 'cmd');
   private nameBox = el('input', 'namebox');
@@ -141,7 +145,7 @@ class App implements AppContext {
     this.layoutSelect.replaceChildren(new Option('Layouts', ''));
     const presets = document.createElement('optgroup');
     presets.label = 'Presets';
-    PRESET_NAMES.forEach((n) => presets.append(new Option(`${n}${{ A: ' · one stock', B: ' · chart grid', C: ' · dense' }[n]}`, `preset:${n}`)));
+    PRESET_NAMES.forEach((n) => presets.append(new Option(`${n}${{ A: ' · one stock', B: ' · chart grid', C: ' · dense', D: ' · research' }[n]}`, `preset:${n}`)));
     this.layoutSelect.append(presets);
     if (this.saved.length) {
       const mine = document.createElement('optgroup');
@@ -219,9 +223,17 @@ class App implements AppContext {
     });
     const full = el('button', 'btn', 'Fullscreen');
     full.addEventListener('click', () => (document.fullscreenElement ? void document.exitFullscreen() : void document.documentElement.requestFullscreen()));
-    this.bar.append(el('b', 'brand', 'ATHENA'), this.layoutSelect, save, this.nameBox, del, this.command, this.statusLine, this.health, theme, full);
+    this.bar.append(el('b', 'brand', 'ATHENA'), this.layoutSelect, save, this.nameBox, del, this.command, this.statusLine, this.market, this.health, theme, full);
+    this.paintMarket();
+    setInterval(() => this.paintMarket(), 30_000);
     this.paintHealth();
     return this.bar;
+  }
+
+  private paintMarket(): void {
+    const s = marketState(new Date());
+    this.market.textContent = s.open ? '' : s.text;
+    this.market.className = 'market';
   }
 
   private setTheme(theme: 'dark' | 'light'): void {

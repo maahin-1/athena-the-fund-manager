@@ -11,7 +11,7 @@ export interface CommandContext {
 }
 
 const SYMBOL = /^[A-Z0-9&-]{1,20}$/;
-const PRESETS = ['A', 'B', 'C'];
+const PRESETS = ['A', 'B', 'C', 'D'];
 
 const fail = (message: string): Command => ({ kind: 'error', message });
 

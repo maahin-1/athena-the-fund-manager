@@ -73,3 +73,18 @@ test('presets switch the arrangement and a saved layout comes back', async ({ pa
   await expect(page.locator('.chart-host')).toHaveCount(1);
   await expect(title(page, 'Depth · LUPIN')).toBeVisible();
 });
+
+test('the research layout shows stored analysis and the verdict panel from the warehouse', async ({ page }) => {
+  await page.locator('.layout-select').selectOption('preset:D');
+  await expect(page.locator('.pt', { hasText: 'Analysis · SBIN' })).toBeVisible();
+  await expect(page.locator('.content .facts .k', { hasText: 'P/E' })).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Technicals' }).click();
+  await expect(page.locator('.content .facts .k', { hasText: 'rsi 14' })).toBeVisible();
+  await page.getByRole('button', { name: 'Fundamentals' }).click();
+  await expect(page.locator('.content .group').first()).toBeVisible();
+  await expect(page.locator('.pt', { hasText: 'Verdict · SBIN' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Make a (fresh )?verdict/ })).toBeVisible();
+  // following the link group: picking a stock moves the analysis too
+  await row(page, 'TCS').click();
+  await expect(page.locator('.pt', { hasText: 'Analysis · TCS' })).toBeVisible();
+});
