@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyTick, barTime, type Bar } from '../src/bars';
+import { applyTick, barTime, inSession, tickFitsChart, type Bar } from '../src/bars';
 import { parse } from '../src/command';
 import { age, compact, pct, price, signed } from '../src/format';
 import { bollinger, ema, macd, rsi, sma } from '../src/indicators';
@@ -247,5 +247,25 @@ describe('stored verdict', () => {
     expect(v.skipped).toEqual([{ name: 'news sentiment', reason: '' }]);
     expect(v.analysts).toEqual([]);
     expect(readVerdict({ ...data({}), verdict: null })).toBeNull();
+  });
+});
+
+describe('which ticks may move the chart', () => {
+  const utc = (iso: string) => Date.parse(iso) / 1000;
+  const bar: Bar = { t: utc('2026-10-16T09:58:00Z'), o: 962, h: 963, l: 961, c: 962.6, v: 10 };
+  it('knows the session in IST', () => {
+    expect(inSession(utc('2026-10-16T03:45:00Z'))).toBe(true); // 09:15 IST, a Friday
+    expect(inSession(utc('2026-10-16T03:44:59Z'))).toBe(false);
+    expect(inSession(utc('2026-10-16T09:59:59Z'))).toBe(true); // 15:29:59
+    expect(inSession(utc('2026-10-16T10:00:00Z'))).toBe(false); // 15:30
+    expect(inSession(utc('2026-10-17T05:00:00Z'))).toBe(false); // Saturday
+  });
+  it('ignores a snapshot stamped after the close and a price that is not this stock', () => {
+    expect(tickFitsChart(bar, 962.8, utc('2026-10-16T09:58:30Z'), '1m')).toBe(true);
+    expect(tickFitsChart(bar, 962.6, utc('2026-10-16T10:38:10Z'), '1m')).toBe(false); // 16:08 IST
+    expect(tickFitsChart(bar, 2230, utc('2026-10-16T09:58:30Z'), '1m')).toBe(false);
+    expect(tickFitsChart({ ...bar, t: utc('2026-10-16T00:00:00Z') }, 962.6, utc('2026-10-16T10:38:10Z'), '1D')).toBe(true); // a daily bar may close up after the session
+    expect(tickFitsChart(undefined, 100, utc('2026-10-16T05:00:00Z'), '1m')).toBe(true);
+    expect(tickFitsChart(bar, 0, utc('2026-10-16T05:00:00Z'), '1m')).toBe(false);
   });
 });

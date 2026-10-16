@@ -25,6 +25,28 @@ export function barTime(tsSec: number, tf: Timeframe): number {
   }
 }
 
+const OPEN_SEC = 9 * 3600 + 15 * 60; // 09:15 IST
+const CLOSE_SEC = 15 * 3600 + 30 * 60; // 15:30 IST
+const MAX_MOVE = 0.25; // no listed stock moves more than its 20% band in a day, so a tick 25% from the last bar is not this stock's price
+
+/** Whether a moment falls inside the weekday trading session (09:15 to 15:30 IST). */
+export function inSession(tsSec: number): boolean {
+  const ist = tsSec + IST_OFFSET;
+  const day = Math.floor(ist / 86_400);
+  const weekday = (day + 4) % 7; // 1970-01-01 was a Thursday; 0 is Sunday
+  if (weekday === 0 || weekday === 6) return false;
+  const secs = ist - day * 86_400;
+  return secs >= OPEN_SEC && secs < CLOSE_SEC;
+}
+
+/** Whether a tick should move the chart. Intraday bars only grow during the session (an exchange snapshot stamped after the close must not start a bar), and a price far from the last bar's is ignored rather than drawn as a candle that is not this stock's. */
+export function tickFitsChart(last: Bar | undefined, price: number, tsSec: number, tf: Timeframe): boolean {
+  if (!(price > 0)) return false;
+  if (tf !== '1D' && !inSession(tsSec)) return false;
+  if (last && last.c > 0 && Math.abs(price / last.c - 1) > MAX_MOVE) return false;
+  return true;
+}
+
 /** The bar to draw after a trade at `price`: the last bar updated, or a new bar when the trade falls in a later one. */
 export function applyTick(last: Bar | undefined, price: number, tsSec: number, tf: Timeframe, volume = 0): Bar {
   const t = barTime(tsSec, tf);

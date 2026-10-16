@@ -2,7 +2,7 @@ import {
   CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesType, type UTCTimestamp,
 } from 'lightweight-charts';
-import { applyTick, type Bar } from '../bars';
+import { applyTick, tickFitsChart, type Bar } from '../bars';
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import { bollinger, ema, INDICATOR_NAMES, macd, rsi, sma, type Series } from '../indicators';
@@ -93,7 +93,7 @@ export class ChartPanel extends Panel {
       grid: { vertLines: { color: css('--grid') }, horzLines: { color: css('--grid') } },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: { borderColor: css('--border') },
-      timeScale: { borderColor: css('--border'), timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: css('--border'), timeVisible: true, secondsVisible: false, fixRightEdge: true, fixLeftEdge: true, rightOffset: 3 },
     });
     this.chart = chart;
     this.candles = chart.addSeries(CandlestickSeries, {
@@ -239,6 +239,7 @@ export class ChartPanel extends Panel {
     if (this.disposed || !q || !this.candles || this.bars.length === 0) return;
     const ts = q.t ? q.t / 1000 : Date.now() / 1000;
     const last = this.bars[this.bars.length - 1];
+    if (!tickFitsChart(last, q.l, ts, this.tf)) return;
     const next = applyTick(last, q.l, ts, this.tf);
     if (next === last) return;
     if (next.t === last.t) this.bars[this.bars.length - 1] = next;
