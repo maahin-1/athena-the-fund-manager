@@ -16,6 +16,8 @@ use tokio::time::{interval, MissedTickBehavior};
 use tower_http::services::ServeDir;
 
 use crate::angel::stream::FeedStatus;
+use crate::analysis::analysis;
+use crate::verdict_job::{symbol_ok as verdict_symbol_ok, StartError, VerdictJobs};
 use crate::bars::{daily_bars, yahoo_params, Bars, DEFAULT_LIMIT};
 use crate::hub::Hub;
 use crate::layouts::{LayoutError, LayoutStore};
@@ -30,6 +32,7 @@ pub struct AppState {
     pub web_dir: PathBuf,
     pub bars: Arc<Bars>,
     pub layouts: Arc<LayoutStore>,
+    pub verdicts: VerdictJobs,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -109,6 +112,35 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
         return StatusCode::BAD_REQUEST.into_response();
     };
     Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note})).into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct SymbolQuery {
+    symbol: String,
+}
+
+async fn api_analysis(State(state): State<AppState>, Query(q): Query<SymbolQuery>) -> Response {
+    let symbol = q.symbol.to_ascii_uppercase();
+    if !verdict_symbol_ok(&symbol) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let path = state.bars.warehouse.clone();
+    match tokio::task::spawn_blocking(move || analysis(&path, &symbol)).await {
+        Ok(Ok(body)) => Json(body).into_response(),
+        _ => (StatusCode::SERVICE_UNAVAILABLE, "the warehouse is busy").into_response(),
+    }
+}
+
+async fn verdict_start(State(state): State<AppState>, Path(symbol): Path<String>) -> Response {
+    match state.verdicts.start(&symbol.to_ascii_uppercase()) {
+        Ok(()) => StatusCode::ACCEPTED.into_response(),
+        Err(StartError::BadSymbol) => StatusCode::BAD_REQUEST.into_response(),
+        Err(StartError::Busy) => StatusCode::CONFLICT.into_response(),
+    }
+}
+
+async fn verdict_status(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(state.verdicts.status())
 }
 
 fn layout_status(e: LayoutError) -> StatusCode {
@@ -202,6 +234,9 @@ pub fn router(state: AppState) -> Router {
         .route("/ws", get(ws_upgrade))
         .route("/api/status", get(api_status))
         .route("/api/bars", get(api_bars))
+        .route("/api/analysis", get(api_analysis))
+        .route("/api/verdict-job", get(verdict_status))
+        .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
         .route("/api/layouts", get(layouts_list))
         .route("/api/layouts/:name", get(layouts_get).put(layouts_put).delete(layouts_delete))
         .fallback_service(ServeDir::new(state.web_dir.clone()))
@@ -239,7 +274,8 @@ mod tests {
         let fetch: crate::bars::Fetcher = Arc::new(|_s, _t| Box::pin(async { None }));
         let bars = Arc::new(Bars { warehouse: PathBuf::from("no/such.duckdb"), intraday: crate::bars::Intraday::new(fetch) });
         let layouts = Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-layouts-{port}"))));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts };
+        let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -310,6 +346,22 @@ mod tests {
         assert_eq!(client.put(format!("{base}/Mine-1")).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
         assert_eq!(client.delete(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 204);
         assert_eq!(client.get(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 404);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn analysis_and_verdict_routes_validate_and_report() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let base = format!("http://127.0.0.1:{port}/api");
+        assert_eq!(client.get(format!("{base}/analysis?symbol=a;b")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/analysis?symbol=SBIN")).send().await.unwrap().status(), 503); // no warehouse in this test
+        let idle: serde_json::Value = client.get(format!("{base}/verdict-job")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(idle["state"], "idle");
+        assert_eq!(client.post(format!("{base}/verdict/a;b")).header("Origin", &origin).send().await.unwrap().status(), 400);
+        assert_eq!(client.post(format!("{base}/verdict/SBIN")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        assert_eq!(client.post(format!("{base}/verdict/SBIN")).header("Origin", &origin).send().await.unwrap().status(), 202);
         stop.cancel();
     }
 

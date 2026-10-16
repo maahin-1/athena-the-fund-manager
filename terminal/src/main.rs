@@ -1,3 +1,4 @@
+mod analysis;
 mod angel;
 mod bars;
 mod config;
@@ -8,6 +9,7 @@ mod poll;
 mod quote;
 mod server;
 mod totp;
+mod verdict_job;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,6 +30,7 @@ struct Args {
     web_dir: PathBuf,
     warehouse: PathBuf,
     layouts_dir: PathBuf,
+    python: String,
 }
 
 fn args() -> Args {
@@ -39,6 +42,7 @@ fn args() -> Args {
         web_dir: PathBuf::from("terminal/web/dist"),
         warehouse: PathBuf::from(".athena/warehouse.duckdb"),
         layouts_dir: PathBuf::from(".athena/terminal/layouts"),
+        python: ".venv/Scripts/python.exe".to_string(),
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -58,6 +62,11 @@ fn args() -> Args {
             "--warehouse" => {
                 if let Some(v) = it.next() {
                     out.warehouse = PathBuf::from(v);
+                }
+            }
+            "--python" => {
+                if let Some(v) = it.next() {
+                    out.python = v;
                 }
             }
             "--layouts-dir" => {
@@ -164,7 +173,8 @@ async fn main() {
     }
     let bars = Arc::new(bars::Bars { warehouse: args.warehouse, intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())) });
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts };
+    let verdicts = verdict_job::VerdictJobs::standard(&args.python);
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))
