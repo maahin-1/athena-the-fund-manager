@@ -21,7 +21,7 @@ export class WatchlistPanel extends Panel {
 
   constructor(id: string, ctx: AppContext) {
     super(id, ctx);
-    this.titleEl.textContent = 'Watchlist';
+    this.setTitle('Watchlist');
     this.start();
   }
 

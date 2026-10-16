@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const title = (page: Page, text: string) => page.locator('.pt', { hasText: text });
+const title = (page: Page, text: string) => page.locator('.dv-tab', { hasText: text });
 const row = (page: Page, symbol: string) => page.locator(`.wl-row[data-symbol="${symbol}"]`);
 
 test.beforeEach(async ({ page, request }) => {
@@ -37,7 +37,7 @@ test('clicking a row moves linked panels and leaves an unlinked one alone', asyn
   await expect(title(page, 'Depth · RELIANCE')).toBeVisible();
   await expect(title(page, 'Quote · RELIANCE')).toBeVisible();
   // unlink the chart (blue -> none) and pick another symbol: depth follows, the chart stays
-  await page.locator('.panel', { has: page.locator('.chart-host') }).locator('.dot').click();
+  await page.locator('.dv-groupview', { has: page.locator('.chart-host') }).locator('.link-dot').click();
   await row(page, 'TCS').click();
   await expect(title(page, 'Depth · TCS')).toBeVisible();
   await expect(title(page, 'RELIANCE · ').first()).toBeVisible();
@@ -76,17 +76,17 @@ test('presets switch the arrangement and a saved layout comes back', async ({ pa
 
 test('the research layout shows stored analysis and the verdict panel from the warehouse', async ({ page }) => {
   await page.locator('.layout-select').selectOption('preset:D');
-  await expect(page.locator('.pt', { hasText: 'Analysis · SBIN' })).toBeVisible();
+  await expect(page.locator('.dv-tab', { hasText: 'Analysis · SBIN' })).toBeVisible();
   await expect(page.locator('.content .facts .k', { hasText: 'P/E' })).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Technicals' }).click();
   await expect(page.locator('.content .facts .k', { hasText: 'rsi 14' })).toBeVisible();
   await page.getByRole('button', { name: 'Fundamentals' }).click();
   await expect(page.locator('.content .group').first()).toBeVisible();
-  await expect(page.locator('.pt', { hasText: 'Verdict · SBIN' })).toBeVisible();
+  await expect(page.locator('.dv-tab', { hasText: 'Verdict · SBIN' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Make a (fresh )?verdict/ })).toBeVisible();
   // following the link group: picking a stock moves the analysis too
   await row(page, 'TCS').click();
-  await expect(page.locator('.pt', { hasText: 'Analysis · TCS' })).toBeVisible();
+  await expect(page.locator('.dv-tab', { hasText: 'Analysis · TCS' })).toBeVisible();
 });
 
 test('nothing runs off the screen on a small or scaled display', async ({ page }) => {
@@ -105,14 +105,14 @@ test('nothing runs off the screen on a small or scaled display', async ({ page }
 test('panels can be maximised, floated, added and put back', async ({ page }) => {
   const chart = page.locator('.panel', { has: page.locator('.chart-host') });
   const before = (await chart.boundingBox())!;
-  await page.locator('.dv-groupview', { has: page.locator('.chart-host') }).locator('.gbtn').first().click(); // maximise
+  await page.locator('.dv-groupview', { has: page.locator('.chart-host') }).locator('.gbtn[title^="Maximise"]').click(); // maximise
   await expect.poll(async () => (await chart.boundingBox())!.width).toBeGreaterThan(before.width + 100);
   await page.keyboard.press('Escape');
   await expect.poll(async () => Math.round((await chart.boundingBox())!.width)).toBe(Math.round(before.width));
   await page.locator('.add-select').selectOption('quote');
-  await expect(page.locator('.pt', { hasText: /^Quote · / })).toHaveCount(2);
+  await expect(page.locator('.dv-tab', { hasText: /^Quote · / })).toHaveCount(2);
   await page.getByRole('button', { name: 'Reset' }).click();
-  await expect(page.locator('.pt', { hasText: /^Quote · / })).toHaveCount(1);
+  await expect(page.locator('.dv-tab', { hasText: /^Quote · / })).toHaveCount(1);
 });
 
 test('the research page shows every analyst in full and follows the stock picked', async ({ page }) => {
@@ -133,7 +133,7 @@ test('the research page shows every analyst in full and follows the stock picked
   await expect(page.locator('.rsym')).toHaveText('TCS');
   await page.getByRole('button', { name: 'Terminal', exact: true }).click();
   await expect(page.locator('.chart-host')).toBeVisible();
-  await expect(page.locator('.pt', { hasText: 'Depth · TCS' })).toBeVisible();
+  await expect(page.locator('.dv-tab', { hasText: 'Depth · TCS' })).toBeVisible();
 });
 
 test('the verdict panel opens the full analysis', async ({ page }) => {
@@ -142,4 +142,51 @@ test('the verdict panel opens the full analysis', async ({ page }) => {
   await page.getByRole('button', { name: 'Open full analysis' }).click();
   await expect(page.locator('.research')).toBeVisible();
   await expect(page.locator('.rsym')).toHaveText('HDFCBANK');
+});
+
+test('an unknown symbol is refused, a known one and an index are accepted', async ({ page }) => {
+  const cmd = page.getByLabel('command line');
+  await cmd.fill('add zzzfake');
+  await cmd.press('Enter');
+  await expect(page.locator('.statusline.bad')).toContainText('ZZZFAKE is not a listed stock');
+  await expect(row(page, 'ZZZFAKE')).toHaveCount(0);
+  await cmd.fill('add wipro');
+  await cmd.press('Enter');
+  await expect(row(page, 'WIPRO')).toBeVisible();
+  await cmd.fill('nifty 50');
+  await cmd.press('Enter');
+  await expect(page.locator('.statusline.bad')).toHaveCount(0);
+});
+
+test('indicators show as chips that remove themselves, and the link colour dot follows the panel', async ({ page }) => {
+  const chart = page.locator('.panel', { has: page.locator('.chart-host') });
+  await expect(chart.locator('.ichip', { hasText: 'EMA 20' })).toBeVisible();
+  await chart.locator('select.picker').selectOption('RSI 14');
+  await expect(chart.locator('.ichip')).toHaveCount(2);
+  await chart.locator('.ichip', { hasText: 'EMA 20' }).click();
+  await expect(chart.locator('.ichip')).toHaveCount(1);
+  const dot = page.locator('.dv-groupview', { has: page.locator('.chart-host') }).locator('.link-dot');
+  await expect(dot).toHaveAttribute('data-group', 'blue');
+  await dot.click();
+  await expect(dot).toHaveAttribute('data-group', 'none');
+});
+
+test('1M is a month of daily bars and the panels show one title row', async ({ page }) => {
+  const chart = page.locator('.panel', { has: page.locator('.chart-host') });
+  await chart.getByRole('button', { name: '1M', exact: true }).click();
+  await expect(chart.locator('.note')).not.toContainText('limited to 5 days');
+  await expect(page.locator('.ph').first()).toBeHidden();
+});
+
+test('changing a panel to a link colour moves it to the symbol that colour shows', async ({ page }) => {
+  await row(page, 'TCS').click();
+  const depth = page.locator('.dv-groupview', { has: page.locator('.depth') });
+  await depth.locator('.link-dot').click(); // blue -> none: it keeps TCS
+  await row(page, 'INFY').click();
+  await expect(page.locator('.dv-tab', { hasText: 'Depth · TCS' })).toBeVisible();
+  for (let i = 0; i < 4; i++) {
+    if ((await depth.locator('.link-dot').getAttribute('data-group')) === 'blue') break;
+    await depth.locator('.link-dot').click();
+  }
+  await expect(page.locator('.dv-tab', { hasText: 'Depth · INFY' })).toBeVisible();
 });

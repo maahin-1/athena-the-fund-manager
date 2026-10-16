@@ -232,3 +232,20 @@ def test_a_break_with_no_record_is_flagged_and_left_alone():
         w.upsert_day(day, {"ACME": row("ACME", close)}, NOW)
     assert list(market_price_flags(w, ["ACME"])) == ["ACME"]
     assert [b.close for b in adjusted_history(w)("ACME")] == [100.0, 20.0]
+
+
+def test_chart_bars_gives_the_adjusted_bars_as_json_with_midnight_utc_times_and_the_unexplained_breaks():
+    from athena.warehouse.chart_bars import chart_bars
+
+    w = Warehouse(":memory:")
+    for day, close in {date(2026, 1, 12): 100.0, date(2026, 1, 13): 100.0, date(2026, 1, 14): 20.0, date(2026, 1, 15): 20.0}.items():
+        w.upsert_day(day, {"ACME": row("ACME", close)}, NOW)
+    ingest_actions(w, reply([nse_row("ACME", "14-Jan-2026", "Face Value Split (Sub-Division) - From Rs 10/- Per Share To Rs 2/- Per Share")]), date(2026, 1, 20), NOW, since=date(2026, 1, 1))
+    out = chart_bars(w, "ACME", 3)
+    assert [b["c"] for b in out["bars"]] == [20.0, 20.0, 20.0]  # the three newest, the earlier closes scaled by a fifth
+    assert out["bars"][0]["t"] == 1768262400  # 2026-01-13 00:00 UTC
+    assert out["flags"] == []
+    unexplained = Warehouse(":memory:")
+    for day, close in {date(2026, 1, 12): 100.0, date(2026, 1, 13): 20.0}.items():
+        unexplained.upsert_day(day, {"ACME": row("ACME", close)}, NOW)
+    assert chart_bars(unexplained, "ACME", 10)["flags"] and [b["c"] for b in chart_bars(unexplained, "ACME", 10)["bars"]] == [100.0, 20.0]

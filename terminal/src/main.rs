@@ -171,7 +171,11 @@ async fn main() {
         tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), status.clone(), shutdown.clone()));
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
     }
-    let bars = Arc::new(bars::Bars { warehouse: args.warehouse, intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())) });
+    let bars = Arc::new(bars::Bars {
+        adjusted: bars::AdjustedDaily::python(args.python.clone(), args.warehouse.clone()),
+        warehouse: args.warehouse,
+        intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())),
+    });
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
     let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts };

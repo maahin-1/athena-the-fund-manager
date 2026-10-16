@@ -1,5 +1,6 @@
 import type { Quote } from '../feed';
 import { compact, price } from '../format';
+import { marketState } from '../market';
 import { el, Panel, type AppContext } from './base';
 
 /** Five bids and five asks with a bar for each size, and the last quote's age. */
@@ -18,7 +19,7 @@ export class DepthPanel extends Panel {
   }
 
   protected symbolChanged(symbol: string): void {
-    this.titleEl.textContent = `Depth · ${symbol}`;
+    this.setTitle(`Depth · ${symbol}`);
     this.ctx.feed.need(this.id, [symbol]);
     this.draw(this.ctx.feed.quotes.get(symbol) ?? null);
   }
@@ -47,6 +48,6 @@ export class DepthPanel extends Panel {
       return col;
     };
     this.grid.append(side(q.b, 'bid'), side(q.a, 'ask'));
-    this.note.textContent = q.b.length || q.a.length ? '' : 'no depth (market closed or no orders)';
+    this.note.textContent = q.b.length && q.a.length ? '' : marketState(new Date()).open ? 'no resting orders on one side right now' : 'The market is closed, so the order book is empty or one-sided.';
   }
 }

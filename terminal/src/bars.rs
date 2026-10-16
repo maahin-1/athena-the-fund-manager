@@ -7,13 +7,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use duckdb::{AccessMode, Config, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const CACHE_FOR: Duration = Duration::from_secs(60);
 pub const DEFAULT_LIMIT: usize = 500;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Bar {
     /// Unix seconds. For a daily bar, midnight UTC of the trading date.
     pub t: i64,
@@ -155,9 +155,70 @@ impl Intraday {
     }
 }
 
+/// A stock's daily bars with recorded splits and bonuses applied, what the chart needs so a split is not drawn as a cliff.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Adjusted {
+    pub bars: Vec<Bar>,
+    /// Large overnight price breaks no record explains (inside the last year).
+    #[serde(default)]
+    pub flags: Vec<String>,
+}
+
+pub type AdjustFetcher = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Option<Adjusted>> + Send>> + Send + Sync>;
+
+/// How long an adjusted history is kept. The warehouse changes once a night, and an adjustment needs a Python start (about a second).
+pub const ADJUSTED_FOR: Duration = Duration::from_secs(30 * 60);
+const ADJUST_LIMIT: Duration = Duration::from_secs(25);
+
+/// Adjusted daily bars per stock, computed by the project's own Python (`athena.warehouse.chart_bars`, the same adjustment the
+/// Streamlit charts use) and kept for `ADJUSTED_FOR`. A failure is not cached, so the next request tries again.
+#[derive(Clone)]
+pub struct AdjustedDaily {
+    cache: Arc<Mutex<HashMap<String, (Instant, Arc<Adjusted>)>>>,
+    fetch: AdjustFetcher,
+}
+
+impl AdjustedDaily {
+    pub fn new(fetch: AdjustFetcher) -> Self {
+        AdjustedDaily { cache: Arc::new(Mutex::new(HashMap::new())), fetch }
+    }
+
+    pub fn python(python: String, warehouse: PathBuf) -> Self {
+        Self::new(Arc::new(move |symbol: String| {
+            let (python, warehouse) = (python.clone(), warehouse.clone());
+            Box::pin(async move {
+                let mut cmd = tokio::process::Command::new(python);
+                cmd.args(["-m", "athena.warehouse.chart_bars", &symbol, "--limit", "5000", "--warehouse"])
+                    .arg(&warehouse)
+                    .stdin(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .kill_on_drop(true);
+                let out = tokio::time::timeout(ADJUST_LIMIT, cmd.output()).await.ok()?.ok()?;
+                if !out.status.success() {
+                    return None;
+                }
+                serde_json::from_slice::<Adjusted>(&out.stdout).ok().filter(|a| !a.bars.is_empty())
+            })
+        }))
+    }
+
+    pub async fn get(&self, symbol: &str) -> Option<Arc<Adjusted>> {
+        let key = symbol.to_ascii_uppercase();
+        if let Some((at, hit)) = self.cache.lock().unwrap().get(&key) {
+            if at.elapsed() < ADJUSTED_FOR {
+                return Some(hit.clone());
+            }
+        }
+        let fresh = Arc::new((self.fetch)(key.clone()).await?);
+        self.cache.lock().unwrap().insert(key, (Instant::now(), fresh.clone()));
+        Some(fresh)
+    }
+}
+
 pub struct Bars {
     pub warehouse: PathBuf,
     pub intraday: Intraday,
+    pub adjusted: AdjustedDaily,
 }
 
 #[cfg(test)]
@@ -254,5 +315,48 @@ mod tests {
         assert!(!loading);
         let _ = intraday.get("SBIN", "1m");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod adjusted_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn adjusted() -> Adjusted {
+        Adjusted { bars: vec![Bar { t: 1, o: 1.0, h: 1.0, l: 1.0, c: 1.0, v: 1.0 }], flags: vec![] }
+    }
+
+    #[tokio::test]
+    async fn an_adjusted_history_is_asked_for_once_and_then_kept() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let daily = AdjustedDaily::new(Arc::new(move |_s| {
+            c.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Some(adjusted()) })
+        }));
+        assert!(daily.get("sbin").await.is_some());
+        assert!(daily.get("SBIN").await.is_some());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_failure_is_not_kept_so_the_next_request_tries_again() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let daily = AdjustedDaily::new(Arc::new(move |_s| {
+            let n = c.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move { (n > 0).then(adjusted) })
+        }));
+        assert!(daily.get("SBIN").await.is_none());
+        assert!(daily.get("SBIN").await.is_some());
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn the_python_helper_output_is_read() {
+        let body = br#"{"bars":[{"t":1792108800,"o":1.0,"h":2.0,"l":0.5,"c":1.5,"v":10.0}],"flags":["2026-01-14 (x0.2)"],"notes":["ignored"]}"#;
+        let a: Adjusted = serde_json::from_slice(body).unwrap();
+        assert_eq!((a.bars.len(), a.flags.len()), (1, 1));
     }
 }

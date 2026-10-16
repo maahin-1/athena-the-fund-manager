@@ -45,7 +45,7 @@ html, body { overflow: hidden; }
 .vtab:hover { color: var(--fg); }
 .vtab.on { color: var(--fg); border-bottom-color: var(--label); }
 .brand { color: var(--label); letter-spacing: 0.12em; margin-right: 4px; }
-.btn, .layout-select, .add-select, .rpick, .cmd, .namebox, .picker { background: var(--bg-panel); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 3px 8px; font: inherit; }
+.btn, .layout-select, .add-select, .delete-select, .rpick, .cmd, .namebox, .picker { background: var(--bg-panel); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 3px 8px; font: inherit; }
 .btn { cursor: pointer; }
 .btn:hover, .rbtn:hover { border-color: var(--accent); }
 .cmd { flex: 1 1 160px; min-width: 120px; max-width: 280px; font-family: Consolas, monospace; }
@@ -67,7 +67,7 @@ html, body { overflow: hidden; }
 .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash { height: 9px; margin-top: -4px; background: linear-gradient(var(--border), var(--border)) center / 100% 2px no-repeat; }
 .dv-split-view-container > .dv-sash-container > .dv-sash:hover, .dv-split-view-container > .dv-sash-container > .dv-sash:active { background-color: var(--accent); background-blend-mode: normal; opacity: 0.55; }
 .panel { display: flex; flex-direction: column; height: 100%; background: var(--bg-panel); color: var(--fg); overflow: hidden; }
-.ph { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; border-bottom: 1px solid var(--border); }
+.ph { display: none; } /* the tab already names the panel; the link colour sits on the tab bar */
 .pb { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--fg-dim); background: transparent; cursor: pointer; padding: 0; }
 .dot[data-group='red'] { background: #ef5350; border-color: #ef5350; }
@@ -202,4 +202,26 @@ html, body { overflow: hidden; }
   .rlist { display: none; }
   .rpick { display: inline-block; }
   .rprice { margin-left: 0; }
+}
+
+/* one title row per panel: the link colour dot lives on the group's tab bar */
+.link-dot { font-size: 12px; }
+.link-dot[data-group='none'] { color: var(--fg-dim); }
+.link-dot[data-group='red'] { color: #ef5350; }
+.link-dot[data-group='yellow'] { color: #f0b429; }
+.link-dot[data-group='green'] { color: #26c281; }
+.link-dot[data-group='blue'] { color: #4f9cf9; }
+.tool-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.ichip { background: var(--grid); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; font: inherit; font-size: 11px; cursor: pointer; }
+.ichip:hover { border-color: var(--dn); color: var(--dn); }
+
+/* the watchlist keeps its rows one line high and drops the absolute change when the panel is narrow */
+.panel { container-type: inline-size; }
+.wl .sym { white-space: nowrap; }
+@container (max-width: 300px) {
+  .wl th:nth-child(3), .wl td:nth-child(3) { display: none; }
+}
+@container (max-width: 210px) {
+  .wl th:nth-child(4), .wl td:nth-child(4) { display: none; }
 }

@@ -23,7 +23,7 @@ export class QuotePanel extends Panel {
   }
 
   protected symbolChanged(symbol: string): void {
-    this.titleEl.textContent = `Quote · ${symbol}`;
+    this.setTitle(`Quote · ${symbol}`);
     this.ctx.feed.need(this.id, [symbol]);
     this.draw(this.ctx.feed.quotes.get(symbol) ?? null);
   }

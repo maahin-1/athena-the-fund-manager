@@ -21,7 +21,7 @@ export class VerdictPanel extends Panel {
   }
 
   protected symbolChanged(symbol: string): void {
-    this.titleEl.textContent = `Verdict · ${symbol}`;
+    this.setTitle(`Verdict · ${symbol}`);
     void this.refresh();
   }
 

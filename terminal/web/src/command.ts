@@ -29,6 +29,10 @@ export function parse(input: string, ctx: CommandContext): Command {
   if (words.length === 0) return fail('type a symbol or a command');
   const head = words[0].toUpperCase();
 
+  // an index has a name of several words: NIFTY 50, NIFTY BANK
+  const index = /^(NIFTY(?: [A-Z0-9]+){1,2}?)(?: (CHART|RESEARCH))?$/.exec(words.join(' ').toUpperCase());
+  if (index) return index[2] === 'CHART' ? { kind: 'chart', symbol: index[1] } : index[2] === 'RESEARCH' ? { kind: 'research', symbol: index[1] } : { kind: 'symbol', symbol: index[1] };
+
   if (head === 'ADD' || head === 'REMOVE') {
     const symbol = (words[1] ?? '').toUpperCase();
     if (words.length !== 2 || !SYMBOL.test(symbol)) return fail(`${head} needs one symbol, for example ${head} TCS`);

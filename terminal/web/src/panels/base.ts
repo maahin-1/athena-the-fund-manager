@@ -32,6 +32,8 @@ export interface AppContext {
   state(id: string): PanelState;
   changed(): void; // something worth saving changed
   openResearch(symbol: string): void; // switch to the Research page on this stock
+  retitle(id: string, text: string): void; // the panel's tab shows this
+  linkChanged(id: string): void; // a panel's link colour changed
 }
 
 export const TITLES: Record<PanelType, string> = { watchlist: 'Watchlist', chart: 'Chart', depth: 'Depth', quote: 'Quote', tape: 'Tape', analysis: 'Analysis', verdict: 'Verdict' };
@@ -49,6 +51,7 @@ export abstract class Panel {
   protected body = el('div', 'pb');
   protected titleEl = el('span', 'pt');
   private dot = el('button', 'dot');
+  private shownTitle = '';
   private offLink: (() => void) | null = null;
   private offQuotes: (() => void) | null = null;
   private own: PanelState;
@@ -64,6 +67,26 @@ export abstract class Panel {
     this.dot.addEventListener('click', () => this.setGroup(nextGroup(this.state.group)));
     head.append(this.titleEl, this.dot);
     this.element.append(head, this.body);
+  }
+
+  /** The text on the panel's tab. */
+  protected setTitle(text: string): void {
+    this.shownTitle = text;
+    this.titleEl.textContent = text;
+    this.ctx.retitle(this.id, text);
+  }
+
+  get title(): string {
+    return this.shownTitle;
+  }
+
+  get linkGroup(): Group {
+    return this.state.group;
+  }
+
+  /** The next link colour (called by the colour dot on the group's tab bar). */
+  cycleGroup(): void {
+    this.setGroup(nextGroup(this.state.group));
   }
 
   protected get state(): PanelState {
@@ -111,6 +134,10 @@ export abstract class Panel {
     this.state.group = group;
     this.paintDot();
     this.listenToGroup();
+    // joining a colour means following the symbol that colour already shows
+    const shared = this.ctx.bus.symbolOf(group);
+    if (shared && this.wantsLinkedSymbol() && shared !== this.symbol) this.setSymbol(shared);
+    this.ctx.linkChanged(this.id);
     this.ctx.changed();
   }
 

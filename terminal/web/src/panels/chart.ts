@@ -28,6 +28,7 @@ export class ChartPanel extends Panel {
   private host = el('div', 'chart-host');
   private rangeRow = el('div', 'ranges');
   private picker = el('select', 'picker');
+  private chips = el('div', 'chips');
   private loadToken = 0;
   private repaint = 0;
   private watcher: MutationObserver | null = null;
@@ -71,15 +72,35 @@ export class ChartPanel extends Panel {
       const list = this.state.indicators ?? [];
       this.state.indicators = list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
       this.ctx.changed();
+      this.paintChips();
       this.drawIndicators();
     });
-    toolbar.append(this.rangeRow, this.picker);
+    const tools = el('div', 'tool-right');
+    tools.append(this.chips, this.picker);
+    toolbar.append(this.rangeRow, tools);
+    this.paintChips();
     this.body.append(toolbar, this.legend, this.host, this.note);
     this.body.classList.add('chart-body');
     this.paintRanges();
     this.makeChart();
     this.watcher = new MutationObserver(() => this.applyTheme());
     this.watcher.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  }
+
+  /** The indicators now on the chart, each removable with one click. */
+  private paintChips(): void {
+    this.chips.replaceChildren();
+    for (const name of this.state.indicators ?? []) {
+      const chip = el('button', 'ichip', `${name} ×`);
+      chip.title = `Remove ${name}`;
+      chip.addEventListener('click', () => {
+        this.state.indicators = (this.state.indicators ?? []).filter((x) => x !== name);
+        this.ctx.changed();
+        this.paintChips();
+        this.drawIndicators();
+      });
+      this.chips.append(chip);
+    }
   }
 
   private paintRanges(): void {
@@ -125,7 +146,7 @@ export class ChartPanel extends Panel {
   }
 
   protected symbolChanged(symbol: string): void {
-    this.titleEl.textContent = `${symbol} · ${this.range.label}`;
+    this.setTitle(`Chart · ${symbol} · ${this.range.label}`);
     this.ctx.feed.need(this.id, [symbol]);
     void this.load();
   }
@@ -135,7 +156,7 @@ export class ChartPanel extends Panel {
     if (!symbol || !this.chart || this.disposed) return;
     const token = ++this.loadToken;
     if (attempt === 0) this.tfOverride = null;
-    this.titleEl.textContent = `${symbol} · ${this.range.label}`;
+    this.setTitle(`Chart · ${symbol} · ${this.range.label}`);
     const today = new Date();
     const limit = this.tf === '1D' ? (barLimit(this.range, today) ?? 5000) : 0;
     const url = `/api/bars?symbol=${encodeURIComponent(symbol)}&tf=${this.tf}${limit ? `&limit=${limit}` : ''}`;
@@ -150,7 +171,11 @@ export class ChartPanel extends Panel {
     let bars = body.bars;
     if (this.tf !== '1D' && typeof this.range.bars === 'number') bars = bars.slice(-this.range.bars);
     this.bars = bars;
-    const notes = [this.range.note, body.note === 'warehouse busy' ? 'the warehouse is busy (a build is running); try again in a minute' : ''];
+    const wanted = typeof this.range.bars === 'number' ? this.range.bars : 0;
+    const stored = this.tf === '1D' && wanted >= 252 && bars.length > 0 && bars.length < wanted * 0.9
+      ? `Only ${bars.length} trading days are stored, from ${new Date(bars[0].t * 1000).toISOString().slice(0, 10)}.`
+      : '';
+    const notes = [this.range.note, stored, body.note && body.note !== 'warehouse busy' && body.note !== 'loading' ? body.note : '', body.note === 'warehouse busy' ? 'the warehouse is busy (a build is running); try again in a minute' : ''];
     this.note.textContent = notes.filter(Boolean).join(' ');
     if (body.note === 'loading' && attempt < 6) {
       this.note.textContent = 'loading intraday bars…';

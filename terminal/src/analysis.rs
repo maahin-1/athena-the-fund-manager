@@ -45,12 +45,21 @@ fn screen_row(conn: &Connection, symbol: &str) -> Option<Value> {
 
 /// A packet's metrics as a list `{name, value, unit, window, note, group}`, with its flags and missing names.
 fn packet(conn: &Connection, symbol: &str, kind: &str) -> Option<Value> {
-    let (as_of, payload): (String, String) = conn
-        .query_row("SELECT CAST(data_as_of AS VARCHAR), payload FROM packets WHERE symbol = ? AND kind = ?", [symbol, kind], |r| Ok((r.get(0)?, r.get(1)?)))
+    let (as_of, payload, stored_flags): (String, String, Option<String>) = conn
+        .query_row("SELECT CAST(data_as_of AS VARCHAR), payload, flags FROM packets WHERE symbol = ? AND kind = ?", [symbol, kind], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
         .optional()
         .ok()
         .flatten()?;
     let body: Value = serde_json::from_str(&payload).ok()?;
+    // the build stores the warnings in the `flags` column (price breaks no record explains); the payload may carry its own
+    let mut flags: Vec<Value> = stored_flags.and_then(|t| serde_json::from_str::<Vec<Value>>(&t).ok()).unwrap_or_default();
+    for f in body.get("data_quality_flags").and_then(Value::as_array).cloned().unwrap_or_default() {
+        if !flags.contains(&f) {
+            flags.push(f);
+        }
+    }
     let metrics: Vec<Value> = body["metrics"]
         .as_object()
         .map(|m| {
@@ -61,7 +70,7 @@ fn packet(conn: &Connection, symbol: &str, kind: &str) -> Option<Value> {
         .unwrap_or_default();
     Some(json!({
         "as_of": as_of,
-        "flags": body.get("data_quality_flags").cloned().unwrap_or_else(|| json!([])),
+        "flags": flags,
         "missing": body.get("missing").cloned().unwrap_or_else(|| json!([])),
         "sector": body.get("sector").cloned().unwrap_or(Value::Null),
         "metrics": metrics,
@@ -102,6 +111,26 @@ pub fn analysis(path: &Path, symbol: &str) -> Result<Value, AnalysisError> {
     }))
 }
 
+/// Whether the warehouse knows a symbol: a stock or ETF in the universe, or an index it holds bars for. Lets the page refuse a typo instead of waiting for a quote that never comes.
+pub fn known(path: &Path, symbol: &str) -> Result<Value, AnalysisError> {
+    let conn = connect(path)?;
+    let listed: Option<(String, String)> = conn
+        .query_row("SELECT name, kind FROM universe WHERE symbol = ?", [symbol], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()
+        .map_err(|_| AnalysisError::Busy)?;
+    if let Some((name, kind)) = listed {
+        return Ok(json!({"known": true, "name": name, "kind": kind}));
+    }
+    let index: Option<String> = conn
+        .query_row("SELECT index_name FROM index_bars WHERE lower(index_name) = lower(?) LIMIT 1", [symbol], |r| r.get(0))
+        .optional()
+        .map_err(|_| AnalysisError::Busy)?;
+    Ok(match index {
+        Some(name) => json!({"known": true, "name": name, "kind": "index"}),
+        None => json!({"known": false}),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +158,10 @@ mod tests {
                '{\"metrics\": {\"rsi_14\": {\"value\": 55.5, \"unit\": \"index\", \"window\": \"14 days\"}, \"trend_daily\": {\"value\": \"up\", \"unit\": \"label\"}}, \"missing\": []}'),
                ('SBIN', 'fundamentals', DATE '2026-10-16', now(), '[]',
                '{\"metrics\": {\"pe\": {\"value\": 9.8, \"unit\": \"x\", \"group\": \"valuation\"}}, \"data_quality_flags\": [\"statements are old\"], \"missing\": [\"fcf_yield\"], \"sector\": \"Banks\"}');
+             INSERT INTO packets VALUES ('BRK', 'technical', DATE '2026-10-16', now(), '[\"price break with no recorded action: 2026-02-27 (x0.1)\"]',
+               '{\"metrics\": {}, \"data_quality_flags\": [\"price break with no recorded action: 2026-02-27 (x0.1)\", \"thin trading\"], \"missing\": []}');
+             CREATE TABLE index_bars (index_name VARCHAR, day DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE);
+             INSERT INTO index_bars VALUES ('Nifty 50', DATE '2026-10-16', 1, 2, 0.5, 1.5);
              CREATE TABLE verdicts (symbol VARCHAR, made_at TIMESTAMP, data_as_of DATE, close DOUBLE, annual_period DATE, quarter DATE, payload VARCHAR);
              INSERT INTO verdicts VALUES ('SBIN', TIMESTAMP '2026-10-10 10:00:00', DATE '2026-10-09', 950.0, NULL, NULL, '{\"verdict\": {\"verdict\": \"Hold\", \"conviction\": 10}}'),
                ('SBIN', TIMESTAMP '2026-10-12 10:00:00', DATE '2026-10-12', 955.0, NULL, NULL, '{\"verdict\": {\"verdict\": \"Underweight\", \"conviction\": 5}}');",
@@ -152,6 +185,22 @@ mod tests {
         assert_eq!(a["fundamentals"]["flags"][0], "statements are old");
         assert_eq!(a["fundamentals"]["missing"][0], "fcf_yield");
         assert_eq!(a["verdict"]["payload"]["verdict"]["verdict"], "Underweight"); // the newest of two
+    }
+
+    #[test]
+    fn warnings_stored_in_the_flags_column_are_shown_once_beside_the_payload_ones() {
+        let a = analysis(&warehouse("flags"), "BRK").unwrap();
+        let flags: Vec<&str> = a["technical"]["flags"].as_array().unwrap().iter().map(|f| f.as_str().unwrap()).collect();
+        assert_eq!(flags, vec!["price break with no recorded action: 2026-02-27 (x0.1)", "thin trading"]);
+    }
+
+    #[test]
+    fn a_listed_stock_and_an_index_are_known_and_a_typo_is_not() {
+        let w = warehouse("known");
+        assert_eq!(known(&w, "SBIN").unwrap()["known"], true);
+        assert_eq!(known(&w, "SBIN").unwrap()["name"], "State Bank of India");
+        assert_eq!(known(&w, "NIFTY 50").unwrap()["kind"], "index");
+        assert_eq!(known(&w, "ZZZFAKE").unwrap()["known"], false);
     }
 
     #[test]

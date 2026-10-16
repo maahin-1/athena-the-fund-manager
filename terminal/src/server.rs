@@ -101,9 +101,21 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
     let (bars, source, note) = if tf == "1D" {
         let path = state.bars.warehouse.clone();
         let (sym, limit) = (symbol.clone(), q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 5000));
-        match tokio::task::spawn_blocking(move || daily_bars(&path, &sym, limit)).await {
-            Ok(Ok(bars)) => (bars, "warehouse", ""),
-            _ => (Vec::new(), "warehouse", "warehouse busy"),
+        // a stock's prices are adjusted for splits and bonuses (as Streamlit's were); an index has none, and if the adjustment cannot run the raw bars are shown and say so
+        let adjusted = if symbol.to_ascii_uppercase().starts_with("NIFTY ") { None } else { state.bars.adjusted.get(&symbol).await };
+        match adjusted {
+            Some(a) => {
+                let from = a.bars.len().saturating_sub(limit);
+                let note = if a.flags.is_empty() { String::new() } else { format!("Price breaks no record explains: {}.", a.flags.join(", ")) };
+                return Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": &a.bars[from..], "source": "warehouse, adjusted", "note": note})).into_response();
+            }
+            None => match tokio::task::spawn_blocking(move || daily_bars(&path, &sym, limit)).await {
+                Ok(Ok(bars)) => {
+                    let raw = !symbol.to_ascii_uppercase().starts_with("NIFTY ");
+                    (bars, "warehouse", if raw { "Split and bonus adjustment is unavailable; prices are as printed." } else { "" })
+                }
+                _ => (Vec::new(), "warehouse", "warehouse busy"),
+            },
         }
     } else if yahoo_params(&tf).is_some() {
         let (bars, loading) = state.bars.intraday.get(&symbol, &tf);
@@ -112,6 +124,18 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
         return StatusCode::BAD_REQUEST.into_response();
     };
     Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note})).into_response()
+}
+
+async fn api_known(State(state): State<AppState>, Query(q): Query<SymbolQuery>) -> Response {
+    let symbol = q.symbol.to_ascii_uppercase();
+    if !symbol_ok(&symbol) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let path = state.bars.warehouse.clone();
+    match tokio::task::spawn_blocking(move || crate::analysis::known(&path, &symbol)).await {
+        Ok(Ok(body)) => Json(body).into_response(),
+        _ => (StatusCode::SERVICE_UNAVAILABLE, "the warehouse is busy").into_response(),
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -235,6 +259,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/status", get(api_status))
         .route("/api/bars", get(api_bars))
         .route("/api/analysis", get(api_analysis))
+        .route("/api/known", get(api_known))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
         .route("/api/layouts", get(layouts_list))
@@ -272,7 +297,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let (status, _rx) = watch::channel(FeedStatus::On);
         let fetch: crate::bars::Fetcher = Arc::new(|_s, _t| Box::pin(async { None }));
-        let bars = Arc::new(Bars { warehouse: PathBuf::from("no/such.duckdb"), intraday: crate::bars::Intraday::new(fetch) });
+        let bars = Arc::new(Bars { warehouse: PathBuf::from("no/such.duckdb"), intraday: crate::bars::Intraday::new(fetch), adjusted: crate::bars::AdjustedDaily::new(Arc::new(|_s| Box::pin(async { None }))) });
         let layouts = Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-layouts-{port}"))));
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts };

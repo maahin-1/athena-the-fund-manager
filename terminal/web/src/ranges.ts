@@ -11,7 +11,7 @@ export interface Range {
 export const RANGES: Range[] = [
   { label: '1D', tf: '1m', bars: 375 },
   { label: '5D', tf: '5m', bars: 375 },
-  { label: '1M', tf: '15m', bars: null, note: 'Intraday history is limited to 5 days.' },
+  { label: '1M', tf: '1D', bars: 22 },
   { label: '3M', tf: '1D', bars: 63 },
   { label: '6M', tf: '1D', bars: 126 },
   { label: 'YTD', tf: '1D', bars: 'ytd' },

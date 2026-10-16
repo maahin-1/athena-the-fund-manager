@@ -19,7 +19,7 @@ export class TapePanel extends Panel {
   }
 
   protected build(): void {
-    this.titleEl.textContent = 'Tape';
+    this.setTitle('Tape');
     this.body.append(this.track);
     this.offStore = this.ctx.watchlist.subscribe(() => this.render());
     this.render();

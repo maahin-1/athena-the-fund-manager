@@ -49,11 +49,15 @@ class App implements AppContext {
   private command = el('input', 'cmd');
   private nameBox = el('input', 'namebox');
   private addSelect = el('select', 'add-select');
+  private deleteSelect = el('select', 'delete-select');
   private viewTabs = new Map<View, HTMLButtonElement>();
   private dockHost = el('div', 'dock');
   private research!: ResearchView;
   private view: View = 'terminal';
   private lastPreset: PresetName = 'A';
+  private titles = new Map<string, string>();
+  private headerPaints = new Set<() => void>();
+  private known = new Map<string, boolean>();
 
   state(id: string): PanelState {
     return this.states[id];
@@ -79,7 +83,15 @@ class App implements AppContext {
         return { element: panel.element, init: () => {}, dispose: () => { this.panels.delete(options.id); panel.dispose(); } };
       },
     });
-    this.dock.onDidLayoutChange(() => this.changed());
+    this.dock.onDidLayoutChange(() => {
+      this.changed();
+      this.paintHeaders();
+    });
+    this.dock.onDidActivePanelChange(() => this.paintHeaders());
+    this.dock.onDidAddPanel((p) => {
+      const t = this.titles.get(p.id);
+      if (t) p.api.setTitle(t);
+    });
     this.dock.onDidRemovePanel((p) => {
       delete this.states[p.id];
       this.changed();
@@ -96,6 +108,19 @@ class App implements AppContext {
       /* storage can be blocked */
     }
     this.setView(view === 'research' ? 'research' : 'terminal');
+  }
+
+  retitle(id: string, text: string): void {
+    this.titles.set(id, text);
+    this.dock?.getPanel(id)?.api.setTitle(text);
+  }
+
+  linkChanged(_id: string): void {
+    this.paintHeaders();
+  }
+
+  private paintHeaders(): void {
+    this.headerPaints.forEach((paint) => paint());
   }
 
   openResearch(symbol: string): void {
@@ -128,9 +153,18 @@ class App implements AppContext {
   /** The buttons on the right of each group's tab bar: maximise (fill the window) and float (a window you move and resize). */
   private headerActions(group: DockviewGroupPanel): IHeaderActionsRenderer {
     const element = el('div', 'group-actions');
+    const dot = el('button', 'gbtn link-dot', '●');
+    dot.title = 'Link colour: panels with the same colour follow one symbol (click to change)';
+    dot.addEventListener('click', () => {
+      const id = group.activePanel?.id;
+      if (id) this.panels.get(id)?.cycleGroup();
+    });
     const max = el('button', 'gbtn', '⤢');
     const float = el('button', 'gbtn', '⧉');
     const paint = () => {
+      const id = group.activePanel?.id;
+      dot.dataset.group = (id && this.states[id]?.group) || 'none';
+      dot.hidden = !id || this.states[id]?.type === 'tape';
       const maximized = group.api.isMaximized();
       const floating = group.api.location.type === 'floating';
       max.textContent = maximized ? '⤡' : '⤢';
@@ -150,9 +184,10 @@ class App implements AppContext {
       } else this.dock.addFloatingGroup(group, { width: Math.min(560, this.dockHost.clientWidth - 40), height: Math.min(420, this.dockHost.clientHeight - 40) });
       paint();
     });
-    element.append(max, float);
+    element.append(dot, max, float);
+    this.headerPaints.add(paint);
     paint();
-    return { element, init: paint, dispose: () => {} };
+    return { element, init: paint, dispose: () => this.headerPaints.delete(paint) };
   }
 
   /** A new panel, split off to the right of the one in focus, showing the symbol the blue group follows. */
@@ -303,16 +338,23 @@ class App implements AppContext {
       if (!this.nameBox.hidden) this.nameBox.focus();
     });
     const del = el('button', 'btn', 'Delete');
-    del.title = 'Delete the saved layout chosen in the list';
-    del.addEventListener('click', async () => {
-      const chosen = prompt('Delete which saved layout?', this.saved[0] ?? '');
-      if (chosen && this.saved.includes(chosen)) await this.deleteSaved(chosen);
+    del.title = 'Delete one of your saved layouts';
+    this.deleteSelect.hidden = true;
+    this.deleteSelect.addEventListener('change', async () => {
+      const name = this.deleteSelect.value;
+      this.deleteSelect.hidden = true;
+      if (name && confirm(`Delete the saved layout "${name}"?`)) await this.deleteSaved(name);
+    });
+    del.addEventListener('click', () => {
+      if (!this.saved.length) return this.say('you have no saved layouts to delete');
+      this.deleteSelect.replaceChildren(new Option('Delete which layout?', ''), ...this.saved.map((n) => new Option(n, n)));
+      this.deleteSelect.hidden = !this.deleteSelect.hidden;
     });
     this.command.placeholder = '> symbol or command  (/ to focus)';
     this.command.setAttribute('aria-label', 'command line');
     this.command.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        this.run(this.command.value);
+        void this.run(this.command.value);
         this.command.value = '';
       } else if (e.key === 'Escape') this.command.blur();
     });
@@ -339,13 +381,13 @@ class App implements AppContext {
     });
     for (const [v, label] of [['terminal', 'Terminal'], ['research', 'Research']] as [View, string][]) {
       const b = el('button', 'vtab', label);
-      b.title = v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F5)' : 'Charts, depth and the dockable panels (F5)';
+      b.title = v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F5)' : 'Charts, depth and the dockable panels (F6)';
       b.addEventListener('click', () => this.setView(v));
       this.viewTabs.set(v, b);
     }
     const full = el('button', 'btn', 'Fullscreen');
     full.addEventListener('click', () => (document.fullscreenElement ? void document.exitFullscreen() : void document.documentElement.requestFullscreen()));
-    this.bar.append(el('b', 'brand', 'ATHENA'), ...this.viewTabs.values(), this.layoutSelect, this.addSelect, reset, save, this.nameBox, del, this.command, this.statusLine, this.health, theme, full);
+    this.bar.append(el('b', 'brand', 'ATHENA'), ...this.viewTabs.values(), this.layoutSelect, this.addSelect, reset, save, this.nameBox, del, this.deleteSelect, this.command, this.statusLine, this.health, theme, full);
     this.paintMarket();
     setInterval(() => this.paintMarket(), 30_000);
     this.paintHealth();
@@ -371,7 +413,11 @@ class App implements AppContext {
     let cls = 'bad';
     if (s.socket === 'connecting') [text, cls] = ['● connecting', 'warn'];
     else if (s.socket === 'open') {
-      if (s.feed === 'on') [text, cls] = [`● Angel live${delay}`, 'good'];
+      if (s.feed === 'on') {
+        // the stream can be up while single symbols are served by the delayed exchange poll (only a fault while the market is open)
+        const polled = marketState(new Date()).open ? this.watchlist.items.filter((s2) => this.feed.quotes.get(s2)?.src === 'poll').length : 0;
+        [text, cls] = polled ? [`● Angel live · ${polled} on delayed poll${delay}`, 'warn'] : [`● Angel live${delay}`, 'good'];
+      }
       else if (s.feed === 'connecting') [text, cls] = ['● connecting to the feed', 'warn'];
       else [text, cls] = [`● polled (feed ${s.reason ?? 'off'})${delay}`, 'warn'];
     }
@@ -401,8 +447,26 @@ class App implements AppContext {
 
   // ---- commands and keys ---------------------------------------------------------------------------------------------------------------
 
-  private run(input: string): void {
+  /** Whether the warehouse lists the symbol (a stock, ETF or index). Unknown only when the server says so; a failed lookup lets the symbol through. */
+  private async isKnown(symbol: string): Promise<boolean> {
+    const cached = this.known.get(symbol);
+    if (cached !== undefined) return cached;
+    try {
+      const r = await fetch(`/api/known?symbol=${encodeURIComponent(symbol)}`);
+      if (!r.ok) return true;
+      const ok = ((await r.json()) as { known: boolean }).known;
+      this.known.set(symbol, ok);
+      return ok;
+    } catch {
+      return true;
+    }
+  }
+
+  private async run(input: string): Promise<void> {
     const cmd = parse(input, { layouts: this.saved });
+    if ('symbol' in cmd && typeof cmd.symbol === 'string' && cmd.kind !== 'remove' && !(await this.isKnown(cmd.symbol))) {
+      return this.say(`${cmd.symbol} is not a listed stock, ETF or index`, true);
+    }
     switch (cmd.kind) {
       case 'error':
         return this.say(cmd.message, true);
@@ -464,7 +528,7 @@ class App implements AppContext {
       this.dock.exitMaximizedGroup();
       return;
     }
-    if (e.key === 'F5') {
+    if (e.key === 'F6') {
       e.preventDefault();
       this.setView(this.view === 'terminal' ? 'research' : 'terminal');
       return;

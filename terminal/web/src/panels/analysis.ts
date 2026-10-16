@@ -95,7 +95,7 @@ export class AnalysisPanel extends Panel {
   }
 
   protected symbolChanged(symbol: string): void {
-    this.titleEl.textContent = `Analysis · ${symbol}`;
+    this.setTitle(`Analysis · ${symbol}`);
     const mine = ++this.token;
     this.data = null;
     this.content.textContent = 'loading…';

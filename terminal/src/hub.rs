@@ -103,18 +103,24 @@ impl Hub {
         g.quotes.insert(symbol, Entry { rev, quote, stream_at });
     }
 
-    /// Sorted union of every client's symbols, cut at the streaming cap.
-    pub fn wanted_symbols(&self) -> Vec<String> {
+    /// Sorted union of every client's symbols, however many.
+    fn all_wanted(&self) -> Vec<String> {
         let g = self.0.lock().unwrap();
         let mut all: Vec<String> = g.clients.values().flat_map(|c| c.set.iter().cloned()).collect::<HashSet<_>>().into_iter().collect();
         all.sort();
+        all
+    }
+
+    /// The symbols to stream: the sorted union, cut at the streaming cap.
+    pub fn wanted_symbols(&self) -> Vec<String> {
+        let mut all = self.all_wanted();
         all.truncate(MAX_STREAMED);
         all
     }
 
-    /// Wanted symbols with no streamed quote in the last `FRESH` seconds.
+    /// Wanted symbols with no streamed quote in the last `FRESH` seconds. This includes the ones beyond the streaming cap, which only the poller can serve.
     pub fn stale_symbols(&self, now: Instant) -> Vec<String> {
-        let wanted = self.wanted_symbols();
+        let wanted = self.all_wanted();
         let g = self.0.lock().unwrap();
         wanted
             .into_iter()
@@ -224,6 +230,18 @@ mod tests {
         let many: Vec<String> = (0..80).map(|i| format!("S{i:03}")).collect();
         hub.watch(a, &many);
         assert_eq!(hub.wanted_symbols().len(), MAX_STREAMED);
+    }
+
+    #[test]
+    fn symbols_beyond_the_streaming_cap_are_left_to_the_poller() {
+        let hub = Hub::new();
+        let c = hub.register_client();
+        let many: Vec<String> = (0..MAX_STREAMED + 5).map(|i| format!("S{i:03}")).collect();
+        hub.watch(c, &many);
+        assert_eq!(hub.wanted_symbols().len(), MAX_STREAMED);
+        let stale = hub.stale_symbols(Instant::now());
+        assert_eq!(stale.len(), MAX_STREAMED + 5);
+        assert!(stale.contains(&format!("S{:03}", MAX_STREAMED + 4)));
     }
 
     #[test]

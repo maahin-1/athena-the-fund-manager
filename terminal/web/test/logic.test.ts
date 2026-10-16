@@ -27,6 +27,12 @@ describe('command line', () => {
     expect(parse('mine-1', ctx)).toEqual({ kind: 'layout', name: 'Mine-1' });
     expect(parse('layout nothing', ctx).kind).toBe('error');
   });
+  it('takes an index name of two or three words as one symbol', () => {
+    expect(parse('nifty 50', ctx)).toEqual({ kind: 'symbol', symbol: 'NIFTY 50' });
+    expect(parse('nifty bank chart', ctx)).toEqual({ kind: 'chart', symbol: 'NIFTY BANK' });
+    expect(parse('nifty 50 research', ctx)).toEqual({ kind: 'research', symbol: 'NIFTY 50' });
+    expect(parse('add nifty 50', ctx).kind).toBe('error'); // an index is not a watchlist stock
+  });
   it('opens the research page, on a stock when one is given', () => {
     expect(parse('research', ctx)).toEqual({ kind: 'research', symbol: null });
     expect(parse('research tcs', ctx)).toEqual({ kind: 'research', symbol: 'TCS' });
@@ -116,7 +122,7 @@ describe('layouts', () => {
 describe('ranges', () => {
   it('maps each label to a bar size', () => {
     const tf = Object.fromEntries(RANGES.map((r) => [r.label, r.tf]));
-    expect(tf).toEqual({ '1D': '1m', '5D': '5m', '1M': '15m', '3M': '1D', '6M': '1D', YTD: '1D', '1Y': '1D', '5Y': '1D', All: '1D' });
+    expect(tf).toEqual({ '1D': '1m', '5D': '5m', '1M': '1D', '3M': '1D', '6M': '1D', YTD: '1D', '1Y': '1D', '5Y': '1D', All: '1D' });
   });
   it('computes year-to-date bars from the date', () => {
     const ytd = RANGES.find((r) => r.label === 'YTD')!;
