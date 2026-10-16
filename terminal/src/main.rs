@@ -27,6 +27,7 @@ struct Args {
     port: u16,
     web_dir: PathBuf,
     warehouse: PathBuf,
+    layouts_dir: PathBuf,
 }
 
 fn args() -> Args {
@@ -37,6 +38,7 @@ fn args() -> Args {
         port: 8700,
         web_dir: PathBuf::from("terminal/web/dist"),
         warehouse: PathBuf::from(".athena/warehouse.duckdb"),
+        layouts_dir: PathBuf::from(".athena/terminal/layouts"),
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -56,6 +58,11 @@ fn args() -> Args {
             "--warehouse" => {
                 if let Some(v) = it.next() {
                     out.warehouse = PathBuf::from(v);
+                }
+            }
+            "--layouts-dir" => {
+                if let Some(v) = it.next() {
+                    out.layouts_dir = PathBuf::from(v);
                 }
             }
             "--web-dir" => {
@@ -156,7 +163,7 @@ async fn main() {
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
     }
     let bars = Arc::new(bars::Bars { warehouse: args.warehouse, intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())) });
-    let layouts = Arc::new(layouts::LayoutStore::new(PathBuf::from(".athena/terminal/layouts")));
+    let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();

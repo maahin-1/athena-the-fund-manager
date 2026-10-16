@@ -40,8 +40,10 @@ pub struct Hub(Arc<Mutex<Inner>>);
 pub struct Frame(pub Vec<Quote>);
 
 impl Frame {
+    /// `sm` is the server's clock when the frame was built, so the page can show how long a frame took to arrive.
     pub fn json(&self) -> String {
-        serde_json::json!({"type": "q", "q": self.0}).to_string()
+        let sm = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        serde_json::json!({"type": "q", "sm": sm, "q": self.0}).to_string()
     }
 }
 
@@ -264,6 +266,7 @@ mod tests {
         hub.update(sample("SBIN", 810.0, Source::Stream), Instant::now());
         let v: serde_json::Value = serde_json::from_str(&hub.frame(c).unwrap().json()).unwrap();
         assert_eq!(v["type"], "q");
+        assert!(v["sm"].as_u64().unwrap() > 1_700_000_000_000);
         assert_eq!(v["q"][0]["s"], "SBIN");
         assert_eq!(v["q"][0]["src"], "stream");
     }
