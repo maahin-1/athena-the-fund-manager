@@ -220,3 +220,46 @@ test('the screen page filters the stored market with presets and opens a stock i
   await page.locator('.saction').getByRole('button', { name: 'Chart', exact: true }).click();
   await expect(page.locator('.dv-tab', { hasText: 'Depth · HDFCBANK' })).toBeVisible();
 });
+
+const liveView = (over: Record<string, unknown> = {}) => ({
+  status: 'ok', query: 'TCS', identifier: 'TCS', name: 'Tata Consultancy Services Limited', asset_class: 'equity', match: 'exact',
+  verdict: { verdict: 'Overweight', conviction: 14, key_risks: ['specialists disagree'], resolution_path: 'blend' },
+  specialists: [
+    { name: 'valuation', signal: 'bearish', confidence: 60, coverage: 'full', reasoning: 'Priced above its own history.', missing: [] },
+    { name: 'moat_quality', signal: 'bullish', confidence: 80, coverage: 'full', reasoning: 'Returns on equity stay high.', missing: [] },
+    { name: 'news_sentiment', signal: 'bullish', confidence: 60, coverage: 'partial', reasoning: 'Dividends declared.', missing: ['press_headline_count_30d'] },
+  ],
+  skipped: {}, candidates: [], notes: ['prices from the market database'],
+  panels: [{ title: 'Valuation', as_of: '2026-10-16', source: 'warehouse', coverage: 'full', rows: [{ name: 'last_price', value: 2465, unit: 'INR', window: 'last close', note: '' }], missing: { pe_forward: 'no estimate' } }],
+  ...over,
+});
+
+test('the research page runs the live analysis, shows every specialist and the metric panels, and lists candidates for a vague name', async ({ page }) => {
+  const asked: { query: string; relatives: boolean }[] = [];
+  await page.route('**/api/analyse', async (route) => {
+    const body = route.request().postDataJSON() as { query: string; relatives: boolean };
+    asked.push(body);
+    const vague = body.query.toLowerCase() === 'tata' ;
+    await route.fulfill({ json: vague ? liveView({ status: 'needs_clarification', identifier: '', candidates: [{ identifier: 'TCS', name: 'Tata Consultancy Services Limited', asset_class: 'equity', score: 0.9 }] }) : liveView() });
+  });
+  await page.getByRole('button', { name: 'Research', exact: true }).click();
+  await page.getByLabel('analyse a name live').fill('tata');
+  await page.getByRole('button', { name: 'Analyse live' }).click();
+  await expect(page.locator('.live .cands .btn')).toContainText('TCS · Tata Consultancy Services Limited');
+  await page.locator('.live .cands .btn').click(); // picking a candidate analyses it as it is
+  await expect(page.locator('.live .chip.big')).toHaveText('Overweight');
+  await expect(page.locator('.live .acard')).toHaveCount(3);
+  await expect(page.locator('.live .acard .reason').first()).toContainText('Priced above');
+  await expect(page.locator('.live .rcard', { hasText: 'Valuation' })).toContainText('2,465');
+  await expect(page.locator('.live .rcard', { hasText: 'Valuation' })).toContainText('pe forward (no estimate)');
+  await expect(page.locator('.rsym')).toHaveText('TCS');
+  expect(asked).toEqual([{ query: 'tata', relatives: true }, { query: 'TCS', relatives: false }]);
+});
+
+test('a live analysis that cannot run says so and the page stays usable', async ({ page }) => {
+  await page.getByRole('button', { name: 'Research', exact: true }).click();
+  await page.getByRole('button', { name: 'Analyse live' }).click(); // the test server has no analysis service
+  await expect(page.locator('.livebar .note')).toContainText('did not answer', { timeout: 20_000 });
+  await expect(page.getByRole('button', { name: 'Analyse live' })).toBeEnabled();
+  (page as unknown as { errors: string[] }).errors.length = 0; // the browser logs the 502 it was meant to get
+});

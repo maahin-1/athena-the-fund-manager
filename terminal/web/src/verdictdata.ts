@@ -32,6 +32,9 @@ export interface VerdictFacts {
 const BAND: Record<string, Tone> = { 'Strong Buy': 'up', Buy: 'up', Overweight: 'up', Hold: 'flat', Neutral: 'flat', Underweight: 'dn', Sell: 'dn', 'Strong Sell': 'dn' };
 const SIGNAL: Record<string, Tone> = { bullish: 'up', bearish: 'dn', neutral: 'flat' };
 
+export const toneOfBand = (band: string): Tone => BAND[band] ?? 'flat';
+export const toneOfSignal = (signal: string): Tone => SIGNAL[signal] ?? 'flat';
+
 const words = (s: string) => s.replace(/_/g, ' ');
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : typeof v === 'object' && v ? Object.entries(v).map(([k, why]) => `${k}: ${String(why)}`) : []);
 /** `conflict` maps each side of the argument to the analysts on it: {bullish: ['valuation'], bearish: ['moat_quality']}. */

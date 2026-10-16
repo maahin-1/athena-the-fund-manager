@@ -1,3 +1,4 @@
+mod analyse_worker;
 mod analysis;
 mod angel;
 mod bars;
@@ -178,7 +179,8 @@ async fn main() {
     });
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts };
+    let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))

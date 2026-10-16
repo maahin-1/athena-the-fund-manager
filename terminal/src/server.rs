@@ -33,6 +33,7 @@ pub struct AppState {
     pub bars: Arc<Bars>,
     pub layouts: Arc<LayoutStore>,
     pub verdicts: VerdictJobs,
+    pub analyse: Arc<crate::analyse_worker::AnalyseWorker>,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -124,6 +125,24 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
         return StatusCode::BAD_REQUEST.into_response();
     };
     Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note})).into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct AnalyseBody {
+    query: String,
+    #[serde(default)]
+    relatives: bool,
+}
+
+/// The live analysis of one instrument (all the specialists, as Streamlit's Analyse tab ran them). It calls the language model and can take a minute or more.
+async fn api_analyse(State(state): State<AppState>, Json(body): Json<AnalyseBody>) -> Response {
+    use crate::analyse_worker::AnalyseError;
+    match state.analyse.view(&body.query, body.relatives).await {
+        Ok(view) => Json(view).into_response(),
+        Err(AnalyseError::BadQuery) => StatusCode::BAD_REQUEST.into_response(),
+        Err(AnalyseError::Unavailable) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "the analysis service did not answer; try again"}))).into_response(),
+        Err(AnalyseError::Failed(message)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": message}))).into_response(),
+    }
 }
 
 async fn api_screen(State(state): State<AppState>) -> Response {
@@ -269,6 +288,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/analysis", get(api_analysis))
         .route("/api/known", get(api_known))
         .route("/api/screen", get(api_screen))
+        .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
         .route("/api/layouts", get(layouts_list))
@@ -309,7 +329,8 @@ mod tests {
         let bars = Arc::new(Bars { warehouse: PathBuf::from("no/such.duckdb"), intraday: crate::bars::Intraday::new(fetch), adjusted: crate::bars::AdjustedDaily::new(Arc::new(|_s| Box::pin(async { None }))) });
         let layouts = Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-layouts-{port}"))));
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts };
+        let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());

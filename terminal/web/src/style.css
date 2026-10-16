@@ -251,3 +251,13 @@ html, body { overflow: hidden; }
 .srow { cursor: pointer; }
 .srow:hover { background: var(--grid); }
 .srow.selected { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--grid); }
+
+/* live analysis */
+.livebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 12px; background: var(--bg-bar); border-bottom: 1px solid var(--border); }
+.livebar .cmd { flex: 0 1 280px; }
+.livebar .note.bad { color: var(--dn); }
+.liveslot { padding: 12px 12px 0; }
+.live { border-color: var(--label); }
+.live .rname { margin-bottom: 6px; }
+.live .agrid { margin: 10px 0; }
+.cands { display: flex; flex-wrap: wrap; gap: 6px; }

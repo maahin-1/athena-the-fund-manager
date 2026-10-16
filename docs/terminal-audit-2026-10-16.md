@@ -40,8 +40,8 @@ Method: the real-feed terminal (port 8700, market shut) driven in a browser (Jev
 
 | # | Streamlit had | Terminal has | Status |
 |---|---|---|---|
-| D1 | Analyse a stock: type a ticker, ISIN or name, resolve ambiguity, run all five analysts live with the risk overlay (held back by risk limits), news analyst, at-a-glance panels, key risks, notes | Stored verdicts of four analysts; button makes one | O |
-| D2 | Market screen: six presets (value, quality compounders, momentum, beaten down, dividend payers, liquid large caps), numeric filters, sorting, chosen columns, chart, verdict | nothing | O |
+| D1 | Analyse a stock: type a ticker, ISIN or name, resolve ambiguity, run all five analysts live with the risk overlay (held back by risk limits), news analyst, at-a-glance panels, key risks, notes | Research page, "Analyse live": all five analysts, panels, notes, candidates for a vague name; the risk-profile form is not in yet | **F** (risk form open as D4) |
+| D2 | Market screen: six presets (value, quality compounders, momentum, beaten down, dividend payers, liquid large caps), numeric filters, sorting, chosen columns, chart, verdict | Screen view: presets, filters, sort, row actions (chart and verdict are one click away) | **F** |
 | D3 | Backtest rules and strategies (8 years, blinding check, curves) | nothing (release 4c) | O |
 | D4 | Risk profile form | nothing | O |
 | D5 | Live price block | covered by Watchlist, Quote, Depth, Tape | done |

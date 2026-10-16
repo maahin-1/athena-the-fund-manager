@@ -1,5 +1,6 @@
 import type { Quote } from './feed';
 import { pct, price, signed } from './format';
+import { analyseLive, renderLive, type LiveView } from './live';
 import { loadAnalysis, overviewView, packetView, type AnalysisData } from './panels/analysis';
 import { el, type AppContext } from './panels/base';
 import { readVerdict, type Analyst, type VerdictFacts } from './verdictdata';
@@ -17,6 +18,14 @@ export class ResearchView {
   private body = el('div', 'rbody');
   private nav = el('div', 'rnav');
   private picker = el('select', 'rpick');
+  private liveBox = el('div', 'livebar');
+  private liveInput = el('input', 'cmd');
+  private liveButton = el('button', 'btn', 'Analyse live');
+  private liveStatus = el('span', 'note');
+  private liveSlot = el('div', 'liveslot');
+  private liveViews = new Map<string, LiveView>();
+  private liveTimer: ReturnType<typeof setInterval> | null = null;
+  private liveBusy = false;
   private symbol = '';
   private token = 0;
   private stopJob: (() => void) | null = null;
@@ -38,7 +47,13 @@ export class ResearchView {
       b.addEventListener('click', () => this.body.querySelector(`[data-section="${name}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
       this.nav.append(b);
     }
-    this.main.append(this.title, this.nav, this.body);
+    this.liveInput.placeholder = 'ticker, ISIN or company name';
+    this.liveInput.setAttribute('aria-label', 'analyse a name live');
+    this.liveButton.title = 'Runs every analyst now (including news) and the risk and valuation panels, as the Streamlit Analyse tab did. It calls the language model and takes one to two minutes.';
+    this.liveInput.addEventListener('keydown', (e) => e.key === 'Enter' && void this.runLive(this.liveInput.value.trim(), true));
+    this.liveButton.addEventListener('click', () => void this.runLive(this.liveInput.value.trim() || this.symbol, Boolean(this.liveInput.value.trim())));
+    this.liveBox.append(this.liveInput, this.liveButton, this.liveStatus);
+    this.main.append(this.title, this.nav, this.liveBox, this.liveSlot, this.body);
     this.element.append(this.list, this.main);
     this.offQuotes = ctx.feed.onQuotes((qs) => this.onQuotes(qs));
     this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
@@ -93,9 +108,45 @@ export class ResearchView {
     this.picker.value = this.symbol;
   }
 
+  /** Run the live analysis. A typed name may list related instruments; the current symbol and a picked candidate are analysed as they are. */
+  private async runLive(query: string, relatives: boolean): Promise<void> {
+    if (!query || this.liveBusy) return;
+    this.liveBusy = true;
+    this.liveButton.disabled = true;
+    const started = Date.now();
+    const tick = () => {
+      this.liveStatus.textContent = `Asking the specialists about ${query}… ${Math.round((Date.now() - started) / 1000)} s (one to two minutes; the first run also starts the analysis service)`;
+    };
+    tick();
+    this.liveTimer = setInterval(tick, 1000);
+    const result = await analyseLive(query, relatives);
+    if (this.liveTimer) clearInterval(this.liveTimer);
+    this.liveTimer = null;
+    this.liveBusy = false;
+    this.liveButton.disabled = false;
+    if (!result.ok) {
+      this.liveStatus.textContent = result.error;
+      this.liveStatus.className = 'note bad';
+      return;
+    }
+    this.liveStatus.className = 'note';
+    this.liveStatus.textContent = `Done in ${Math.round((Date.now() - started) / 1000)} s.`;
+    const view = result.view;
+    if (view.identifier) this.liveViews.set(view.identifier, view);
+    this.liveInput.value = '';
+    if (view.status !== 'needs_clarification' && view.identifier && view.identifier !== this.symbol) this.pick(view.identifier);
+    this.showLive(view);
+  }
+
+  private showLive(view: LiveView | undefined): void {
+    this.liveSlot.replaceChildren();
+    if (view) this.liveSlot.append(renderLive(view, (id) => void this.runLive(id, false)));
+  }
+
   private async load(): Promise<void> {
     const mine = ++this.token;
     const symbol = this.symbol;
+    this.showLive(this.liveViews.get(symbol));
     this.title.replaceChildren(el('span', 'rsym', symbol), el('span', 'note', 'loading…'));
     this.body.replaceChildren();
     const d = await loadAnalysis(symbol);
