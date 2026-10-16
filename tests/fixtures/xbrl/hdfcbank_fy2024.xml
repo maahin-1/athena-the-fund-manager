@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xbrli:xbrl xmlns:in-bse-fin="http://www.bseindia.com/xbrl/fin/2019-09-30/in-bse-fin" xmlns:in-bse-fin-roles="http://www.bseindia.com/xbrl/fin/2019-09-30/in-bse-fin-roles" xmlns:in-bse-fin-ent="http://www.bseindia.com/xbrl/fin/2019-09-30/in-bse-fin/in-bse-fin-ent" xmlns:in-bse-fin-type="http://www.bseindia.com/xbrl/fin/2019-09-30/in-bse-fin-types" xmlns:xbrldt="http://xbrl.org/2005/xbrldt" xmlns:nonnum="http://www.xbrl.org/dtr/type/non-numeric" xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:net="http://www.xbrl.org/2009/role/net" xmlns:num="http://www.xbrl.org/dtr/type/numeric" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:iso4217="http://www.xbrl.org/2003/iso4217" xmlns:negated="http://www.xbrl.org/2009/role/negated" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:xl="http://www.xbrl.org/2003/XLink">
+<xbrli:context id="OneD"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">HDFCBANK</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2024-01-01</xbrli:startDate><xbrli:endDate>2024-03-31</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="FourD"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">HDFCBANK</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2024-01-01</xbrli:startDate><xbrli:endDate>2024-03-31</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="OneI"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">HDFCBANK</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2024-03-31</xbrli:instant></xbrli:period></xbrli:context>
+<xbrli:context id="FourI"><xbrli:entity><xbrli:identifier scheme="http://www.nseindia.com/NSESymbol">HDFCBANK</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>2024-03-31</xbrli:instant></xbrli:period></xbrli:context>
+<in-bse-fin:Symbol contextRef="OneD">HDFCBANK</in-bse-fin:Symbol>
+<in-bse-fin:ISIN contextRef="OneD">INE040A01034</in-bse-fin:ISIN>
+<in-bse-fin:DateOfStartOfFinancialYear contextRef="OneD">2023-04-01</in-bse-fin:DateOfStartOfFinancialYear>
+<in-bse-fin:LevelOfRoundingUsedInFinancialStatements contextRef="OneD">Crores</in-bse-fin:LevelOfRoundingUsedInFinancialStatements>
+<in-bse-fin:ReportingQuarter contextRef="OneD">Yearly</in-bse-fin:ReportingQuarter>
+<in-bse-fin:DateOfStartOfReportingPeriod contextRef="OneD">2024-01-01</in-bse-fin:DateOfStartOfReportingPeriod>
+<in-bse-fin:DateOfEndOfReportingPeriod contextRef="OneD">2024-03-31</in-bse-fin:DateOfEndOfReportingPeriod>
+<in-bse-fin:WhetherResultsAreAuditedOrUnaudited contextRef="OneD">Audited</in-bse-fin:WhetherResultsAreAuditedOrUnaudited>
+<in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="OneD">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+<in-bse-fin:InterestEarned contextRef="OneD" unitRef="INR" decimals="-7">794336100000.00</in-bse-fin:InterestEarned>
+<in-bse-fin:OtherIncome contextRef="OneD" unitRef="INR" decimals="-7">449577400000.00</in-bse-fin:OtherIncome>
+<in-bse-fin:Income contextRef="OneD" unitRef="INR" decimals="-7">1243913500000.00</in-bse-fin:Income>
+<in-bse-fin:InterestExpended contextRef="OneD" unitRef="INR" decimals="-7">436915100000.00</in-bse-fin:InterestExpended>
+<in-bse-fin:OperatingExpenses contextRef="OneD" unitRef="INR" decimals="-7">491279100000.00</in-bse-fin:OperatingExpenses>
+<in-bse-fin:ProvisionsOtherThanTaxAndContingencies contextRef="OneD" unitRef="INR" decimals="-7">138105400000.00</in-bse-fin:ProvisionsOtherThanTaxAndContingencies>
+<in-bse-fin:ExceptionalItems contextRef="OneD" unitRef="INR" decimals="-7">-3904900000.00</in-bse-fin:ExceptionalItems>
+<in-bse-fin:ProfitLossFromOrdinaryActivitiesBeforeTax contextRef="OneD" unitRef="INR" decimals="-7">173709000000.00</in-bse-fin:ProfitLossFromOrdinaryActivitiesBeforeTax>
+<in-bse-fin:TaxExpense contextRef="OneD" unitRef="INR" decimals="-7">-2514800000.00</in-bse-fin:TaxExpense>
+<in-bse-fin:ProfitLossFromOrdinaryActivitiesAfterTax contextRef="OneD" unitRef="INR" decimals="-7">176223800000.00</in-bse-fin:ProfitLossFromOrdinaryActivitiesAfterTax>
+<in-bse-fin:ProfitLossForThePeriod contextRef="OneD" unitRef="INR" decimals="-7">176223800000.00</in-bse-fin:ProfitLossForThePeriod>
+<in-bse-fin:ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates contextRef="OneD" unitRef="INR" decimals="-7">176223800000.00</in-bse-fin:ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates>
+<in-bse-fin:PaidUpValueOfEquityShareCapital contextRef="OneD" unitRef="INR" decimals="-7">7596900000.00</in-bse-fin:PaidUpValueOfEquityShareCapital>
+<in-bse-fin:FaceValueOfEquityShareCapital contextRef="OneD" unitRef="INRPerShare" decimals="INF">1.00</in-bse-fin:FaceValueOfEquityShareCapital>
+<in-bse-fin:CET1Ratio contextRef="OneD" unitRef="pure" decimals="INF">0.00</in-bse-fin:CET1Ratio>
+<in-bse-fin:AdditionalTier1Ratio contextRef="OneD" unitRef="pure" decimals="INF">0.00</in-bse-fin:AdditionalTier1Ratio>
+<in-bse-fin:BasicEarningsPerShareBeforeExtraordinaryItems contextRef="OneD" unitRef="INRPerShare" decimals="INF">23.20</in-bse-fin:BasicEarningsPerShareBeforeExtraordinaryItems>
+<in-bse-fin:DilutedEarningsPerShareBeforeExtraordinaryItems contextRef="OneD" unitRef="INRPerShare" decimals="INF">23.12</in-bse-fin:DilutedEarningsPerShareBeforeExtraordinaryItems>
+<in-bse-fin:BasicEarningsPerShareAfterExtraordinaryItems contextRef="OneD" unitRef="INRPerShare" decimals="INF">23.20</in-bse-fin:BasicEarningsPerShareAfterExtraordinaryItems>
+<in-bse-fin:DilutedEarningsPerShareAfterExtraordinaryItems contextRef="OneD" unitRef="INRPerShare" decimals="INF">23.12</in-bse-fin:DilutedEarningsPerShareAfterExtraordinaryItems>
+<in-bse-fin:GrossNonPerformingAssets contextRef="OneD" unitRef="INR" decimals="-7">0.00</in-bse-fin:GrossNonPerformingAssets>
+<in-bse-fin:ReturnOnAssets contextRef="OneD" unitRef="INR" decimals="-7">0.00</in-bse-fin:ReturnOnAssets>
+<in-bse-fin:DateOfStartOfReportingPeriod contextRef="FourD">2023-04-01</in-bse-fin:DateOfStartOfReportingPeriod>
+<in-bse-fin:DateOfEndOfReportingPeriod contextRef="FourD">2024-03-31</in-bse-fin:DateOfEndOfReportingPeriod>
+<in-bse-fin:WhetherResultsAreAuditedOrUnaudited contextRef="FourD">Audited</in-bse-fin:WhetherResultsAreAuditedOrUnaudited>
+<in-bse-fin:NatureOfReportStandaloneConsolidated contextRef="FourD">Consolidated</in-bse-fin:NatureOfReportStandaloneConsolidated>
+<in-bse-fin:InterestEarned contextRef="FourD" unitRef="INR" decimals="-7">2836490200000.00</in-bse-fin:InterestEarned>
+<in-bse-fin:OtherIncome contextRef="FourD" unitRef="INR" decimals="-7">1243457500000.00</in-bse-fin:OtherIncome>
+<in-bse-fin:Income contextRef="FourD" unitRef="INR" decimals="-7">4079947700000.00</in-bse-fin:Income>
+<in-bse-fin:InterestExpended contextRef="FourD" unitRef="INR" decimals="-7">1541385500000.00</in-bse-fin:InterestExpended>
+<in-bse-fin:OperatingExpenses contextRef="FourD" unitRef="INR" decimals="-7">1522693400000.00</in-bse-fin:OperatingExpenses>
+<in-bse-fin:ProvisionsOtherThanTaxAndContingencies contextRef="FourD" unitRef="INR" decimals="-7">250182800000.00</in-bse-fin:ProvisionsOtherThanTaxAndContingencies>
+<in-bse-fin:ExceptionalItems contextRef="FourD" unitRef="INR" decimals="-7">-13844600000.00</in-bse-fin:ExceptionalItems>
+<in-bse-fin:ProfitLossFromOrdinaryActivitiesBeforeTax contextRef="FourD" unitRef="INR" decimals="-7">751841400000.00</in-bse-fin:ProfitLossFromOrdinaryActivitiesBeforeTax>
+<in-bse-fin:TaxExpense contextRef="FourD" unitRef="INR" decimals="-7">111221000000.00</in-bse-fin:TaxExpense>
+<in-bse-fin:ProfitLossFromOrdinaryActivitiesAfterTax contextRef="FourD" unitRef="INR" decimals="-7">640620400000.00</in-bse-fin:ProfitLossFromOrdinaryActivitiesAfterTax>
+<in-bse-fin:ProfitLossForThePeriod contextRef="FourD" unitRef="INR" decimals="-7">640620400000.00</in-bse-fin:ProfitLossForThePeriod>
+<in-bse-fin:ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates contextRef="FourD" unitRef="INR" decimals="-7">640620400000.00</in-bse-fin:ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates>
+<in-bse-fin:PaidUpValueOfEquityShareCapital contextRef="FourD" unitRef="INR" decimals="-7">7596900000.00</in-bse-fin:PaidUpValueOfEquityShareCapital>
+<in-bse-fin:FaceValueOfEquityShareCapital contextRef="FourD" unitRef="INRPerShare" decimals="INF">1.00</in-bse-fin:FaceValueOfEquityShareCapital>
+<in-bse-fin:CET1Ratio contextRef="FourD" unitRef="pure" decimals="INF">0.00</in-bse-fin:CET1Ratio>
+<in-bse-fin:AdditionalTier1Ratio contextRef="FourD" unitRef="pure" decimals="INF">0.00</in-bse-fin:AdditionalTier1Ratio>
+<in-bse-fin:BasicEarningsPerShareBeforeExtraordinaryItems contextRef="FourD" unitRef="INRPerShare" decimals="INF">90.42</in-bse-fin:BasicEarningsPerShareBeforeExtraordinaryItems>
+<in-bse-fin:DilutedEarningsPerShareBeforeExtraordinaryItems contextRef="FourD" unitRef="INRPerShare" decimals="INF">90.01</in-bse-fin:DilutedEarningsPerShareBeforeExtraordinaryItems>
+<in-bse-fin:BasicEarningsPerShareAfterExtraordinaryItems contextRef="FourD" unitRef="INRPerShare" decimals="INF">90.42</in-bse-fin:BasicEarningsPerShareAfterExtraordinaryItems>
+<in-bse-fin:DilutedEarningsPerShareAfterExtraordinaryItems contextRef="FourD" unitRef="INRPerShare" decimals="INF">90.01</in-bse-fin:DilutedEarningsPerShareAfterExtraordinaryItems>
+<in-bse-fin:GrossNonPerformingAssets contextRef="FourD" unitRef="INR" decimals="-7">0.00</in-bse-fin:GrossNonPerformingAssets>
+<in-bse-fin:ReturnOnAssets contextRef="FourD" unitRef="INR" decimals="-7">0.00</in-bse-fin:ReturnOnAssets>
+<in-bse-fin:Capital contextRef="OneI" unitRef="INR" decimals="-7">7596900000.00</in-bse-fin:Capital>
+<in-bse-fin:ReservesAndSurplus contextRef="OneI" unitRef="INR" decimals="-7">4529828400000.00</in-bse-fin:ReservesAndSurplus>
+<in-bse-fin:Deposits contextRef="OneI" unitRef="INR" decimals="-7">23768872800000.00</in-bse-fin:Deposits>
+<in-bse-fin:Borrowings contextRef="OneI" unitRef="INR" decimals="-7">7306154600000.00</in-bse-fin:Borrowings>
+<in-bse-fin:CapitalAndLiabilities contextRef="OneI" unitRef="INR" decimals="-7">40301942600000.00</in-bse-fin:CapitalAndLiabilities>
+<in-bse-fin:CashAndBalancesWithReserveBankOfIndia contextRef="OneI" unitRef="INR" decimals="-7">1787186700000.00</in-bse-fin:CashAndBalancesWithReserveBankOfIndia>
+<in-bse-fin:BalancesWithBanksAndMoneyAtCallAndShortNotice contextRef="OneI" unitRef="INR" decimals="-7">501158400000.00</in-bse-fin:BalancesWithBanksAndMoneyAtCallAndShortNotice>
+<in-bse-fin:Investments contextRef="OneI" unitRef="INR" decimals="-7">10056816300000.00</in-bse-fin:Investments>
+<in-bse-fin:Advances contextRef="OneI" unitRef="INR" decimals="-7">25658914100000.00</in-bse-fin:Advances>
+<in-bse-fin:FixedAssets contextRef="OneI" unitRef="INR" decimals="-7">126037600000.00</in-bse-fin:FixedAssets>
+<in-bse-fin:Assets contextRef="OneI">40301942600000.00</in-bse-fin:Assets>
+<in-bse-fin:CashFlowsFromUsedInOperatingActivities contextRef="FourD" unitRef="INR" decimals="-7">190694000000.00</in-bse-fin:CashFlowsFromUsedInOperatingActivities>
+<in-bse-fin:PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities contextRef="FourD" unitRef="INR" decimals="-7">0.00</in-bse-fin:PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities>
+<in-bse-fin:CashFlowsFromUsedInInvestingActivities contextRef="FourD" unitRef="INR" decimals="-7">53137700000.00</in-bse-fin:CashFlowsFromUsedInInvestingActivities>
+<in-bse-fin:DividendsPaidClassifiedAsFinancingActivities contextRef="FourD" unitRef="INR" decimals="-7">84044200000.00</in-bse-fin:DividendsPaidClassifiedAsFinancingActivities>
+<in-bse-fin:CashFlowsFromUsedInFinancingActivities contextRef="FourD" unitRef="INR" decimals="-7">71986500000.00</in-bse-fin:CashFlowsFromUsedInFinancingActivities>
+<in-bse-fin:IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges contextRef="FourD" unitRef="INR" decimals="-7">315818200000.00</in-bse-fin:IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges>
+<in-bse-fin:IncreaseDecreaseInCashAndCashEquivalents contextRef="FourD" unitRef="INR" decimals="-7">316867600000.00</in-bse-fin:IncreaseDecreaseInCashAndCashEquivalents>
+</xbrli:xbrl>
