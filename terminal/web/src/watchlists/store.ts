@@ -18,7 +18,7 @@ export function serverIO(fetcher: typeof fetch = fetch): WatchlistIO {
   return {
     async load() {
       const r = await fetcher('/api/watchlists');
-      if (r.status === 404) return null;
+      if (r.status === 204 || r.status === 404) return null; // none saved yet
       if (!r.ok) throw new Error(`watchlists: HTTP ${r.status}`);
       return r.json();
     },

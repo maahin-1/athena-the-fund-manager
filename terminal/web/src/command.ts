@@ -2,7 +2,8 @@ export type Command =
   | { kind: 'symbol'; symbol: string }
   | { kind: 'chart'; symbol: string }
   | { kind: 'layout'; name: string }
-  | { kind: 'add'; symbol: string }
+  | { kind: 'add'; symbol: string; list?: string } // to the active watchlist, or to the one named
+  | { kind: 'list'; name: string } // switch watchlist
   | { kind: 'remove'; symbol: string }
   | { kind: 'research'; symbol: string | null } // the Research page, on a stock when one is given
   | { kind: 'fund'; symbol: string | null } // the Fundamentals page, on a stock when one is given
@@ -16,6 +17,7 @@ export interface CommandContext {
 }
 
 const SYMBOL = /^[A-Z0-9&-]{1,20}$/;
+const INDEX_NAME = /^(NIFTY(?: [A-Z0-9]+){1,2}|INDIA VIX)$/;
 const PRESETS = ['A', 'B', 'C', 'D'];
 
 const fail = (message: string): Command => ({ kind: 'error', message });
@@ -37,9 +39,17 @@ export function parse(input: string, ctx: CommandContext): Command {
   if (index) return index[2] === 'CHART' ? { kind: 'chart', symbol: index[1] } : index[2] === 'RESEARCH' ? { kind: 'research', symbol: index[1] } : { kind: 'symbol', symbol: index[1] };
 
   if (head === 'ADD' || head === 'REMOVE') {
-    const symbol = (words[1] ?? '').toUpperCase();
-    if (words.length !== 2 || !SYMBOL.test(symbol)) return fail(`${head} needs one symbol, for example ${head} TCS`);
-    return { kind: head === 'ADD' ? 'add' : 'remove', symbol };
+    const rest = words.slice(1);
+    const to = head === 'ADD' ? rest.findIndex((w) => w.toUpperCase() === 'TO') : -1;
+    const symbol = (to >= 0 ? rest.slice(0, to) : rest).join(' ').toUpperCase();
+    const list = to >= 0 ? rest.slice(to + 1).join(' ') : '';
+    if (!(SYMBOL.test(symbol) || INDEX_NAME.test(symbol))) return fail(`${head} needs one symbol or index, for example ${head} TCS${head === 'ADD' ? ' or ADD TCS TO My list' : ''}`);
+    if (to >= 0 && !list) return fail('ADD ... TO needs a watchlist name');
+    return head === 'ADD' ? { kind: 'add', symbol, ...(list ? { list } : {}) } : { kind: 'remove', symbol };
+  }
+  if (head === 'LIST') {
+    const name = words.slice(1).join(' ');
+    return name ? { kind: 'list', name } : fail('LIST needs a watchlist name, for example LIST Main');
   }
   if (head === 'LAYOUT') {
     const name = layoutNamed(words.slice(1).join(' '), ctx);

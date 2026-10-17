@@ -32,7 +32,12 @@ describe('command line', () => {
     expect(parse('nifty 50', ctx)).toEqual({ kind: 'symbol', symbol: 'NIFTY 50' });
     expect(parse('nifty bank chart', ctx)).toEqual({ kind: 'chart', symbol: 'NIFTY BANK' });
     expect(parse('nifty 50 research', ctx)).toEqual({ kind: 'research', symbol: 'NIFTY 50' });
-    expect(parse('add nifty 50', ctx).kind).toBe('error'); // an index is not a watchlist stock
+    expect(parse('add nifty 50', ctx)).toEqual({ kind: 'add', symbol: 'NIFTY 50' }); // an index may be in a watchlist
+    expect(parse('add tcs to My list', ctx)).toEqual({ kind: 'add', symbol: 'TCS', list: 'My list' });
+    expect(parse('add tcs to', ctx).kind).toBe('error');
+    expect(parse('list Main', ctx)).toEqual({ kind: 'list', name: 'Main' });
+    expect(parse('list', ctx).kind).toBe('error');
+    expect(parse('remove nifty bank', ctx)).toEqual({ kind: 'remove', symbol: 'NIFTY BANK' });
   });
   it('opens the research page, on a stock when one is given', () => {
     expect(parse('research', ctx)).toEqual({ kind: 'research', symbol: null });

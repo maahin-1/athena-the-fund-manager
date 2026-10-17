@@ -15,6 +15,7 @@ terminal/target/
 terminal/web/node_modules/
 terminal/web/dist/
 terminal/web/e2e-layouts/
+terminal/web/e2e-data/
 terminal/web/test-results/
 terminal/web/playwright-report/
 terminal/web/e2e-fund/

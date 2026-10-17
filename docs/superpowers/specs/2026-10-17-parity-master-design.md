@@ -189,3 +189,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Still open:** the Jio Financial history question (a Reliance demerger, parked by the user for the inconsistencies pass); tick recording and the bar volume profile (need a market session); watchlists with live indices (5e); the rest of the chart types (Kagi, point and figure, high-low, volume candles) and custom intervals beyond these; drawing tools (5d); full-market ingest and shareholding runs (manual, long).
 
+## 15. Watchlists and live indices (2026-10-18)
+
+**Built (5e, first slice):** many named watchlists with sections, flags, columns, sorting, drag reorder and text import and export, kept on the server; live values for every NSE index from the exchange's all-indices snapshot, shown in watchlists and in a top-bar strip. Design: `2026-10-18-watchlists-live-indices-design.md`; plan: `../plans/2026-10-18-watchlists-live-indices.md`. Checked against the real exchange: the snapshot returns the 16 October close with the market shut.
+
+**Decided:** the lists are one document on the server (they survive layout changes and browsers); index rows are normal symbols in a list, recognised by name (`NIFTY ...`, `INDIA VIX`); the exchange's own snapshot is the index source (no key, one request, 140 indices).
+
+**Next in this track (5e-2):** the symbol details panel (performance 1W to 1Y and year to date, seasonals, technicals gauge, key facts from the statements), the advanced view with fundamentals columns, alerts on a list (5g), BSE indices.
+

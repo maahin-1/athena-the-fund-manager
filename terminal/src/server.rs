@@ -290,6 +290,7 @@ const WATCHLISTS: &str = "watchlists";
 async fn watchlists_get(State(state): State<AppState>) -> Response {
     match state.lists.get(WATCHLISTS) {
         Ok(body) => ([("content-type", "application/json")], body).into_response(),
+        Err(LayoutError::Missing) => StatusCode::NO_CONTENT.into_response(), // none saved yet is not an error: the browser would log a 404
         Err(e) => layout_status(e).into_response(),
     }
 }
@@ -515,7 +516,7 @@ mod tests {
         let client = reqwest::Client::new();
         let origin = format!("http://127.0.0.1:{port}");
         let url = format!("http://127.0.0.1:{port}/api/watchlists");
-        assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().status(), 404);
+        assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().status(), 204);
         assert_eq!(client.put(&url).header("Origin", &origin).body(r#"{"version":1,"lists":[]}"#).send().await.unwrap().status(), 204);
         let got = client.get(&url).header("Origin", &origin).send().await.unwrap();
         assert_eq!(got.text().await.unwrap(), r#"{"version":1,"lists":[]}"#);

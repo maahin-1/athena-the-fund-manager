@@ -56,3 +56,10 @@
 **Files:** create `terminal/web/e2e/watchlists.spec.ts`; modify TRD, master design, memory.
 - [ ] Playwright: new list, section, flag, reorder, export text, reload keeps it; index rows have values; offline fallback.
 - [ ] Rebuild exe + web, run `cargo test`, vitest, full Playwright; `graphify update .`; commit.
+
+## As built
+- Tasks 1 to 7 done. `GET /api/watchlists` answers 204 (not 404) when none is saved, because the browser logs a 404 as a console error and the end-to-end tests fail on any console error.
+- The end-to-end server now keeps its layouts and lists under `terminal/web/e2e-data/` (wiped by the seed step each run); before this, `--layouts-dir e2e-layouts` would have put the lists in the repository folder.
+- Tests: 92 Rust (3 snapshot, 2 routes), 168 web unit (23 model, 10 store, 3 feed, commands), 35 Playwright (7 new).
+- Not done here (next slice): details panel, advanced view, list alerts, BSE indices.
+

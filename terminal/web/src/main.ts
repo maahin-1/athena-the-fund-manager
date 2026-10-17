@@ -16,6 +16,7 @@ import { ScreenView } from './screen';
 import { el, TITLES, type AppContext, type Panel } from './panels/base';
 import { IndexFeed } from './indices';
 import { pct, price } from './format';
+import { activeList, addSymbol, findList, setActive } from './watchlists/model';
 import { serverIO, WatchlistsStore } from './watchlists/store';
 import { AnalysisPanel } from './panels/analysis';
 import { ChartPanel } from './panels/chart';
@@ -518,10 +519,19 @@ class App implements AppContext {
     switch (cmd.kind) {
       case 'error':
         return this.say(cmd.message, true);
-      case 'add':
-        this.watchlist.add(cmd.symbol);
+      case 'add': {
+        const target = cmd.list ? findList(this.watchlist.doc, cmd.list) : activeList(this.watchlist.doc);
+        if (!target) return this.say(`no watchlist named "${cmd.list}"; LIST <name> switches, the list menu in the watchlist panel makes one`, true);
+        this.watchlist.update((d) => addSymbol(d, cmd.symbol, target.id));
         this.changed();
-        return this.say(`added ${cmd.symbol}`);
+        return this.say(`added ${cmd.symbol} to ${target.name}`);
+      }
+      case 'list': {
+        const target = findList(this.watchlist.doc, cmd.name);
+        if (!target) return this.say(`no watchlist named "${cmd.name}"`, true);
+        this.watchlist.update((d) => setActive(d, target.id));
+        return this.say(`watchlist ${target.name}`);
+      }
       case 'remove':
         this.watchlist.remove(cmd.symbol);
         this.changed();

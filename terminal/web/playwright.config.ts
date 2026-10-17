@@ -9,7 +9,7 @@ export default defineConfig({
   workers: 1,
   use: { baseURL: 'http://127.0.0.1:8701', channel: 'chrome', viewport: { width: 1600, height: 900 } },
   webServer: {
-    command: '..\\target\\debug\\athena-terminal.exe --fake-feed --port 8701 --web-dir dist --warehouse ..\\..\\.athena\\warehouse.duckdb --layouts-dir e2e-layouts --fund-store e2e-fund\\f.duckdb --fund-python ..\\..\\.venv\\Scripts\\python.exe',
+    command: '..\\target\\debug\\athena-terminal.exe --fake-feed --port 8701 --web-dir dist --warehouse ..\\..\\.athena\\warehouse.duckdb --layouts-dir e2e-data\\layouts --fund-store e2e-fund\\f.duckdb --fund-python ..\\..\\.venv\\Scripts\\python.exe',
     url: 'http://127.0.0.1:8701/',
     reuseExistingServer: false,
     timeout: 30_000,

@@ -121,6 +121,7 @@ describe('WatchlistsStore', () => {
   it('serverIO reads 404 as nothing saved and any other failure as an error', async () => {
     const status = (code: number, body: unknown = {}) => (async () => new Response(JSON.stringify(body), { status: code })) as unknown as typeof fetch;
     expect(await serverIO(status(404)).load()).toBeNull();
+    expect(await serverIO((async () => new Response(null, { status: 204 })) as unknown as typeof fetch).load()).toBeNull();
     expect(await serverIO(status(200, { a: 1 })).load()).toEqual({ a: 1 });
     await expect(serverIO(status(500)).load()).rejects.toThrow(/500/);
     await expect(serverIO(status(413)).save('{}')).rejects.toThrow(/413/);
