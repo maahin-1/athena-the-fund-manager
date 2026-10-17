@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
+import requests
 
 from athena.contracts import AthenaError
 from athena.pit.nse_results import RETRY_WAITS, FilingRef, FilingStore, NseResults
@@ -188,7 +189,10 @@ class FakeSession:
         self.calls.append(url)
         if url.endswith("nseindia.com"):
             return FakeResponse(403)
-        return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
 
 ROWS = [
@@ -286,3 +290,13 @@ def test_a_diluted_line_left_at_zero_falls_back_to_the_basic_line():
     ))
     assert filing.income["Diluted EPS"] == 31.14
     assert filing.cumulative["Diluted EPS"] == 115.19
+
+
+def test_a_timeout_is_retried_after_the_waits_and_a_lasting_one_is_an_error_not_a_crash():
+    results, _, sleeps = client([requests.ReadTimeout("slow"), FakeResponse(payload=ROWS), FakeResponse(payload=[])])
+    assert len(results.filings("ACME")) == 2
+    assert [s for s in sleeps if s in RETRY_WAITS] == [RETRY_WAITS[0]]
+    dead, _, waits = client([requests.ReadTimeout("slow")])
+    with pytest.raises(AthenaError, match="NSE results unavailable for ACME: ReadTimeout"):
+        dead.filings("ACME")
+    assert [s for s in waits if s in RETRY_WAITS] == list(RETRY_WAITS)

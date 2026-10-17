@@ -107,3 +107,11 @@ def test_one_list_failing_keeps_the_other_and_a_refusal_stops_the_run(tmp_path):
     assert "BLOCKED" in out.getvalue()
     with FundamentalsStore(path) as store:
         assert store.run("TCS#docs")["status"] == "blocked"
+
+
+def test_a_company_with_nothing_listed_is_stored_as_empty_without_an_error(tmp_path):
+    path = tmp_path / "f.duckdb"
+    report = documents.ingest_symbol(TCS, FakeResults([], []), path)
+    assert report.failed == 0
+    with FundamentalsStore(path) as store:
+        assert store.documents("TCS", "annual_report") == []

@@ -104,19 +104,17 @@ class FundamentalsStore:
     def save_holding(self, symbol: str, holding: Holding, url: str, filed: datetime) -> None:
         """Store one quarter's pattern, replacing what was held for that symbol and quarter."""
         self._con.execute("DELETE FROM shareholding WHERE symbol = ? AND period_end = ?", [symbol, holding.period_end])
-        self._con.executemany(
-            "INSERT INTO shareholding VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [(symbol, holding.period_end, key, g.shares, g.holders, url, _utc(filed)) for key, g in holding.groups.items()],
-        )
+        rows = [(symbol, holding.period_end, key, g.shares, g.holders, url, _utc(filed)) for key, g in holding.groups.items()]
+        if rows:
+            self._con.executemany("INSERT INTO shareholding VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
 
     def save_documents(self, symbol: str, kinds: Sequence[str], docs: Sequence[Any]) -> None:
         """Replace the symbol's documents of these kinds with `docs` (what the exchange lists now is what is kept)."""
         for kind in kinds:
             self._con.execute("DELETE FROM documents WHERE symbol = ? AND kind = ?", [symbol, kind])
-        self._con.executemany(
-            "INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [(symbol, d.kind, d.title, d.category, _utc(d.published), d.url, d.size) for d in docs if d.kind in kinds],
-        )
+        rows = [(symbol, d.kind, d.title, d.category, _utc(d.published), d.url, d.size) for d in docs if d.kind in kinds]
+        if rows:
+            self._con.executemany("INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
 
     def record_filing(
         self, url: str, symbol: str, basis: str, period_end: date, annual: bool, filed: datetime, status: str, error: str = ""

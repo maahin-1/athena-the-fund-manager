@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import requests
+
 from athena.contracts import AthenaError
 from athena.pit.xbrl import Filing, parse_filing
 from athena.price_integrity.nse_actions import HEADERS, HOME, TIMEOUT
@@ -60,6 +62,7 @@ class NseResults:
     def _get(self, url: str, params: dict | None = None):
         """One request, spaced from the last, retried after a pause when the exchange refuses (503, 403, 429). A refusal that
         outlasts the retries is an `AthenaError`: the caller reports it and carries on, and nothing is guessed."""
+        problem = "no reply"
         for wait in (0.0, *RETRY_WAITS):
             if wait:
                 self._sleep(wait)
@@ -71,12 +74,17 @@ class NseResults:
                 self._session.get(HOME, timeout=TIMEOUT)  # cookies; its own status does not matter
                 self._primed = True
             self._last = self._clock()
-            response = self._session.get(url, params=params, timeout=TIMEOUT)
+            try:
+                response = self._session.get(url, params=params, timeout=TIMEOUT)
+            except requests.RequestException as exc:  # a timeout or a dropped connection: wait, then try again
+                problem = f"{type(exc).__name__}"
+                continue
             if response.status_code == 200:
                 return response
+            problem = f"HTTP {response.status_code}"
             if response.status_code not in (403, 429, 503):
                 break
-        raise AthenaError(f"HTTP {response.status_code}")
+        raise AthenaError(problem)
 
     def filings(self, symbol: str) -> list[FilingRef]:
         refs: list[FilingRef] = []
