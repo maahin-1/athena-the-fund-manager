@@ -81,6 +81,7 @@ def write_workbook(doc: dict[str, Any], path: str | Path) -> None:
     _grid(book.create_sheet("Balance Sheet"), "Rs crore", annual["ends"], annual["balance"])
     _grid(book.create_sheet("Cash Flow"), "Rs crore", annual["ends"], annual["cashflow"])
     _grid(book.create_sheet("Ratios"), "Ratio", doc["ratios"]["ends"], [*doc["ratios"]["rows"], *annual["banking"]], how=True)
+    _grid(book.create_sheet("Shareholding"), "Percent of shares", doc["shareholding"]["ends"], doc["shareholding"]["rows"])
     book.save(str(path))
 
 

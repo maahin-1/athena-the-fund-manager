@@ -14,7 +14,7 @@ from datetime import date
 from typing import Any
 
 from athena.contracts import AthenaError
-from athena.fundamentals import history, ratios
+from athena.fundamentals import history, ratios, shareholding
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore, open_read
 
 QUARTERS_SHOWN = 13
@@ -63,6 +63,7 @@ RATIO_ROWS = (
     ("cfo_to_ebitda", "CFO / EBITDA %", "operating cash flow / operating profit"),
     ("credit_deposit", "Credit / Deposit %", "advances / deposits"),
 )
+HOLDING_ORDER = ("promoters", "fii", "dii", "government", "public", "mutual_funds", "insurance", "banks", "pension_funds", "retail", "employee_trusts")
 GROWTH = (("sales", "Compounded Sales Growth"), ("net_profit", "Compounded Profit Growth"))
 
 
@@ -147,6 +148,27 @@ def _key_figures(layout: str, price: float | None, shares: float | None, quarter
     return out
 
 
+def _shareholding(held: dict[date, dict[str, tuple[float, float | None]]]) -> dict[str, Any]:
+    """Each holder group's share of the company in percent, by quarter (oldest first), and the number of shareholders. A group a quarter does not
+    report is None."""
+    ends = sorted(held)[-QUARTERS_SHOWN:]
+    rows: list[dict[str, Any]] = []
+
+    def percent(end: date, key: str) -> float | None:
+        total, group = held[end].get("total"), held[end].get(key)
+        return group[0] / total[0] * 100 if total and total[0] and group else None
+
+    for key in HOLDING_ORDER:
+        values = [percent(e, key) for e in ends]
+        if any(v is not None for v in values):
+            rows.append({"key": key, "label": shareholding.LABELS[key], "values": values})
+        if key == "public":  # the number of shareholders sits under the main groups
+            holders = [held[e]["total"][1] if "total" in held[e] else None for e in ends]
+            if any(v is not None for v in holders):
+                rows.append({"key": "holders", "label": "No. of Shareholders", "values": holders})
+    return {"ends": [_iso(e) for e in ends], "rows": rows}
+
+
 def build_page(
     store: FundamentalsStore, symbol: str, basis: str, price: float | None, price_note: str = "", table: dict[str, tuple[history.Predecessor, ...]] | None = None
 ) -> dict[str, Any]:
@@ -211,6 +233,7 @@ def build_page(
         },
         "ratios": {"ends": [_iso(e) for e in years], "rows": ratio_rows},
         "growth": growth,
+        "shareholding": _shareholding(history.holdings(store, symbol, table)),
         "coverage": {"periods": coverage["periods"], "first": _iso(coverage["first"]), "last": _iso(coverage["last"])} if coverage else None,
         "gaps": gaps,
     }

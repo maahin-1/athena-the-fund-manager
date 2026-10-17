@@ -175,3 +175,22 @@ def test_the_successions_form_chains_oldest_first_and_a_loop_cannot_hang():
     table = {"C": (Predecessor("B", ""),), "B": (Predecessor("A", ""),), "A": (Predecessor("C", ""),)}
     assert [p.symbol for p in chain("C", table)] == ["A", "B"]
     assert chain("NOBODY", table) == []
+
+
+def test_the_shareholding_section_gives_percentages_by_quarter_and_the_number_of_shareholders():
+    from athena.fundamentals.shareholding import parse_shareholding
+
+    shp = Path(__file__).parent / "fixtures" / "shp"
+    with stored("tcs_fy2024") as store:
+        for name, stamp in (("tcs_2024", 10), ("tcs_2026", 11)):
+            store.save_holding("TCS", parse_shareholding((shp / f"{name}.xml").read_text(encoding="utf-8")), f"shp-{name}", datetime(2026, 7, stamp, tzinfo=timezone.utc))
+        doc = page.build_page(store, "TCS", "consolidated", None)
+        bare = page.build_page(stored("tcs_fy2020"), "TCS", "consolidated", None)
+    s = doc["shareholding"]
+    assert s["ends"] == ["2024-03-31", "2026-06-30"]
+    rows = {r["key"]: r["values"] for r in s["rows"]}
+    assert rows["promoters"] == [pytest.approx(71.77, abs=0.01)] * 2
+    assert rows["fii"] == [pytest.approx(12.70, abs=0.01), pytest.approx(9.06, abs=0.01)]
+    assert rows["holders"] == [2203209.0, 2605182.0]
+    assert [r["key"] for r in s["rows"]][:6] == ["promoters", "fii", "dii", "government", "public", "holders"]
+    assert bare["shareholding"] == {"ends": [], "rows": []}  # nothing stored is shown as nothing, not as zeros

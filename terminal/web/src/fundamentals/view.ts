@@ -7,7 +7,7 @@ import type { FundPage } from './model';
 import { growthBlocks, keyBlocks, tableFrom, type Table } from './tables';
 
 const LINK_GROUP = 'blue' as const; // the page follows the blue link group, like the Research page
-const SECTIONS = ['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios'] as const;
+const SECTIONS = ['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding'] as const;
 type Basis = 'consolidated' | 'standalone';
 
 export interface ViewOptions {
@@ -169,6 +169,7 @@ export class FundamentalsView {
       this.section('Balance Sheet', drawTable(tableFrom(page.annual.ends, page.annual.balance)), page.annual.balance.length > 0),
       this.section('Cash Flows', drawTable(tableFrom(page.annual.ends, page.annual.cashflow)), page.annual.cashflow.length > 0),
       this.section('Ratios', drawTable(tableFrom(page.ratios.ends, [...page.ratios.rows, ...page.annual.banking])), page.ratios.rows.length + page.annual.banking.length > 0),
+      this.section('Shareholding', drawTable(tableFrom(page.shareholding?.ends ?? [], page.shareholding?.rows ?? [])), (page.shareholding?.rows.length ?? 0) > 0),
     );
     this.body.append(this.footer(page));
     this.paintLive(this.ctx.feed.quotes.get(page.symbol));

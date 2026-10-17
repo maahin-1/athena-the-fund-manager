@@ -14,6 +14,7 @@ import duckdb
 from athena.contracts import AthenaError
 from athena.fundamentals import lines as spec
 from athena.fundamentals.rows import Statements
+from athena.fundamentals.shareholding import Holding
 
 DEFAULT_PATH = Path(".athena") / "fundamentals.duckdb"
 SCHEMA = (
@@ -22,6 +23,7 @@ SCHEMA = (
     " status TEXT, error TEXT, fetched TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS statement_lines (symbol TEXT, basis TEXT, statement TEXT, period_start DATE, period_end DATE, key TEXT,"
     " value DOUBLE, filing_url TEXT, filed TIMESTAMP, source TEXT)",
+    "CREATE TABLE IF NOT EXISTS shareholding (symbol TEXT, period_end DATE, category TEXT, shares DOUBLE, holders DOUBLE, filing_url TEXT, filed TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS ingest_runs (symbol TEXT PRIMARY KEY, status TEXT, finished TIMESTAMP, filings INTEGER, error TEXT,"
     " blocked_until TIMESTAMP)",
 )
@@ -98,6 +100,14 @@ class FundamentalsStore:
         """Drop every row a filing gave, so it can be read again with a changed mapping."""
         self._con.execute("DELETE FROM statement_lines WHERE filing_url = ?", [url])
 
+    def save_holding(self, symbol: str, holding: Holding, url: str, filed: datetime) -> None:
+        """Store one quarter's pattern, replacing what was held for that symbol and quarter."""
+        self._con.execute("DELETE FROM shareholding WHERE symbol = ? AND period_end = ?", [symbol, holding.period_end])
+        self._con.executemany(
+            "INSERT INTO shareholding VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(symbol, holding.period_end, key, g.shares, g.holders, url, _utc(filed)) for key, g in holding.groups.items()],
+        )
+
     def record_filing(
         self, url: str, symbol: str, basis: str, period_end: date, annual: bool, filed: datetime, status: str, error: str = ""
     ) -> None:
@@ -125,6 +135,15 @@ class FundamentalsStore:
             [symbol, basis, statement],
         ).fetchall():
             out.setdefault((start, end), {})[key] = value
+        return out
+
+    def holdings(self, symbol: str) -> dict[date, dict[str, tuple[float, float | None]]]:
+        """Each stored quarter's holder groups as `(shares, holders)`, by quarter end."""
+        out: dict[date, dict[str, tuple[float, float | None]]] = {}
+        for end, key, shares, holders in self._con.execute(
+            "SELECT period_end, category, shares, holders FROM shareholding WHERE symbol = ? ORDER BY period_end", [symbol]
+        ).fetchall():
+            out.setdefault(end, {})[key] = (shares, holders)
         return out
 
     def bases(self, symbol: str) -> list[str]:

@@ -33,6 +33,8 @@ export interface FundPage {
   annual: { ends: string[]; income: Row[]; balance: Row[]; cashflow: Row[]; banking: Row[] };
   ratios: { ends: string[]; rows: Row[] };
   growth: GrowthTable[];
+  /** Each holder group's share in percent by quarter, and the number of shareholders. */
+  shareholding: { ends: string[]; rows: Row[] };
   coverage: { periods: number; first: string; last: string } | null;
   gaps: string[];
   /** Earlier symbols of this company whose periods are included, each with what changed. */

@@ -22,9 +22,12 @@ type Formatter = (value: number | null) => string;
 
 const percent: Formatter = (v) => fmtPct(v, 1);
 const ratio: Formatter = (v) => fmtPlain(v, 2);
+const share: Formatter = (v) => fmtPct(v, 2);
 const days: Formatter = (v) => fmtPlain(v, 0);
 const FORMATS: Record<string, Formatter> = {
   opm: percent, tax_pct: percent, roe: percent, roce: percent, cfo_to_ebitda: percent, credit_deposit: percent,
+  promoters: share, fii: share, dii: share, government: share, public: share, mutual_funds: share, insurance: share, banks: share, pension_funds: share, retail: share,
+  employee_trusts: share, holders: (v) => fmtPlain(v, 0),
   cet1: percent, at1: percent, roa: percent, gross_npa: percent,
   eps: ratio, interest_cover: ratio, debt_to_equity: ratio,
   debtor_days: days, inventory_days: days, days_payable: days, cash_conversion_cycle: days, working_capital_days: days,

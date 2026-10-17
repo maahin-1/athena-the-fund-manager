@@ -155,7 +155,7 @@ def test_a_company_with_one_unreadable_filing_is_partial_and_resume_tries_it_aga
     good = (FIXTURES / "tcs_fy2024.xml").read_text(encoding="utf-8")
     results = FakeResults([ref(date(2024, 3, 31), True, url="good"), ref(date(2023, 3, 31), True, url="gone")], {"good": good, "gone": AthenaError("HTTP 404")})
     path = tmp_path / "f.duckdb"
-    kwargs = dict(resume=True, max_age_days=30, limit=None, quarters=13, standalone=False, out=io.StringIO())
+    kwargs = dict(resume=True, max_age_days=30, limit=None, quarters=13, standalone=False, out=io.StringIO(), cache_dir=tmp_path / "cache")
     ingest.run([TCS], results, path, **kwargs)
     with FundamentalsStore(path) as store:
         assert store.run("TCS")["status"] == "partial"

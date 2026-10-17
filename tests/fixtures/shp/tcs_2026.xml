@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:in-bse-shp="http://www.bseindia.com/xbrl/shp/2025-10-31/in-bse-shp" xmlns:in-bse-shp-types="http://www.bseindia.com/xbrl/shp/2025-10-31/in-bse-shp-types" xmlns:iso4217="http://www.xbrl.org/2003/iso4217" xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:negated="http://www.xbrl.org/2009/role/negated" xmlns:net="http://www.xbrl.org/2009/role/net" xmlns:nonnum="http://www.xbrl.org/dtr/type/non-numeric" xmlns:num="http://www.xbrl.org/dtr/type/numeric" xmlns:xbrldi="http://xbrl.org/2006/xbrldi" xmlns:xbrldt="http://xbrl.org/2005/xbrldt" xmlns:xl="http://www.xbrl.org/2003/XLink" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<in-bse-shp:Symbol contextRef="MainD">TCS</in-bse-shp:Symbol>
+<in-bse-shp:ISIN contextRef="MainD">INE467B01029</in-bse-shp:ISIN>
+<in-bse-shp:DateOfReport contextRef="MainI">2026-06-30</in-bse-shp:DateOfReport>
+<in-bse-shp:NumberOfShareholders contextRef="ShareholdingOfPromoterAndPromoterGroup_ContextI" decimals="INF" unitRef="pure">5</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="ShareholdingOfPromoterAndPromoterGroup_ContextI" decimals="INF" unitRef="shares">2596558628</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="MutualFundsOrUTI_ContextI" decimals="INF" unitRef="pure">43</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="MutualFundsOrUTI_ContextI" decimals="INF" unitRef="shares">205454535</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="Banks_ContextI" decimals="INF" unitRef="pure">14</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="Banks_ContextI" decimals="INF" unitRef="shares">388213</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="InsuranceCompanies_ContextI" decimals="INF" unitRef="pure">49</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="InsuranceCompanies_ContextI" decimals="INF" unitRef="shares">242916344</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="ProvidentFundsOrPensionFunds_ContextI" decimals="INF" unitRef="pure">1</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="ProvidentFundsOrPensionFunds_ContextI" decimals="INF" unitRef="shares">31699487</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="InstitutionsDomestic_ContextI" decimals="INF" unitRef="pure">175</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="InstitutionsDomestic_ContextI" decimals="INF" unitRef="shares">487501816</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="InstitutionsForeign_ContextI" decimals="INF" unitRef="pure">1206</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="InstitutionsForeign_ContextI" decimals="INF" unitRef="shares">327890683</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="Governments_ContextI" decimals="INF" unitRef="pure">9</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="Governments_ContextI" decimals="INF" unitRef="shares">94579</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh_ContextI" decimals="INF" unitRef="pure">2494030</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh_ContextI" decimals="INF" unitRef="shares">170118405</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="NonInstitutions_ContextI" decimals="INF" unitRef="pure">2603787</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="NonInstitutions_ContextI" decimals="INF" unitRef="shares">206041812</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="PublicShareholding_ContextI" decimals="INF" unitRef="pure">2605177</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="PublicShareholding_ContextI" decimals="INF" unitRef="shares">1021528890</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="EmployeeBenefitsTrusts_ContextI" decimals="INF" unitRef="pure">0</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="EmployeeBenefitsTrusts_ContextI" decimals="INF" unitRef="shares">0</in-bse-shp:NumberOfShares>
+<in-bse-shp:NumberOfShareholders contextRef="ShareholdingPattern_ContextI" decimals="INF" unitRef="pure">2605182</in-bse-shp:NumberOfShareholders>
+<in-bse-shp:NumberOfShares contextRef="ShareholdingPattern_ContextI" decimals="INF" unitRef="shares">3618087518</in-bse-shp:NumberOfShares>
+</xbrli:xbrl>

@@ -24,7 +24,7 @@ def test_the_workbook_has_a_sheet_per_section_with_numbers_as_numbers(tmp_path):
     out = tmp_path / "tcs.xlsx"
     export.write_workbook(doc, out)
     book = load_workbook(out)
-    assert book.sheetnames == ["Summary", "Quarters", "Profit & Loss", "Balance Sheet", "Cash Flow", "Ratios"]
+    assert book.sheetnames == ["Summary", "Quarters", "Profit & Loss", "Balance Sheet", "Cash Flow", "Ratios", "Shareholding"]
     pl = book["Profit & Loss"]
     assert pl["A1"].value == "Rs crore" and pl["B1"].value == doc["annual"]["ends"][0]
     sales = next(r for r in doc["annual"]["income"] if r["key"] == "sales")

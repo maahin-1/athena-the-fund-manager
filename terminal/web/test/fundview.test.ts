@@ -19,6 +19,14 @@ const page: FundPage = {
     banking: [],
   },
   ratios: { ends: ['2025-03-31', '2026-03-31'], rows: [{ key: 'roe', label: 'ROE %', values: [47, 45.9], how: 'net profit / (equity capital + reserves)' }] },
+  shareholding: {
+    ends: ['2026-03-31', '2026-06-30'],
+    rows: [
+      { key: 'promoters', label: 'Promoters', values: [71.77, 71.77] },
+      { key: 'fii', label: 'FIIs', values: [9.1, 9.06] },
+      { key: 'holders', label: 'No. of Shareholders', values: [2600000, 2605182] },
+    ],
+  },
   growth: [{ title: 'Compounded Sales Growth', rows: [{ label: '5 Years', value: 10.2 }, { label: '10 Years', value: null }] }],
   coverage: { periods: 50, first: '2019-03-31', last: '2026-09-30' },
   gaps: ['balance sheets start at FY2023; the earlier years are not held yet'],
@@ -48,7 +56,7 @@ describe('fundamentals page', () => {
     expect(text).toContain('Tata Consultancy Services');
     expect(text).toContain('₹ 11,58,400 Cr');
     const sections = [...v.element.querySelectorAll('[data-section]')].map((s) => (s as HTMLElement).dataset.section);
-    expect(sections).toEqual(['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios']);
+    expect(sections).toEqual(['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding']);
     const pl = v.element.querySelector('[data-section="Profit & Loss"]')!;
     expect(pl.textContent).toContain('2,67,021');
     expect(pl.textContent).toContain('2,83,248'); // the TTM column
@@ -62,6 +70,15 @@ describe('fundamentals page', () => {
     expect(v.element.querySelector('[data-section="Cash Flows"]')?.textContent).toContain('No cash flows are stored');
     expect(v.element.textContent).toContain('Not held yet: balance sheets start at FY2023');
     expect(v.element.textContent).toContain('50 periods held, Mar 2019 to Sep 2026');
+  });
+
+  it('shows the shareholding pattern with percentages and the number of shareholders', () => {
+    const v = view();
+    v.render(page);
+    const text = v.element.querySelector('[data-section="Shareholding"]')?.textContent ?? '';
+    expect(text).toContain('Promoters71.77%71.77%');
+    expect(text).toContain('FIIs9.10%9.06%');
+    expect(text).toContain('No. of Shareholders26,00,0002,605,182'.replace('2,605,182', '26,05,182'));
   });
 
   it('tells which earlier symbols are included and why', () => {

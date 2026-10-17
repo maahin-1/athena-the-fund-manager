@@ -68,6 +68,17 @@ def used(store: FundamentalsStore, symbol: str, basis: str, table: dict[str, tup
     return out
 
 
+def holdings(
+    store: FundamentalsStore, symbol: str, table: dict[str, tuple[Predecessor, ...]] = PREDECESSORS
+) -> dict[date, dict[str, tuple[float, float | None]]]:
+    """The shareholding patterns of the symbol and its predecessors by quarter end; the symbol's own quarter wins."""
+    merged: dict[date, dict[str, tuple[float, float | None]]] = {}
+    for earlier in chain(symbol, table):
+        merged.update(store.holdings(earlier.symbol))
+    merged.update(store.holdings(symbol))
+    return merged
+
+
 def bases(store: FundamentalsStore, symbol: str, table: dict[str, tuple[Predecessor, ...]] = PREDECESSORS) -> list[str]:
     found = set(store.bases(symbol))
     for earlier in chain(symbol, table):

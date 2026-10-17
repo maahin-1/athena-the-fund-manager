@@ -134,7 +134,7 @@ def ingest_symbol(
 
 def run(
     members: Sequence[Member], results: Any, store_path: str | Path, *, resume: bool, max_age_days: int, limit: int | None,
-    quarters: int, standalone: bool, refresh: bool = False, out: TextIO = sys.stdout,
+    quarters: int, standalone: bool, refresh: bool = False, out: TextIO = sys.stdout, cache_dir: Path = CACHE_DIR,
 ) -> int:
     """Ingest each member in turn. Returns 0 when done, 3 when the exchange blocked it (or a block is still running)."""
     with FundamentalsStore(store_path) as store:
@@ -153,7 +153,7 @@ def run(
             continue
         started = now()
         try:
-            report = ingest_symbol(member, results, store_path, quarters=quarters, standalone=standalone, refresh=refresh)
+            report = ingest_symbol(member, results, store_path, quarters=quarters, standalone=standalone, refresh=refresh, cache_dir=cache_dir)
         except Blocked as exc:
             with FundamentalsStore(store_path) as store:
                 store.set_run(member.symbol, "blocked", error=str(exc)[:200], blocked_until=now() + BLOCK_PAUSE)
