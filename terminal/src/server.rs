@@ -19,6 +19,7 @@ use crate::angel::stream::FeedStatus;
 use crate::analysis::analysis;
 use crate::verdict_job::{symbol_ok as verdict_symbol_ok, StartError, VerdictJobs};
 use crate::bars::{daily_bars, yahoo_params, Bars, DEFAULT_LIMIT};
+use crate::fundamentals::{FundError, FundamentalsJobs};
 use crate::hub::Hub;
 use crate::layouts::{LayoutError, LayoutStore};
 
@@ -34,6 +35,7 @@ pub struct AppState {
     pub layouts: Arc<LayoutStore>,
     pub verdicts: VerdictJobs,
     pub analyse: Arc<crate::analyse_worker::AnalyseWorker>,
+    pub fundamentals: Arc<FundamentalsJobs>,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -198,6 +200,56 @@ async fn api_analysis(State(state): State<AppState>, Query(q): Query<SymbolQuery
     }
 }
 
+#[derive(serde::Deserialize)]
+struct FundQuery {
+    basis: Option<String>,
+}
+
+fn fund_error(e: FundError) -> Response {
+    let (status, message) = match e {
+        FundError::BadSymbol | FundError::BadBasis => return StatusCode::BAD_REQUEST.into_response(),
+        FundError::NoData => (StatusCode::NOT_FOUND, "no statements stored".to_string()),
+        FundError::Busy => (StatusCode::SERVICE_UNAVAILABLE, "the fundamentals store is busy; try again in a moment".to_string()),
+        FundError::Failed(m) => (StatusCode::BAD_GATEWAY, m),
+    };
+    (status, Json(serde_json::json!({"error": message}))).into_response()
+}
+
+/// One company's statements, key figures, ratios and growth, from the stored filings (see `athena.fundamentals.page`).
+async fn api_fund(State(state): State<AppState>, Path(symbol): Path<String>, Query(q): Query<FundQuery>) -> Response {
+    let basis = q.basis.unwrap_or_else(|| "consolidated".to_string());
+    match state.fundamentals.page(&symbol.to_ascii_uppercase(), &basis).await {
+        Ok(doc) => Json(doc).into_response(),
+        Err(e) => fund_error(e),
+    }
+}
+
+/// The same company as an Excel workbook.
+async fn api_fund_export(State(state): State<AppState>, Path(symbol): Path<String>, Query(q): Query<FundQuery>) -> Response {
+    let basis = q.basis.unwrap_or_else(|| "consolidated".to_string());
+    let symbol = symbol.to_ascii_uppercase();
+    match state.fundamentals.export(&symbol, &basis).await {
+        Ok(bytes) => (
+            [
+                ("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string()),
+                ("content-disposition", format!("attachment; filename=\"{symbol}-{basis}.xlsx\"")),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(e) => fund_error(e),
+    }
+}
+
+async fn api_fund_status(State(state): State<AppState>) -> Response {
+    let jobs = state.fundamentals.clone();
+    match tokio::task::spawn_blocking(move || jobs.status()).await {
+        Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Err(e)) => fund_error(e),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 async fn verdict_start(State(state): State<AppState>, Path(symbol): Path<String>) -> Response {
     match state.verdicts.start(&symbol.to_ascii_uppercase()) {
         Ok(()) => StatusCode::ACCEPTED.into_response(),
@@ -306,6 +358,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/screen", get(api_screen))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
+        .route("/api/fund-status", get(api_fund_status))
+        .route("/api/fund/:symbol", get(api_fund))
+        .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
         .route("/api/layouts", get(layouts_list))
@@ -347,7 +402,8 @@ mod tests {
         let layouts = Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-layouts-{port}"))));
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse };
+        let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -434,6 +490,20 @@ mod tests {
         assert_eq!(client.post(format!("{base}/verdict/a;b")).header("Origin", &origin).send().await.unwrap().status(), 400);
         assert_eq!(client.post(format!("{base}/verdict/SBIN")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         assert_eq!(client.post(format!("{base}/verdict/SBIN")).header("Origin", &origin).send().await.unwrap().status(), 202);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn fundamentals_routes_validate_and_report() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api");
+        assert_eq!(client.get(format!("{base}/fund/a;b")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/fund/TCS?basis=both")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/fund/TCS/export?basis=both")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/fund/TCS")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        assert_eq!(client.get(format!("{base}/fund/TCS")).send().await.unwrap().status(), 502); // the stand-in program does not exist
+        assert_eq!(client.get(format!("{base}/fund-status")).send().await.unwrap().status(), 404); // no store in this test
         stop.cancel();
     }
 

@@ -4,6 +4,7 @@ mod angel;
 mod bars;
 mod config;
 mod fake;
+mod fundamentals;
 mod hub;
 mod layouts;
 mod poll;
@@ -180,7 +181,8 @@ async fn main() {
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
     let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse };
+    let fundamentals = Arc::new(fundamentals::FundamentalsJobs::standard(&args.python, bars.warehouse.clone(), PathBuf::from(".athena/fundamentals.duckdb")));
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))
