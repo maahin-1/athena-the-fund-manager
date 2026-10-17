@@ -3,12 +3,15 @@
 One DuckDB file. Python writes in short bursts (open, write one filing, close); the terminal's server opens it read-only. Times are naive UTC."""
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import duckdb
 
+from athena.contracts import AthenaError
 from athena.fundamentals import lines as spec
 from athena.fundamentals.rows import Statements
 
@@ -33,11 +36,29 @@ def now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def open_read(path: str | Path = DEFAULT_PATH, tries: int = 5, pause: float = 0.4, sleep: Callable[[float], None] = time.sleep) -> "FundamentalsStore":
+    """The store opened read-only. A missing file is reported at once; a locked one is retried (see `FundamentalsStore`)."""
+    if str(path) != ":memory:" and not Path(path).exists():
+        raise AthenaError(f"no fundamentals store at {path}; run python -m athena.fundamentals.ingest first")
+    return FundamentalsStore(path, read_only=True, tries=tries, pause=pause, sleep=sleep)
+
+
 class FundamentalsStore:
-    def __init__(self, path: str | Path = DEFAULT_PATH, read_only: bool = False):
+    def __init__(
+        self, path: str | Path = DEFAULT_PATH, read_only: bool = False, tries: int = 8, pause: float = 0.5, sleep: Callable[[float], None] = time.sleep
+    ):
+        """DuckDB lets one process hold the file, and the ingest (writing) and the terminal's page builder (reading) both open it for short moments,
+        so a locked file is retried `tries` times, `pause` seconds apart, before it is reported as busy."""
         if str(path) != ":memory:" and not read_only:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._con = duckdb.connect(str(path), read_only=read_only)
+        for attempt in range(max(tries, 1)):
+            try:
+                self._con = duckdb.connect(str(path), read_only=read_only)
+                break
+            except duckdb.IOException as exc:
+                if attempt >= tries - 1:
+                    raise AthenaError(f"the fundamentals store is busy: {exc}") from exc
+                sleep(pause)
         if not read_only:
             for statement in SCHEMA:
                 self._con.execute(statement)

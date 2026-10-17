@@ -69,3 +69,21 @@ def test_company_row_and_coverage():
         store.save_statements(tcs(), "u1", datetime(2024, 4, 12, tzinfo=UTC))
         cover = store.coverage()
         assert cover and cover[0]["symbol"] == "TCS" and cover[0]["periods"] >= 2
+
+
+def test_a_writer_waits_out_a_reader_that_holds_the_file(tmp_path, monkeypatch):
+    import duckdb
+
+    real, calls = duckdb.connect, {"n": 0}
+
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise duckdb.IOException("being used by another process")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr("athena.fundamentals.store.duckdb.connect", flaky)
+    waits: list[float] = []
+    with FundamentalsStore(tmp_path / "f.duckdb", sleep=waits.append) as store:
+        store.save_company("TCS", "Tata", "INE", "IT", "indas", 1.0)
+    assert calls["n"] == 3 and len(waits) == 2
