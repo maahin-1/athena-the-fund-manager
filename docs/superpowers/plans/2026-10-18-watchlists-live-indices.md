@@ -60,6 +60,6 @@
 ## As built
 - Tasks 1 to 7 done. `GET /api/watchlists` answers 204 (not 404) when none is saved, because the browser logs a 404 as a console error and the end-to-end tests fail on any console error.
 - The end-to-end server now keeps its layouts and lists under `terminal/web/e2e-data/` (wiped by the seed step each run); before this, `--layouts-dir e2e-layouts` would have put the lists in the repository folder.
-- Tests: 92 Rust (3 snapshot, 2 routes), 168 web unit (23 model, 10 store, 3 feed, commands), 35 Playwright (7 new).
+- Tests: 92 Rust (3 snapshot, 2 routes), 163 web unit (23 model, 10 store, 3 feed, plus the command cases), 35 Playwright (7 new).
 - Not done here (next slice): details panel, advanced view, list alerts, BSE indices.
 
