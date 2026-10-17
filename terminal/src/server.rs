@@ -37,6 +37,8 @@ pub struct AppState {
     pub analyse: Arc<crate::analyse_worker::AnalyseWorker>,
     pub fundamentals: Arc<FundamentalsJobs>,
     pub indices: crate::indices::IndexStore,
+    pub search: Arc<crate::search::SearchCache>,
+    pub fund_fetch: Arc<crate::fund_fetch::FundFetch>,
     /// Documents the page keeps on the server beside the layouts (the watchlists), one fixed name each.
     pub lists: Arc<LayoutStore>,
 }
@@ -278,6 +280,42 @@ fn layout_status(e: LayoutError) -> StatusCode {
     }
 }
 
+async fn fund_fetch_status(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(state.fund_fetch.status())
+}
+
+/// Start fetching one company's filings (statements, shareholding, documents). 409 when another company is being fetched.
+async fn fund_fetch_start(State(state): State<AppState>, Path(symbol): Path<String>) -> Response {
+    use crate::fund_fetch::StartError;
+    match state.fund_fetch.start(&symbol.to_ascii_uppercase()) {
+        Ok(()) => (StatusCode::ACCEPTED, Json(state.fund_fetch.status())).into_response(),
+        Err(StartError::BadSymbol) => StatusCode::BAD_REQUEST.into_response(),
+        Err(StartError::Busy(other)) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "another company is being fetched", "symbol": other}))).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SearchQuery {
+    q: String,
+    limit: Option<usize>,
+    /// Comma-separated kinds to keep (`stock`, `etf`, `sme`, `index`); all when absent.
+    kinds: Option<String>,
+}
+
+/// Instruments matching what is typed: symbols, names, ISINs, index names. Answers at once from memory; 503 only when the warehouse has never been readable.
+async fn api_search(State(state): State<AppState>, Query(q): Query<SearchQuery>) -> Response {
+    if q.q.chars().count() > crate::search::MAX_QUERY {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let limit = q.limit.unwrap_or(10).clamp(1, 25);
+    let (cache, names, text) = (state.search.clone(), state.indices.names(), q.q.clone());
+    let kinds: Vec<String> = q.kinds.as_deref().unwrap_or("").split(',').map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).collect();
+    match tokio::task::spawn_blocking(move || cache.get(&names).map(|i| i.search(&text, limit, &kinds))).await {
+        Ok(Some(hits)) => Json(serde_json::json!({"q": q.q, "results": hits})).into_response(),
+        _ => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": "the instrument list is not available"}))).into_response(),
+    }
+}
+
 async fn api_indices(State(state): State<AppState>) -> Response {
     match state.indices.json() {
         Some(v) => Json(v).into_response(),
@@ -388,10 +426,13 @@ pub fn router(state: AppState) -> Router {
         .route("/api/known", get(api_known))
         .route("/api/screen", get(api_screen))
         .route("/api/indices", get(api_indices))
+        .route("/api/search", get(api_search))
         .route("/api/watchlists", get(watchlists_get).put(watchlists_put))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
         .route("/api/fund-status", get(api_fund_status))
+        .route("/api/fund-fetch", get(fund_fetch_status))
+        .route("/api/fund-fetch/:symbol", axum::routing::post(fund_fetch_start))
         .route("/api/fund/:symbol", get(api_fund))
         .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
@@ -436,7 +477,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))) };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))) };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -524,6 +565,40 @@ mod tests {
         let big = format!(r#"{{"x":"{}"}}"#, "a".repeat(250 * 1024));
         assert_eq!(client.put(&url).header("Origin", &origin).body(big).send().await.unwrap().status(), 413);
         assert_eq!(client.put(&url).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn a_company_fetch_is_started_by_post_and_reports_its_state() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let base = format!("http://127.0.0.1:{port}/api/fund-fetch");
+        let idle: serde_json::Value = client.get(&base).send().await.unwrap().json().await.unwrap();
+        assert_eq!(idle["state"], "idle");
+        assert_eq!(client.post(format!("{base}/rv%20nl")).header("Origin", &origin).send().await.unwrap().status(), 400);
+        assert_eq!(client.post(format!("{base}/RVNL")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        assert_eq!(client.post(format!("{base}/RVNL")).header("Origin", &origin).send().await.unwrap().status(), 202);
+        let mut last = serde_json::Value::Null;
+        for _ in 0..100 {
+            last = client.get(&base).send().await.unwrap().json().await.unwrap();
+            if last["state"] != "running" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert_eq!(last["state"], "failed"); // the test server's program does not exist
+        assert_eq!(last["symbol"], "RVNL");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn search_refuses_an_over_long_query_and_says_so_when_there_is_no_warehouse() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api/search");
+        assert_eq!(client.get(format!("{base}?q={}", "a".repeat(80))).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}?q=tata")).send().await.unwrap().status(), 503); // the test has no warehouse
         stop.cancel();
     }
 

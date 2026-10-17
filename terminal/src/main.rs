@@ -4,10 +4,12 @@ mod angel;
 mod bars;
 mod config;
 mod fake;
+mod fund_fetch;
 mod indices;
 mod fundamentals;
 mod hub;
 mod layouts;
+mod search;
 mod poll;
 mod quote;
 mod server;
@@ -197,7 +199,9 @@ async fn main() {
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
     let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
     let fundamentals = Arc::new(fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone()));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists };
+    let fund_fetch = fund_fetch::FundFetch::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.fund_store.clone());
+    let search = Arc::new(search::SearchCache::new(bars.warehouse.clone()));
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists, search, fund_fetch };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))

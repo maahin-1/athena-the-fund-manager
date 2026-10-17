@@ -96,6 +96,11 @@ impl IndexStore {
         *self.0.lock().unwrap() = Some((snapshot, Instant::now()));
     }
 
+    /// The names the exchange's snapshot holds (empty before the first one), for the search box.
+    pub fn names(&self) -> Vec<String> {
+        self.0.lock().unwrap().as_ref().map(|(s, _)| s.rows.iter().map(|r| r.s.clone()).collect()).unwrap_or_default()
+    }
+
     /// The route's body, or `None` before the first snapshot. `stale_s` is how long ago the snapshot was fetched.
     pub fn json(&self) -> Option<Value> {
         let g = self.0.lock().unwrap();
