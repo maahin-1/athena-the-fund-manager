@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { parse } from '../src/command';
 import type { PriceChart } from '../src/fundamentals/chartbox';
 import type { FundPage } from '../src/fundamentals/model';
-import { FundamentalsView } from '../src/fundamentals/view';
+import { FundamentalsView, safeHref } from '../src/fundamentals/view';
 import type { AppContext } from '../src/panels/base';
 
 const page: FundPage = {
@@ -26,6 +26,11 @@ const page: FundPage = {
       { key: 'fii', label: 'FIIs', values: [9.1, 9.06] },
       { key: 'holders', label: 'No. of Shareholders', values: [2600000, 2605182] },
     ],
+  },
+  documents: {
+    annual_reports: [{ title: 'FY2025-26', category: 'Annual report', date: '2026-05-15', url: 'https://nsearchives.nseindia.com/annual_reports/AR_1.pdf', size: '16.62 MB' }],
+    concalls: [{ title: 'Transcript', category: 'Call', date: '2026-10-14', url: 'https://nsearchives.nseindia.com/corporate/b.pdf', size: '' }],
+    announcements: [{ title: 'Bad link', category: 'Updates', date: '2026-10-01', url: 'https://evil.example/x.pdf', size: '' }],
   },
   growth: [{ title: 'Compounded Sales Growth', rows: [{ label: '5 Years', value: 10.2 }, { label: '10 Years', value: null }] }],
   coverage: { periods: 50, first: '2019-03-31', last: '2026-09-30' },
@@ -56,7 +61,7 @@ describe('fundamentals page', () => {
     expect(text).toContain('Tata Consultancy Services');
     expect(text).toContain('₹ 11,58,400 Cr');
     const sections = [...v.element.querySelectorAll('[data-section]')].map((s) => (s as HTMLElement).dataset.section);
-    expect(sections).toEqual(['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding']);
+    expect(sections).toEqual(['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents']);
     const pl = v.element.querySelector('[data-section="Profit & Loss"]')!;
     expect(pl.textContent).toContain('2,67,021');
     expect(pl.textContent).toContain('2,83,248'); // the TTM column
@@ -79,6 +84,20 @@ describe('fundamentals page', () => {
     expect(text).toContain('Promoters71.77%71.77%');
     expect(text).toContain('FIIs9.10%9.06%');
     expect(text).toContain('No. of Shareholders26,00,0002,605,182'.replace('2,605,182', '26,05,182'));
+  });
+
+  it('lists documents as links on the exchange archive only, opened safely, and shows anything else as text', () => {
+    const v = view();
+    v.render(page);
+    const box = v.element.querySelector('[data-section="Documents"]')!;
+    const links = [...box.querySelectorAll('a')] as HTMLAnchorElement[];
+    expect(links.map((a) => a.textContent)).toEqual(['FY2025-26', 'Transcript']);
+    expect(links.every((a) => a.target === '_blank' && a.rel.includes('noopener') && a.href.startsWith('https://nsearchives.nseindia.com/'))).toBe(true);
+    expect(box.textContent).toContain('Updates: Bad link'); // listed, but not a link
+    expect(box.textContent).toContain('2026-05-15 · 16.62 MB');
+    expect(safeHref('javascript:alert(1)')).toBeNull();
+    expect(safeHref('https://nsearchives.nseindia.com/a b.pdf')).toBeNull();
+    expect(safeHref('https://nsearchives.nseindia.com/annual_reports/AR_1.pdf')).not.toBeNull();
   });
 
   it('tells which earlier symbols are included and why', () => {

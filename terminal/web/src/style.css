@@ -224,6 +224,11 @@ html, body { overflow: hidden; }
 .fg-title { color: var(--label); font-weight: 600; margin-bottom: 4px; }
 .fg-row { display: flex; justify-content: space-between; gap: 12px; }
 .fnotes { padding: 4px 2px 16px; }
+.fdocs { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.fdoc-box { border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; background: var(--bg); max-height: 360px; overflow-y: auto; }
+.fdoc { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--grid); }
+.fdoc a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.fdoc a:hover { text-decoration: underline; }
 .fexport { text-decoration: none; }
 
 /* chart lab */

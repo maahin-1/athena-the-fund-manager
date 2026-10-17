@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 from athena.fundamentals.store import FundamentalsStore
 
@@ -77,6 +78,20 @@ def holdings(
         merged.update(store.holdings(earlier.symbol))
     merged.update(store.holdings(symbol))
     return merged
+
+
+def documents(
+    store: FundamentalsStore, symbol: str, kind: str, limit: int, table: dict[str, tuple[Predecessor, ...]] = PREDECESSORS
+) -> list[dict[str, Any]]:
+    """The documents of one kind for the symbol and its predecessors, newest first, each link once."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for name in (symbol, *(p.symbol for p in reversed(chain(symbol, table)))):
+        for doc in store.documents(name, kind, limit):
+            if doc["url"] not in seen:
+                seen.add(doc["url"])
+                out.append(doc)
+    return sorted(out, key=lambda d: d["published"], reverse=True)[:limit]
 
 
 def bases(store: FundamentalsStore, symbol: str, table: dict[str, tuple[Predecessor, ...]] = PREDECESSORS) -> list[str]:

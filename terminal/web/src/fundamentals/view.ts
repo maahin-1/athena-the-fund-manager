@@ -3,15 +3,48 @@ import { pct, price, signed } from '../format';
 import { el, type AppContext } from '../panels/base';
 import { makePriceChart, type PriceChart } from './chartbox';
 import { periodLabel } from './format';
-import type { FundPage } from './model';
+import type { DocLink, FundPage } from './model';
 import { growthBlocks, keyBlocks, tableFrom, type Table } from './tables';
 
 const LINK_GROUP = 'blue' as const; // the page follows the blue link group, like the Research page
-const SECTIONS = ['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding'] as const;
+const SECTIONS = ['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents'] as const;
 type Basis = 'consolidated' | 'standalone';
 
 export interface ViewOptions {
   makeChart?: () => PriceChart;
+}
+
+const ARCHIVE = 'https://nsearchives.nseindia.com/';
+
+/** A link opens only when it is on the exchange's archive host; anything else is shown as plain text. */
+export function safeHref(url: string): string | null {
+  return url.startsWith(ARCHIVE) && /^[\w./:%+~@=&-]+$/.test(url) ? url : null;
+}
+
+const docCount = (page: FundPage): number => {
+  const d = page.documents;
+  return d ? d.annual_reports.length + d.concalls.length + d.announcements.length : 0;
+};
+
+function docList(title: string, docs: DocLink[], label: (d: DocLink) => string): HTMLElement {
+  const box = el('div', 'fdoc-box');
+  box.append(el('div', 'fg-title', title));
+  if (!docs.length) box.append(el('div', 'note', 'none stored'));
+  for (const d of docs) {
+    const row = el('div', 'fdoc');
+    const href = safeHref(d.url);
+    const text = label(d);
+    if (href) {
+      const a = el('a', '', text);
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      row.append(a);
+    } else row.append(el('span', '', text));
+    row.append(el('span', 'note', d.size ? `${d.date} · ${d.size}` : d.date));
+    box.append(row);
+  }
+  return box;
 }
 
 function drawTable(table: Table): HTMLElement {
@@ -171,7 +204,7 @@ export class FundamentalsView {
       this.section('Ratios', drawTable(tableFrom(page.ratios.ends, [...page.ratios.rows, ...page.annual.banking])), page.ratios.rows.length + page.annual.banking.length > 0),
       this.section('Shareholding', drawTable(tableFrom(page.shareholding?.ends ?? [], page.shareholding?.rows ?? [])), (page.shareholding?.rows.length ?? 0) > 0),
     );
-    this.body.append(this.footer(page));
+    this.body.append(this.section('Documents', this.documents(page), docCount(page) > 0), this.footer(page));
     this.paintLive(this.ctx.feed.quotes.get(page.symbol));
     this.paintList();
   }
@@ -255,6 +288,17 @@ export class FundamentalsView {
     card.dataset.section = name;
     card.append(el('h3', '', name), present ? content : el('div', 'note', `No ${name.toLowerCase()} are stored for this company yet.`));
     return card;
+  }
+
+  private documents(page: FundPage): HTMLElement {
+    const docs = page.documents ?? { annual_reports: [], concalls: [], announcements: [] };
+    const grid = el('div', 'fdocs');
+    grid.append(
+      docList('Annual reports', docs.annual_reports, (d) => d.title),
+      docList('Investor calls', docs.concalls, (d) => d.title),
+      docList('Announcements', docs.announcements, (d) => `${d.category}: ${d.title}`),
+    );
+    return grid;
   }
 
   private footer(page: FundPage): HTMLElement {

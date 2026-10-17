@@ -169,6 +169,18 @@ def _shareholding(held: dict[date, dict[str, tuple[float, float | None]]]) -> di
     return {"ends": [_iso(e) for e in ends], "rows": rows}
 
 
+def _documents(store: FundamentalsStore, symbol: str, table: dict[str, tuple[history.Predecessor, ...]]) -> dict[str, list[dict[str, str]]]:
+    """Links to the exchange's own copies: every annual report, the latest investor-call items and the latest other announcements."""
+
+    def shape(kind: str, limit: int, date_only: bool = True) -> list[dict[str, str]]:
+        return [
+            {"title": d["title"], "category": d["category"], "date": (d["published"].date().isoformat() if date_only else d["published"].isoformat()), "url": d["url"], "size": d["size"] or ""}
+            for d in history.documents(store, symbol, kind, limit, table)
+        ]
+
+    return {"annual_reports": shape("annual_report", 40), "concalls": shape("concall", 30), "announcements": shape("announcement", 40)}
+
+
 def build_page(
     store: FundamentalsStore, symbol: str, basis: str, price: float | None, price_note: str = "", table: dict[str, tuple[history.Predecessor, ...]] | None = None
 ) -> dict[str, Any]:
@@ -233,6 +245,7 @@ def build_page(
         },
         "ratios": {"ends": [_iso(e) for e in years], "rows": ratio_rows},
         "growth": growth,
+        "documents": _documents(store, symbol, table),
         "shareholding": _shareholding(history.holdings(store, symbol, table)),
         "coverage": {"periods": coverage["periods"], "first": _iso(coverage["first"]), "last": _iso(coverage["last"])} if coverage else None,
         "gaps": gaps,

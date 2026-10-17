@@ -4,7 +4,7 @@ One DuckDB file. Python writes in short bursts (open, write one filing, close); 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,6 +24,7 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS statement_lines (symbol TEXT, basis TEXT, statement TEXT, period_start DATE, period_end DATE, key TEXT,"
     " value DOUBLE, filing_url TEXT, filed TIMESTAMP, source TEXT)",
     "CREATE TABLE IF NOT EXISTS shareholding (symbol TEXT, period_end DATE, category TEXT, shares DOUBLE, holders DOUBLE, filing_url TEXT, filed TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS documents (symbol TEXT, kind TEXT, title TEXT, category TEXT, published TIMESTAMP, url TEXT, size TEXT)",
     "CREATE TABLE IF NOT EXISTS ingest_runs (symbol TEXT PRIMARY KEY, status TEXT, finished TIMESTAMP, filings INTEGER, error TEXT,"
     " blocked_until TIMESTAMP)",
 )
@@ -108,6 +109,15 @@ class FundamentalsStore:
             [(symbol, holding.period_end, key, g.shares, g.holders, url, _utc(filed)) for key, g in holding.groups.items()],
         )
 
+    def save_documents(self, symbol: str, kinds: Sequence[str], docs: Sequence[Any]) -> None:
+        """Replace the symbol's documents of these kinds with `docs` (what the exchange lists now is what is kept)."""
+        for kind in kinds:
+            self._con.execute("DELETE FROM documents WHERE symbol = ? AND kind = ?", [symbol, kind])
+        self._con.executemany(
+            "INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(symbol, d.kind, d.title, d.category, _utc(d.published), d.url, d.size) for d in docs if d.kind in kinds],
+        )
+
     def record_filing(
         self, url: str, symbol: str, basis: str, period_end: date, annual: bool, filed: datetime, status: str, error: str = ""
     ) -> None:
@@ -145,6 +155,13 @@ class FundamentalsStore:
         ).fetchall():
             out.setdefault(end, {})[key] = (shares, holders)
         return out
+
+    def documents(self, symbol: str, kind: str, limit: int = 100) -> list[dict[str, Any]]:
+        """The symbol's documents of one kind, newest first."""
+        rows = self._con.execute(
+            "SELECT title, category, published, url, size FROM documents WHERE symbol = ? AND kind = ? ORDER BY published DESC LIMIT ?", [symbol, kind, limit]
+        ).fetchall()
+        return [dict(zip(("title", "category", "published", "url", "size"), r)) for r in rows]
 
     def bases(self, symbol: str) -> list[str]:
         return [r[0] for r in self._con.execute("SELECT DISTINCT basis FROM statement_lines WHERE symbol = ? ORDER BY basis", [symbol]).fetchall()]

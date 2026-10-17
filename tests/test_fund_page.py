@@ -194,3 +194,25 @@ def test_the_shareholding_section_gives_percentages_by_quarter_and_the_number_of
     assert rows["holders"] == [2203209.0, 2605182.0]
     assert [r["key"] for r in s["rows"]][:6] == ["promoters", "fii", "dii", "government", "public", "holders"]
     assert bare["shareholding"] == {"ends": [], "rows": []}  # nothing stored is shown as nothing, not as zeros
+
+
+def test_the_documents_section_lists_stored_links_newest_first_and_merges_an_earlier_symbol():
+    import dataclasses
+
+    from athena.fundamentals.documents import Doc
+    from athena.fundamentals.history import Predecessor
+
+    ist = timezone.utc
+    table = {"TCS": (Predecessor("OLDTCS", "renamed"),)}
+    with stored("tcs_fy2024") as store:
+        store.save_documents("TCS", ("annual_report",), [Doc("annual_report", "FY2025-26", "Annual report", datetime(2026, 5, 15, tzinfo=ist), "https://nsearchives.nseindia.com/a.pdf", "1 MB")])
+        store.save_documents("OLDTCS", ("annual_report",), [Doc("annual_report", "FY2017-18", "Annual report", datetime(2018, 6, 20, tzinfo=ist), "https://nsearchives.nseindia.com/old.zip", "")])
+        store.save_documents("TCS", ("concall",), [Doc("concall", "Transcript", "Call", datetime(2026, 10, 14, tzinfo=ist), "https://nsearchives.nseindia.com/t.pdf", "")])
+        doc = page.build_page(store, "TCS", "consolidated", None, table=table)
+        alone = page.build_page(store, "TCS", "consolidated", None, table={})
+    d = doc["documents"]
+    assert [x["title"] for x in d["annual_reports"]] == ["FY2025-26", "FY2017-18"]
+    assert d["annual_reports"][0] == {"title": "FY2025-26", "category": "Annual report", "date": "2026-05-15", "url": "https://nsearchives.nseindia.com/a.pdf", "size": "1 MB"}
+    assert [x["title"] for x in d["concalls"]] == ["Transcript"] and d["announcements"] == []
+    assert [x["title"] for x in alone["documents"]["annual_reports"]] == ["FY2025-26"]
+    assert dataclasses.is_dataclass(Doc)

@@ -19,6 +19,14 @@ export interface GrowthTable {
   rows: { label: string; value: number | null }[];
 }
 
+export interface DocLink {
+  title: string;
+  category: string;
+  date: string;
+  url: string;
+  size: string;
+}
+
 export interface FundPage {
   symbol: string;
   name: string;
@@ -33,6 +41,8 @@ export interface FundPage {
   annual: { ends: string[]; income: Row[]; balance: Row[]; cashflow: Row[]; banking: Row[] };
   ratios: { ends: string[]; rows: Row[] };
   growth: GrowthTable[];
+  /** Links to the exchange's own copies: annual reports, investor-call items and other announcements. */
+  documents: { annual_reports: DocLink[]; concalls: DocLink[]; announcements: DocLink[] };
   /** Each holder group's share in percent by quarter, and the number of shareholders. */
   shareholding: { ends: string[]; rows: Row[] };
   coverage: { periods: number; first: string; last: string } | null;
