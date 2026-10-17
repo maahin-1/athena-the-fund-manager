@@ -163,3 +163,13 @@ Built: the page document (`athena.fundamentals.page`), the Excel export, three s
 
 Queued: symbol-history table (B2), insurer layout (B2), stock-price rows and 50/200 DMA on the price chart and a PE / sales-and-margin chart switch (B1c with the chart engine), shareholding, peers, documents (B2, B4).
 
+## 12. B1c results (2026-10-17, Chart Lab engine)
+
+Built: indicator maths against TA-Lib (23 series), the 21-indicator registry, the rendering-free chart model with its edge rules, undo, redo and templates, the Lightweight Charts renderer, the toolbar, legends, settings dialog and data window, and the `LAB` tab. Tests: vitest 92 (59 new), Playwright 27 (5 new), Rust unchanged apart from `adj=0`. Checked by eye on RELIANCE with Bollinger, RSI and MACD.
+
+**Decisions made while building:** the compare line is rebased to the chart's own close at the first shared bar so it shares the price axis (the plan said "100"); MACD follows TA-Lib's alignment so the maths has a true reference (its line starts at the slow period's first bar, its signal and histogram a signal period later); legends are grouped by pane, overlays first.
+
+**Found while building:** the `.rpick` class used for the select boxes is hidden outside Research (its own CSS), so the new selects have their own class; the older smoke test's selectors and the Fundamentals F6 test were made specific because the new tab added matches.
+
+**Not done in this batch (named so they are not lost):** drawing tools and the object tree (5d), further chart types (Renko, Kagi, point and figure, range, line break, baseline, columns, high-low, volume candles) and custom intervals (5b), watchlist-based symbol search and live index quotes (5e), alerts (5g), formula and Python indicators (5h), multi-chart grid (5k), replay (5j), the verdict overlay and other AI items (5l). Ticks for a live chart are verified only by unit tests with a fake feed; check them in a market session with `python scripts/terminal-market-check.py`.
+

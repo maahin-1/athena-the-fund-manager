@@ -81,3 +81,11 @@ Layout (same controls as the reference chart page, own look): top toolbar (symbo
 ### Task 7: Wrap-up
 
 - [ ] Browser check on the real server (screenshot read), TRD section 2.23, master design section 12 (results), this plan's "As built", graphify update, commit `docs: B1c results`.
+
+## As built (2026-10-17)
+
+- Task 1: MACD uses TA-Lib's alignment (own `macd` in `chartlab/maths.ts`; the older `indicators.ts` keeps the textbook one for the Terminal chart). The MACD line and slow %K start earlier than TA-Lib's, which waits for its signal lines; the shared bars agree and the test allows the earlier start.
+- Task 3: compare is rebased onto the chart's own close at the first shared bar, not to 100. `restore()` keeps the compare symbol with no bars until `setCompare` supplies them. The model tells listeners whether a change was a tick or structural so a tick does not rebuild the chart.
+- Task 5: `adj=0` returns `source: "warehouse, raw"`.
+- Task 6: split into `render.ts` (engine binding), `view.ts` and `dialog.ts`; the view takes a renderer and a bars fetcher so tests run without a canvas or server. The live-tick end-to-end test was dropped: the fake feed's prices are unrelated to the stored bars and the 25 percent rule rightly ignores them; the unit test covers it.
+
