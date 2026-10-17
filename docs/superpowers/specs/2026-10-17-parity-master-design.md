@@ -179,3 +179,13 @@ Done from the audit in section 11: the `insurer` layout (HDFC Life, SBI Life now
 
 Still true of the Nifty 50 after this: Nestle India has two comparable years because it changed its financial year-end (the transition period is not a year); Jio Financial and Max Healthcare are recent listings; Eternal has five years of its own and its predecessor's; HDFC Life and SBI Life have two annual and six or seven quarterly filings in the format the exchange serves (older insurer results are not in the Integrated Filing format and have not been looked at); general insurers (ICICI Lombard, Star Health, New India) use other tags and are not read. Next in this area: shareholding, documents and the pre-FY2023 balance-sheet gap-fill (B2), then the full-market ingest.
 
+## 14. Price history, shareholding, documents and chart toolkit (2026-10-18)
+
+**Price history (user requirement):** charts must reach back as far as the statements. The warehouse held prices from January 2023 only; `python -m athena.warehouse.build --since 2018-01-01 --statements 0` extended prices to 2018-01-01 (4.7 million rows, 2,169 sessions, 125 days with no session), the corporate actions with them (20,224 for 2,612 symbols) and the index files. One day (2020-11-19) failed on the first pass and was retried. The Chart Lab has an 8Y range and All. Prices before 2018 are not planned; the statements start at FY2019 (April 2018).
+
+**Built:** shareholding pattern (promoters, FIIs, DIIs, government, public, holders; the exchange lists about five years, so eight years of shareholding is not available from that listing), documents as links, the tier 2 indicator set (48 in all), the weekly, monthly and more intraday intervals, baseline, columns, step, Renko, line break and range charts.
+
+**Decided:** documents are links to the exchange's own copies, not downloads (text extraction and summaries are the AI batch); PDF extraction for FY2019 to FY2022 balance sheets and cash flows stays queued (Yahoo gives only the latest four years, so it cannot fill those years); credit ratings are market-wide in the exchange's list, so they wait for a per-company source.
+
+**Still open:** the Jio Financial history question (a Reliance demerger, parked by the user for the inconsistencies pass); tick recording and the bar volume profile (need a market session); watchlists with live indices (5e); the rest of the chart types (Kagi, point and figure, high-low, volume candles) and custom intervals beyond these; drawing tools (5d); full-market ingest and shareholding runs (manual, long).
+
