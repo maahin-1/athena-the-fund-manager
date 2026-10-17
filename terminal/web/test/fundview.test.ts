@@ -43,7 +43,7 @@ describe('fundamentals page', () => {
     const v = view();
     v.render(page);
     const text = v.element.textContent ?? '';
-    expect(v.element.querySelector('.rsym')?.textContent).toBe('TCS');
+    expect(v.element.querySelector('.fsym')?.textContent).toBe('TCS');
     expect(text).toContain('Tata Consultancy Services');
     expect(text).toContain('₹ 11,58,400 Cr');
     const sections = [...v.element.querySelectorAll('[data-section]')].map((s) => (s as HTMLElement).dataset.section);

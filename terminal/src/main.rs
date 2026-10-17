@@ -32,6 +32,8 @@ struct Args {
     web_dir: PathBuf,
     warehouse: PathBuf,
     layouts_dir: PathBuf,
+    fund_store: PathBuf,
+    fund_python: Option<String>,
     python: String,
 }
 
@@ -44,6 +46,8 @@ fn args() -> Args {
         web_dir: PathBuf::from("terminal/web/dist"),
         warehouse: PathBuf::from(".athena/warehouse.duckdb"),
         layouts_dir: PathBuf::from(".athena/terminal/layouts"),
+        fund_store: PathBuf::from(".athena/fundamentals.duckdb"),
+        fund_python: None,
         python: ".venv/Scripts/python.exe".to_string(),
     };
     let mut it = std::env::args().skip(1);
@@ -74,6 +78,12 @@ fn args() -> Args {
             "--layouts-dir" => {
                 if let Some(v) = it.next() {
                     out.layouts_dir = PathBuf::from(v);
+                }
+            }
+            "--fund-python" => out.fund_python = it.next(),
+            "--fund-store" => {
+                if let Some(v) = it.next() {
+                    out.fund_store = PathBuf::from(v);
                 }
             }
             "--web-dir" => {
@@ -181,7 +191,7 @@ async fn main() {
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
     let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
-    let fundamentals = Arc::new(fundamentals::FundamentalsJobs::standard(&args.python, bars.warehouse.clone(), PathBuf::from(".athena/fundamentals.duckdb")));
+    let fundamentals = Arc::new(fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone()));
     let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();

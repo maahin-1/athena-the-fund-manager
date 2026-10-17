@@ -42,13 +42,13 @@ function drawTable(table: Table): HTMLElement {
  *  and ratios, from `/api/fund/:symbol`. Needs no market data except the live price in the header. */
 export class FundamentalsView {
   readonly element = el('div', 'fund');
-  private list = el('div', 'rlist');
-  private main = el('div', 'rmain fmain');
-  private head = el('div', 'rtitle');
+  private list = el('div', 'flist');
+  private main = el('div', 'fmain');
+  private head = el('div', 'ftitle');
   private body = el('div', 'fbody');
-  private picker = el('select', 'rpick');
-  private livePrice = el('span', 'rprice');
-  private liveChange = el('span', 'rchg');
+  private picker = el('select', 'fpick');
+  private livePrice = el('span', 'fprice');
+  private liveChange = el('span', 'fchg');
   private chart: PriceChart;
   private symbol = '';
   private basis: Basis = 'consolidated';
@@ -99,11 +99,11 @@ export class FundamentalsView {
   }
 
   private paintList(): void {
-    this.list.replaceChildren(el('div', 'rlisthead', 'Watchlist'));
+    this.list.replaceChildren(el('div', 'flisthead', 'Watchlist'));
     this.picker.replaceChildren();
     const items = this.ctx.watchlist.items.includes(this.symbol) || !this.symbol ? this.ctx.watchlist.items : [this.symbol, ...this.ctx.watchlist.items];
     for (const s of items) {
-      const b = el('button', 'ritem', s);
+      const b = el('button', 'fitem', s);
       b.dataset.symbol = s;
       b.classList.toggle('on', s === this.symbol);
       b.addEventListener('click', () => this.pick(s));
@@ -127,7 +127,7 @@ export class FundamentalsView {
   private async load(): Promise<void> {
     const mine = ++this.token;
     const symbol = this.symbol;
-    this.head.replaceChildren(el('span', 'rsym', symbol), el('span', 'note', 'loading…'));
+    this.head.replaceChildren(el('span', 'fsym', symbol), el('span', 'note', 'loading…'));
     this.body.replaceChildren();
     let got = await this.fetchPage(symbol, this.basis);
     let note = '';
@@ -144,7 +144,7 @@ export class FundamentalsView {
   }
 
   private fail(symbol: string, status: number, error?: string): void {
-    this.head.replaceChildren(el('span', 'rsym', symbol));
+    this.head.replaceChildren(el('span', 'fsym', symbol));
     const text =
       status === 404
         ? `No statements are stored for ${symbol}. Fetch them with: python -m athena.fundamentals.ingest --universe ${symbol}`
@@ -176,7 +176,7 @@ export class FundamentalsView {
   }
 
   private headerRow(page: FundPage): HTMLElement {
-    const row = el('div', 'rtop');
+    const row = el('div', 'ftop');
     const toggle = el('span', 'basis-toggle');
     for (const b of ['consolidated', 'standalone'] as const) {
       const button = el('button', `rbtn${page.basis === b ? ' on' : ''}`, b === 'consolidated' ? 'Consolidated' : 'Standalone');
@@ -197,15 +197,15 @@ export class FundamentalsView {
     chartLink.addEventListener('click', () => this.ctx.showSymbol(page.symbol));
     const research = el('button', 'btn', 'Research');
     research.addEventListener('click', () => this.ctx.openResearch(page.symbol));
-    row.append(this.picker, el('span', 'rsym', page.symbol), el('span', 'rname', page.name), this.livePrice, this.liveChange, toggle, exportLink, chartLink, research);
+    row.append(this.picker, el('span', 'fsym', page.symbol), el('span', 'fname', page.name), this.livePrice, this.liveChange, toggle, exportLink, chartLink, research);
     this.picker.value = page.symbol;
     return row;
   }
 
   private navRow(): HTMLElement {
-    const nav = el('div', 'rnav');
+    const nav = el('div', 'fnav');
     for (const name of SECTIONS) {
-      const b = el('button', 'rnavbtn', name);
+      const b = el('button', 'fnavbtn', name);
       b.addEventListener('click', () => this.body.querySelector(`[data-section="${name}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
       nav.append(b);
     }
@@ -225,7 +225,7 @@ export class FundamentalsView {
   }
 
   private chartCard(page: FundPage): HTMLElement {
-    const card = el('section', 'rcard fchart-card');
+    const card = el('section', 'fcard fchart-card');
     card.append(el('h3', '', 'Price'), this.chart.element);
     this.chart.load(page.symbol);
     return card;
@@ -250,7 +250,7 @@ export class FundamentalsView {
   }
 
   private section(name: string, content: HTMLElement, present: boolean): HTMLElement {
-    const card = el('section', 'rcard wide');
+    const card = el('section', 'fcard wide');
     card.dataset.section = name;
     card.append(el('h3', '', name), present ? content : el('div', 'note', `No ${name.toLowerCase()} are stored for this company yet.`));
     return card;
@@ -277,7 +277,7 @@ export class FundamentalsView {
     const change = q.l - q.pc;
     this.livePrice.textContent = price(q.l);
     this.liveChange.textContent = `${signed(change)} (${pct(q.pc ? (change / q.pc) * 100 : 0)})`;
-    this.liveChange.className = `rchg ${change > 0 ? 'up' : change < 0 ? 'dn' : 'flat'}`;
+    this.liveChange.className = `fchg ${change > 0 ? 'up' : change < 0 ? 'dn' : 'flat'}`;
   }
 
   private onQuotes(quotes: Quote[]): void {

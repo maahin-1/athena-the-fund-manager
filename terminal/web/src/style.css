@@ -162,27 +162,27 @@ html, body { overflow: hidden; }
 
 /* research page */
 .research, .fund { flex: 1; min-height: 0; min-width: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr); }
-.rlist { border-right: 1px solid var(--border); background: var(--bg-panel); overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 1px; }
-.rlisthead { color: var(--fg-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; padding: 4px 6px; }
-.ritem { text-align: left; background: none; color: var(--fg); border: 1px solid transparent; border-radius: 3px; padding: 4px 8px; font: inherit; cursor: pointer; }
-.ritem:hover { background: var(--grid); }
-.ritem.on { border-color: var(--accent); background: var(--grid); }
-.rmain { min-width: 0; min-height: 0; overflow-y: auto; scroll-behavior: smooth; background: var(--bg); }
-.rtitle { position: sticky; top: 0; z-index: 5; background: var(--bg-bar); border-bottom: 1px solid var(--border); padding: 6px 12px 0; }
-.rtop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
-.rpick { display: none; align-self: center; }
-.rsym { font-size: 22px; font-weight: 700; letter-spacing: 0.02em; }
-.rname { color: var(--fg-dim); font-size: 13px; }
-.rprice { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: auto; }
-.rchg { font-size: 14px; font-variant-numeric: tabular-nums; }
-.rnav { display: flex; flex-wrap: wrap; gap: 2px; padding-top: 4px; }
-.rnavbtn { background: none; color: var(--fg-dim); border: none; border-bottom: 2px solid transparent; padding: 4px 10px; font: inherit; cursor: pointer; }
-.rnavbtn:hover { color: var(--fg); border-bottom-color: var(--label); }
+.rlist, .flist { border-right: 1px solid var(--border); background: var(--bg-panel); overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 1px; }
+.rlisthead, .flisthead { color: var(--fg-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; padding: 4px 6px; }
+.ritem, .fitem { text-align: left; background: none; color: var(--fg); border: 1px solid transparent; border-radius: 3px; padding: 4px 8px; font: inherit; cursor: pointer; }
+.ritem:hover, .fitem:hover { background: var(--grid); }
+.ritem.on, .fitem.on { border-color: var(--accent); background: var(--grid); }
+.rmain, .fmain { min-width: 0; min-height: 0; overflow-y: auto; scroll-behavior: smooth; background: var(--bg); }
+.rtitle, .ftitle { position: sticky; top: 0; z-index: 5; background: var(--bg-bar); border-bottom: 1px solid var(--border); padding: 6px 12px 0; }
+.rtop, .ftop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.rpick, .fpick { display: none; align-self: center; }
+.rsym, .fsym { font-size: 22px; font-weight: 700; letter-spacing: 0.02em; }
+.rname, .fname { color: var(--fg-dim); font-size: 13px; }
+.rprice, .fprice { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: auto; }
+.rchg, .fchg { font-size: 14px; font-variant-numeric: tabular-nums; }
+.rnav, .fnav { display: flex; flex-wrap: wrap; gap: 2px; padding-top: 4px; }
+.rnavbtn, .fnavbtn { background: none; color: var(--fg-dim); border: none; border-bottom: 2px solid transparent; padding: 4px 10px; font: inherit; cursor: pointer; }
+.rnavbtn:hover, .fnavbtn:hover { color: var(--fg); border-bottom-color: var(--label); }
 .rbody { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; padding: 12px; align-items: start; }
 .rbody > .note { grid-column: 1 / -1; }
-.rcard { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; padding: 10px 14px 14px; min-width: 0; scroll-margin-top: 96px; }
-.rcard.wide { grid-column: 1 / -1; }
-.rcard h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--label); }
+.rcard, .fcard { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; padding: 10px 14px 14px; min-width: 0; scroll-margin-top: 96px; }
+.rcard.wide, .fcard.wide { grid-column: 1 / -1; }
+.rcard h3, .fcard h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--label); }
 .chip.big { font-size: 18px; padding: 3px 16px; }
 .rverdict .vconv { font-size: 14px; }
 .rverdict .note { font-size: 12px; line-height: 1.45; }
@@ -199,9 +199,9 @@ html, body { overflow: hidden; }
 
 @media (max-width: 760px) {
   .research, .fund { grid-template-columns: minmax(0, 1fr); }
-  .rlist { display: none; }
-  .rpick { display: inline-block; }
-  .rprice { margin-left: 0; }
+  .rlist, .flist { display: none; }
+  .rpick, .fpick { display: inline-block; }
+  .rprice, .fprice { margin-left: 0; }
 }
 
 /* fundamentals page */

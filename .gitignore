@@ -17,3 +17,4 @@ terminal/web/dist/
 terminal/web/e2e-layouts/
 terminal/web/test-results/
 terminal/web/playwright-report/
+terminal/web/e2e-fund/
