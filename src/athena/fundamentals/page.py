@@ -14,7 +14,7 @@ from datetime import date
 from typing import Any
 
 from athena.contracts import AthenaError
-from athena.fundamentals import ratios
+from athena.fundamentals import history, ratios
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore, open_read
 
 QUARTERS_SHOWN = 13
@@ -147,9 +147,12 @@ def _key_figures(layout: str, price: float | None, shares: float | None, quarter
     return out
 
 
-def build_page(store: FundamentalsStore, symbol: str, basis: str, price: float | None, price_note: str = "") -> dict[str, Any]:
-    income = store.lines(symbol, basis, "income")
-    balance_raw = store.lines(symbol, basis, "balance")
+def build_page(
+    store: FundamentalsStore, symbol: str, basis: str, price: float | None, price_note: str = "", table: dict[str, tuple[history.Predecessor, ...]] | None = None
+) -> dict[str, Any]:
+    table = history.PREDECESSORS if table is None else table
+    income = history.lines(store, symbol, basis, "income", table)
+    balance_raw = history.lines(store, symbol, basis, "balance", table)
     if not income and not balance_raw:
         return {"symbol": symbol, "basis": basis, "error": "no statements stored"}
     company = store.company(symbol) or {}
@@ -157,8 +160,8 @@ def build_page(store: FundamentalsStore, symbol: str, basis: str, price: float |
     fy_income = ratios.annual(income)
     quarters = ratios.quarterly(income)
     balance = {end: got for (_, end), got in balance_raw.items()}
-    cash = ratios.annual(store.lines(symbol, basis, "cashflow"))
-    banking = ratios.annual(store.lines(symbol, basis, "banking"))
+    cash = ratios.annual(history.lines(store, symbol, basis, "cashflow", table))
+    banking = ratios.annual(history.lines(store, symbol, basis, "banking", table))
 
     years = sorted(fy_income)
     q_ends = sorted(quarters)[-QUARTERS_SHOWN:]
@@ -193,10 +196,11 @@ def build_page(store: FundamentalsStore, symbol: str, basis: str, price: float |
             gaps.append(f"{name} start at FY{first.year}; the earlier years are not held yet")
     if years and not any(r["key"] == "sales" for r in annual_income):
         gaps.append("this company files in a layout without revenue lines (insurers are not supported yet), so its statements are mostly empty")
-    coverage = next((c for c in store.coverage() if c["symbol"] == symbol and c["basis"] == basis), None)
+    held = sorted({*income, *balance_raw})
+    coverage = {"periods": len(held), "first": held[0][1], "last": held[-1][1]} if held else None
     last_year = year_ratio[years[-1]] if years else {}
     return {
-        "symbol": symbol, "name": company.get("name") or symbol, "layout": layout, "basis": basis, "bases": store.bases(symbol),
+        "symbol": symbol, "name": company.get("name") or symbol, "layout": layout, "basis": basis, "bases": history.bases(store, symbol, table), "history": history.used(store, symbol, basis, table),
         "as_of": _iso(max([*quarters, *fy_income])) if (quarters or fy_income) else None,
         "price": price, "price_note": price_note,
         "key": _key_figures(layout, price, company.get("shares"), quarters, fy_income, balance, last_year),

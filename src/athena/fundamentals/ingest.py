@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from athena.contracts import AthenaError
+from athena.fundamentals.history import PREDECESSORS, Predecessor, chain
 from athena.fundamentals.integrated import FundamentalsResults, is_block
 from athena.fundamentals.rows import parse_rows
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore, now
@@ -43,6 +44,19 @@ class Report:
 
 
 _blocked = is_block
+
+
+def with_predecessors(members: Sequence[Member], table: dict[str, tuple[Predecessor, ...]] = PREDECESSORS) -> list[Member]:
+    """The members, each followed by the earlier symbols of its company (see `athena.fundamentals.history`), so a renamed company's old statements are
+    fetched under their old symbol. A symbol already in the list is not added twice."""
+    out: list[Member] = []
+    seen: set[str] = set()
+    for m in members:
+        for member in (m, *(Member(p.symbol, m.name, m.industry, m.isin) for p in reversed(chain(m.symbol, table)))):
+            if member.symbol not in seen:
+                seen.add(member.symbol)
+                out.append(member)
+    return out
 
 
 def wanted(refs: Sequence[FilingRef], quarters: int = 13, standalone: bool = False) -> list[FilingRef]:
@@ -164,10 +178,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="stop after this many companies")
     parser.add_argument("--quarters", type=int, default=13)
     parser.add_argument("--standalone", action="store_true", help="also fetch standalone filings")
+    parser.add_argument("--no-history", action="store_true", help="do not also fetch the earlier symbols of renamed companies")
     parser.add_argument("--refresh", action="store_true", help="read filings already stored again with the current mapping (uses the kept copies)")
     parser.add_argument("--store", default=str(DEFAULT_PATH))
     args = parser.parse_args(argv)
     members = universe(args.universe)
+    if not args.no_history:
+        members = with_predecessors(members)
     print(f"{len(members)} companies in {args.universe}", flush=True)
     return run(
         members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters,

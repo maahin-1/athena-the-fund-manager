@@ -22,6 +22,7 @@ const page: FundPage = {
   growth: [{ title: 'Compounded Sales Growth', rows: [{ label: '5 Years', value: 10.2 }, { label: '10 Years', value: null }] }],
   coverage: { periods: 50, first: '2019-03-31', last: '2026-09-30' },
   gaps: ['balance sheets start at FY2023; the earlier years are not held yet'],
+  history: [{ symbol: 'OLDTCS', note: 'OLDTCS was renamed TCS in 2020.', first: '2019-03-31', last: '2020-03-31' }],
 };
 
 function context(): AppContext {
@@ -61,6 +62,14 @@ describe('fundamentals page', () => {
     expect(v.element.querySelector('[data-section="Cash Flows"]')?.textContent).toContain('No cash flows are stored');
     expect(v.element.textContent).toContain('Not held yet: balance sheets start at FY2023');
     expect(v.element.textContent).toContain('50 periods held, Mar 2019 to Sep 2026');
+  });
+
+  it('tells which earlier symbols are included and why', () => {
+    const v = view();
+    v.render(page);
+    const note = v.element.querySelector('.fhistory')?.textContent ?? '';
+    expect(note).toContain('Includes OLDTCS (Mar 2019 to Mar 2020)');
+    expect(note).toContain('renamed TCS in 2020');
   });
 
   it('marks the active basis, disables the one that is not stored and links the export', () => {

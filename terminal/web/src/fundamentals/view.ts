@@ -263,6 +263,7 @@ export class FundamentalsView {
       el('div', 'note', `Source: NSE results filings (XBRL). Rupee figures in crores. ${cov ? `${cov.periods} periods held, ${periodLabel(cov.first)} to ${periodLabel(cov.last)}.` : ''}`),
     );
     for (const gap of page.gaps) foot.append(el('div', 'note', `Not held yet: ${gap}.`));
+    for (const h of page.history ?? []) foot.append(el('div', 'note fhistory', `Includes ${h.symbol} (${periodLabel(h.first)} to ${periodLabel(h.last)}): ${h.note}`));
     if (page.price !== null) foot.append(el('div', 'note', `Price used for market figures: ${price(page.price)}${page.price_note ? ` (${page.price_note})` : ''}.`));
     foot.append(el('div', 'note', 'Hover a ratio or key figure to see how it is worked out.'));
     return foot;

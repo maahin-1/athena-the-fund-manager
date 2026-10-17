@@ -35,4 +35,6 @@ export interface FundPage {
   growth: GrowthTable[];
   coverage: { periods: number; first: string; last: string } | null;
   gaps: string[];
+  /** Earlier symbols of this company whose periods are included, each with what changed. */
+  history: { symbol: string; note: string; first: string; last: string }[];
 }

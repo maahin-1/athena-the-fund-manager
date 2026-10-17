@@ -138,3 +138,14 @@ def test_refresh_reads_a_stored_filing_again_from_the_kept_copy_and_drops_what_t
     with FundamentalsStore(path) as store:
         assert all("wrong_row" not in got for got in store.lines("TCS", "consolidated", "income").values())
         assert store.lines("TCS", "consolidated", "income")
+
+
+def test_earlier_symbols_of_a_renamed_company_are_fetched_after_it_and_never_twice():
+    from athena.fundamentals.history import Predecessor
+
+    table = {"NEW": (Predecessor("OLD", "renamed"),)}
+    members = [Member("NEW", "New Ltd", "IT", "INE1"), Member("OTHER", "Other", "IT", "INE2"), Member("OLD", "Old Ltd", "IT", "INE1")]
+    out = ingest.with_predecessors(members, table)
+    assert [m.symbol for m in out] == ["NEW", "OLD", "OTHER"]
+    assert out[1].name == "New Ltd"  # the earlier symbol is the same company
+    assert ingest.with_predecessors([Member("OTHER", "Other", "IT", "INE2")], table)[0].symbol == "OTHER"

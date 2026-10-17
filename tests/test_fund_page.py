@@ -147,3 +147,31 @@ def test_an_insurer_page_has_premium_rows_and_return_on_equity_only():
     assert {r["key"] for r in doc["ratios"]["rows"]} == {"roe"}
     assert doc["gaps"] == [] or all("insurers" not in g for g in doc["gaps"])
     assert any(k["label"] == "Market Cap" for k in doc["key"])  # shares are implied from profit over earnings per share
+
+
+def test_a_renamed_company_shows_one_history_with_the_note_and_the_new_symbol_wins_a_shared_period():
+    import dataclasses
+
+    from athena.fundamentals.history import Predecessor
+
+    table = {"NEW": (Predecessor("OLD", "OLD was renamed NEW in 2024."),)}
+    with FundamentalsStore(":memory:") as store:
+        for symbol, name, stamp in (("OLD", "tcs_fy2020", 12), ("NEW", "tcs_fy2024", 13), ("OLD", "tcs_fy2024", 14)):
+            statements = dataclasses.replace(parse_rows((FIXTURES / f"{name}.xml").read_text(encoding="utf-8")), symbol=symbol)
+            store.save_statements(statements, f"{symbol}-{name}", datetime(2024, 4, stamp, tzinfo=timezone.utc))
+            store.save_company(symbol, symbol, "INE", "IT", statements.layout, statements.shares)
+        alone = page.build_page(store, "NEW", "consolidated", None, table={})
+        merged = page.build_page(store, "NEW", "consolidated", None, table=table)
+    assert alone["annual"]["ends"] == ["2024-03-31"] and alone["history"] == []
+    assert merged["annual"]["ends"] == ["2020-03-31", "2024-03-31"]
+    assert [h["symbol"] for h in merged["history"]] == ["OLD"] and "renamed" in merged["history"][0]["note"]
+    assert merged["history"][0]["first"] == "2020-03-31"
+    assert merged["coverage"]["first"] == "2020-03-31"
+
+
+def test_the_successions_form_chains_oldest_first_and_a_loop_cannot_hang():
+    from athena.fundamentals.history import Predecessor, chain
+
+    table = {"C": (Predecessor("B", ""),), "B": (Predecessor("A", ""),), "A": (Predecessor("C", ""),)}
+    assert [p.symbol for p in chain("C", table)] == ["A", "B"]
+    assert chain("NOBODY", table) == []
