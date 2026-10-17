@@ -2,7 +2,7 @@
 
     python scripts/fund_crosscheck.py TCS SBIN RELIANCE
 Prints, per company and year, our figure over Yahoo's for revenue and net profit; a ratio outside 0.99 to 1.01 is flagged. Banks are compared on net
-profit only (Yahoo's revenue for a bank is a different construct from interest earned)."""
+profit only (Yahoo's revenue for a bank or lender is a different construct from interest earned or revenue from operations)."""
 from __future__ import annotations
 
 import sys
@@ -29,8 +29,8 @@ def main(symbols: list[str]) -> int:
                 if not mine:
                     continue
                 for key, row in (("sales", "Total Revenue"), ("net_profit", "Net Income")):
-                    if key == "sales" and company.get("layout") == "bank":
-                        continue
+                    if key == "sales" and company.get("layout") in ("bank", "finance"):
+                        continue  # Yahoo's revenue for a lender is net of interest expense: a different construct
                     theirs = frame.loc[row, column] if row in frame.index else None
                     if mine.get(key) is None or theirs is None or theirs != theirs:
                         continue

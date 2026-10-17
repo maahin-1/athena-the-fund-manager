@@ -140,3 +140,13 @@ A batch is a group of phases that ends in something usable. Each gets a detailed
 | B10 | 5k chart grid, 5j replay, 6k PDF history and shareholder search, 7c sentiment test | Completeness and the sentiment finding |
 
 Each batch's detailed plan lists exact files, tests-first steps and the commit messages, and ends with the market-hours items it queued.
+
+## 10. B1a results (2026-10-17, statement store and ratio engine)
+
+Built and tested: `athena.fundamentals` (mapping, parser, DuckDB store, universe, resumable ingest, ratio engine, text tables), 46 new tests, plus a trimmed-fixture generator and a Yahoo cross-check. Proven on five real companies (TCS, HDFC Bank, Bajaj Finance, Reliance, SBI): 14 to 16 filings each in 5 to 23 seconds (the filings were mostly cached from earlier work; a cold fetch is about 1.5 s per filing).
+
+**Cross-check against Yahoo, annual revenue and net profit, FY2023 and FY2024:** 14 of 20 figures equal to the rupee. The six flagged are definition or restatement differences, not mapping errors: Bajaj Finance revenue (Yahoo's revenue for a lender is net of interest expense, so the script now skips lender and bank revenue), HDFC Bank net profit (Yahoo's FY2023 figure is restated for the merger; ours is as first filed, which is the point-in-time rule, and the FY2024 gap is the minority share), Reliance revenue (ours is revenue from operations as filed, Yahoo's is about 1.5% lower, consistent with a net-of-duty construct; not yet verified against the filing's own note).
+
+**Defects found by reading real numbers, not by the tests, and fixed:** a bank's operating profit came out negative until it used the filed pre-provision profit; free cash flow equalled operating cash flow when a bank filed capex as 0.00; a bank's unreported ratios were stored as zero; the profit reconciliation ignored provisions.
+
+**Open finding, blocks "current" fundamentals: NSE's results endpoints are stale.** Probed 2026-10-17: `corporates-financial-results` (quarterly and annual, with or without a date range) and `results-comparision` return nothing after the **December 2024** quarter for TCS, and every stored company ends at 2024-12-31, while the same site's announcements feed is live through 2026. So the pipeline is correct on what NSE serves, but the latest ten months of filings (FY2025 annual onward) are not reachable through these endpoints. Next step needs a decision: find the endpoint NSE's own results page uses now (observe it with REA on the public results page), or use BSE's results API, or fetch result attachments from the announcements feed.

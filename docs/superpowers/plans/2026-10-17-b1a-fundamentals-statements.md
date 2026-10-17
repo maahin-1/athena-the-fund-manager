@@ -1911,3 +1911,11 @@ git commit -m "docs: fundamentals statement store and ratio engine, with the Nif
 **Placeholder scan:** none; every step has its code or command.
 
 **Type consistency:** `Statements` fields (`income`, `cashflow`, `banking` keyed `(date, date)`; `balance` keyed `date`) are used as such in `store.save_statements`; `store.lines` returns balance keyed `(end, end)`, which `show.render` and the page layer re-key by end date; `FilingRef` fields match `athena.pit.nse_results`; ratio inputs use the keys defined in `lines.py` (`equity_capital`, `reserves`, `borrowings`, `total_assets`, `current_liabilities`, `current_assets`, `receivables`, `inventory`, `payables`, `cash`, `bank_balances`, `advances`, `deposits`, income `sales`, `pbt`, `interest`, `net_profit`, `operating_profit`, cash `cfo`, `capex`, `fcf`).
+
+## As built (2026-10-17): deviations from the steps above
+
+- Task 2: the fixture trimmer keeps every fact whose context is not dimensioned (some filings never define `OneD`, `FourD`, `OneI`), not only facts of defined contexts.
+- Task 3: `derive_income` for banks uses the filed `OperatingProfitBeforeProvisionAndContingencies` (new line `pre_provision_profit`), expenses are operating expenses without provisions, OPM is over total income; `derive_cashflow(got, layout)` gives no free cash flow for banks or when capex is zero; unreported (0.00) bank ratios are not stored; `reconcile` subtracts provisions; `derive_balance` lost its unused `layout` parameter.
+- Task 4: `coverage()` counts distinct `(period_start, period_end)` periods.
+- Task 6: the quarter and year of one annual filing share an end date, so a filing counts as one fetch but two periods.
+- Task 8: the proof ran on five real companies; Task 9 step 1 (the full Nifty 50 run) was **not** run, because the probe found NSE's results endpoints stale after December 2024 (see the master design, section 10). Running the Nifty 50 now would store the same ending.
