@@ -126,3 +126,13 @@ def test_open_read_retries_a_locked_file_then_gives_up(tmp_path, monkeypatch):
 def test_open_read_on_a_missing_file_does_not_wait(tmp_path):
     with pytest.raises(AthenaError, match="ingest"):
         open_read(tmp_path / "nothing.duckdb", tries=3, pause=0, sleep=lambda s: pytest.fail("should not retry"))
+
+
+def test_a_filing_with_no_revenue_line_says_it_is_not_supported_yet():
+    with FundamentalsStore(":memory:") as store:
+        store._con.execute(
+            "INSERT INTO statement_lines VALUES ('LIFE', 'consolidated', 'income', DATE '2025-04-01', DATE '2026-03-31', 'pbt', 100.0, 'u', now(), 'nse-xbrl')"
+        )
+        store.save_company("LIFE", "Some Life Insurance", "INE", "Insurance", "indas", 1.0)
+        doc = page.build_page(store, "LIFE", "consolidated", None)
+    assert any("insurers are not supported" in g for g in doc["gaps"])

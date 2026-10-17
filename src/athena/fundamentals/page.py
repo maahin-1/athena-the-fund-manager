@@ -184,6 +184,8 @@ def build_page(store: FundamentalsStore, symbol: str, basis: str, price: float |
         first = min((y for y in years if y in held), default=None)
         if years and first is not None and first > years[0]:
             gaps.append(f"{name} start at FY{first.year}; the earlier years are not held yet")
+    if years and not any(r["key"] == "sales" for r in annual_income):
+        gaps.append("this company files in a layout without revenue lines (insurers are not supported yet), so its statements are mostly empty")
     coverage = next((c for c in store.coverage() if c["symbol"] == symbol and c["basis"] == basis), None)
     last_year = year_ratio[years[-1]] if years else {}
     return {

@@ -111,3 +111,13 @@ Layout (same order and controls as the reference page, own styling): header (nam
 - [ ] **Step 2: `terminal/web/e2e/fund.spec.ts`**: with the terminal on the fake feed and a seeded temporary fundamentals file, assert the page shows Sales for a seeded year, toggling basis changes the table, export download has `.xlsx` and starts with `PK`.
 - [ ] **Step 3: docs**: TRD 2.21 gets the page and routes, master design §10 gets B1b results, this plan gets an "As built" note.
 - [ ] **Step 4: graphify rebuild** (`graphify update .`), **commit** `docs: B1b results`.
+
+## As built (2026-10-17)
+
+- Task 1: `open_read` is a thin wrapper; the retry for a locked file moved into `FundamentalsStore.__init__` (writers need it too). TTM for OPM % is TTM operating profit over TTM sales (total income for banks), for tax % TTM tax over TTM profit before tax; summing percentages was wrong and was fixed. Gaps are worded by financial year ("balance sheets start at FY2023"), not by the first half-year balance date. A filing with no revenue line says insurers are not supported.
+- Task 2: openpyxl reads whole numbers back as ints; the test accepts int or float. The writer had a missing `extend` on worksheets, found by running the CLI on real data (the fixture had no gaps); the test now includes gaps.
+- Task 3: `status()` reads the store from Rust directly. Two new flags, `--fund-store` and `--fund-python`.
+- Task 4: `growthClass` returns `up`/`dn`/`flat` (the page's existing classes), not `down`.
+- Task 5: the view uses its own class names (`flist`, `fitem`, `fcard`, ...) twinned in CSS; the older smoke test's `Fundamentals` button selector (the Analysis tab) is now `.tab[data-tab="Fundamentals"]` because the main tab has the same name.
+- Task 6: Playwright seeds `terminal/web/e2e-fund/f.duckdb` from the XBRL fixtures (`scripts/seed_fund_fixture.py`, global setup).
+
