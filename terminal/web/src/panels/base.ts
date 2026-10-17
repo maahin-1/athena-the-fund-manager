@@ -3,32 +3,15 @@ import type { PanelState, PanelType } from '../layout';
 import { nextGroup, type Group, type LinkBus } from '../links';
 
 /** The ordered list of symbols the watchlist shows; shared by every panel that needs it. */
-export class WatchlistStore {
-  private listeners = new Set<() => void>();
-  constructor(public items: string[]) {}
-  set(items: string[]): void {
-    this.items = [...items];
-    this.emit();
-  }
-  add(symbol: string): void {
-    if (!this.items.includes(symbol)) this.set([...this.items, symbol]);
-  }
-  remove(symbol: string): void {
-    this.set(this.items.filter((s) => s !== symbol));
-  }
-  subscribe(fn: () => void): () => void {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  }
-  private emit(): void {
-    this.listeners.forEach((fn) => fn());
-  }
-}
+
+import type { IndexFeed } from '../indices';
+import type { WatchlistsStore } from '../watchlists/store';
 
 export interface AppContext {
   feed: Feed;
   bus: LinkBus;
-  watchlist: WatchlistStore;
+  watchlist: WatchlistsStore;
+  indices: IndexFeed;
   state(id: string): PanelState;
   changed(): void; // something worth saving changed
   openResearch(symbol: string): void; // switch to the Research page on this stock
@@ -36,6 +19,7 @@ export interface AppContext {
   showSymbol(symbol: string): void; // switch to the terminal and show this stock's chart
   retitle(id: string, text: string): void; // the panel's tab shows this
   linkChanged(id: string): void; // a panel's link colour changed
+  isKnown(symbol: string): Promise<boolean>; // whether the market lists this stock, ETF or index
 }
 
 export const TITLES: Record<PanelType, string> = { watchlist: 'Watchlist', chart: 'Chart', depth: 'Depth', quote: 'Quote', tape: 'Tape', analysis: 'Analysis', verdict: 'Verdict' };

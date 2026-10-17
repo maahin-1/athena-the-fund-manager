@@ -1,4 +1,4 @@
-import { activeList, addSymbol, migrate, removeSymbol, symbolsOf, validate, type Doc } from './model';
+import { activeList, addSymbol, isIndexSymbol, migrate, removeSymbol, symbolsOf, validate, type Doc } from './model';
 
 /** Where the document lives on the server. `load` gives null when none is saved yet and throws when the server cannot be reached. */
 export interface WatchlistIO {
@@ -35,12 +35,27 @@ export class WatchlistsStore {
   doc: Doc;
   /** A change that has not reached the server yet. */
   dirty = false;
+  /** Nothing has been saved or changed yet, here or (as far as we know) on the server: a layout's own list may still seed it. */
+  fresh: boolean;
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private saving: Promise<void> = Promise.resolve();
 
   constructor(private io: WatchlistIO, private local: KeyValue | null, seed: readonly string[]) {
-    this.doc = this.fromLocal() ?? migrate(seed);
+    const saved = this.fromLocal();
+    this.fresh = saved === null;
+    this.doc = saved ?? migrate(seed);
+  }
+
+  /** The first time only: a saved layout from before the watchlists were kept apart brings its symbols along. */
+  seedFrom(symbols: readonly string[]): void {
+    if (!this.fresh) return;
+    this.fresh = false;
+    this.doc = migrate(symbols);
+    this.dirty = true;
+    this.keepLocal();
+    this.emit();
+    this.schedule();
   }
 
   private fromLocal(): Doc | null {
@@ -52,7 +67,13 @@ export class WatchlistsStore {
     }
   }
 
+  /** The active list's stocks and ETFs: what feeds, depth and statements can be asked for. Indices are left out (see `all`). */
   get items(): string[] {
+    return symbolsOf(activeList(this.doc)).filter((s) => !isIndexSymbol(s));
+  }
+
+  /** Everything in the active list, indices included. */
+  get all(): string[] {
     return symbolsOf(activeList(this.doc));
   }
 
@@ -74,6 +95,7 @@ export class WatchlistsStore {
     const next = change(this.doc);
     if (next === this.doc) return;
     this.doc = next;
+    this.fresh = false;
     this.dirty = true;
     this.keepLocal();
     this.emit();
@@ -103,6 +125,7 @@ export class WatchlistsStore {
     } catch {
       return; // an unreadable server copy is never allowed to wipe the lists in use
     }
+    this.fresh = false;
     if (JSON.stringify(remote) !== JSON.stringify(this.doc)) {
       this.doc = remote;
       this.keepLocal();

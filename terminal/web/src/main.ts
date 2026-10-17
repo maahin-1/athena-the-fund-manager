@@ -13,7 +13,10 @@ import { ChartLabView } from './chartlab/view';
 import { FundamentalsView } from './fundamentals/view';
 import { ResearchView } from './research';
 import { ScreenView } from './screen';
-import { el, TITLES, WatchlistStore, type AppContext, type Panel } from './panels/base';
+import { el, TITLES, type AppContext, type Panel } from './panels/base';
+import { IndexFeed } from './indices';
+import { pct, price } from './format';
+import { serverIO, WatchlistsStore } from './watchlists/store';
 import { AnalysisPanel } from './panels/analysis';
 import { ChartPanel } from './panels/chart';
 import { DepthPanel } from './panels/depth';
@@ -34,7 +37,9 @@ const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = 
 class App implements AppContext {
   feed = new Feed(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   bus = new LinkBus();
-  watchlist = new WatchlistStore([...DEFAULT_WATCHLIST]);
+  watchlist = new WatchlistsStore(serverIO(), (() => { try { return localStorage; } catch { return null; } })(), DEFAULT_WATCHLIST);
+  indices = new IndexFeed();
+  private indexStrip = el('span', 'idxstrip');
   private states: Record<string, PanelState> = {};
   private theme: 'dark' | 'light' = 'dark';
   private dock!: DockviewApi;
@@ -108,6 +113,10 @@ class App implements AppContext {
     this.feed.onStatus(() => this.paintHealth());
     this.feed.connect();
     window.addEventListener('keydown', (e) => this.hotkeys(e));
+    this.indices.subscribe(() => this.paintIndexStrip());
+    this.indices.start();
+    window.addEventListener('focus', () => void this.watchlist.sync());
+    await this.watchlist.sync();
     await this.refreshLayoutList();
     await this.restore();
     let view: string | null = null;
@@ -240,7 +249,7 @@ class App implements AppContext {
     try {
       this.dock.clear();
       this.states = structuredClone(model.panels);
-      this.watchlist.set(model.watchlist);
+      this.watchlist.seedFrom(model.watchlist);
       this.setTheme(model.theme);
       if (model.dock) {
         this.dock.fromJSON(model.dock as never);
@@ -410,11 +419,27 @@ class App implements AppContext {
     }
     const full = el('button', 'btn', 'Fullscreen');
     full.addEventListener('click', () => (document.fullscreenElement ? void document.exitFullscreen() : void document.documentElement.requestFullscreen()));
-    this.bar.append(el('b', 'brand', 'ATHENA'), ...this.viewTabs.values(), this.layoutSelect, this.addSelect, reset, save, this.nameBox, del, this.deleteSelect, this.command, this.statusLine, this.health, theme, full);
+    this.bar.append(el('b', 'brand', 'ATHENA'), ...this.viewTabs.values(), this.layoutSelect, this.addSelect, reset, save, this.nameBox, del, this.deleteSelect, this.command, this.indexStrip, this.statusLine, this.health, theme, full);
     this.paintMarket();
     setInterval(() => this.paintMarket(), 30_000);
     this.paintHealth();
     return this.bar;
+  }
+
+  /** Nifty 50, Nifty Bank and India VIX in the top bar, from the exchange's snapshot. Old values are marked, never hidden. */
+  private paintIndexStrip(): void {
+    this.indexStrip.replaceChildren();
+    for (const name of ['NIFTY 50', 'NIFTY BANK', 'INDIA VIX']) {
+      const row = this.indices.get(name);
+      if (!row) continue;
+      const item = el('span', 'idx');
+      item.dataset.index = name;
+      const dir = (row.ch ?? 0) > 0 ? 'up' : (row.ch ?? 0) < 0 ? 'dn' : 'flat';
+      item.append(el('b', '', name.replace('NIFTY ', 'N ').replace('INDIA ', '')), document.createTextNode(` ${price(row.l)} `), el('span', dir, row.pct === null ? '' : pct(row.pct)));
+      this.indexStrip.append(item);
+    }
+    this.indexStrip.classList.toggle('stale', this.indices.unavailable);
+    this.indexStrip.title = this.indices.unavailable ? 'index values are old: the server could not refresh them' : `exchange snapshot ${this.indices.asOf}`;
   }
 
   private paintMarket(): void {
@@ -471,7 +496,7 @@ class App implements AppContext {
   // ---- commands and keys ---------------------------------------------------------------------------------------------------------------
 
   /** Whether the warehouse lists the symbol (a stock, ETF or index). Unknown only when the server says so; a failed lookup lets the symbol through. */
-  private async isKnown(symbol: string): Promise<boolean> {
+  async isKnown(symbol: string): Promise<boolean> {
     const cached = this.known.get(symbol);
     if (cached !== undefined) return cached;
     try {

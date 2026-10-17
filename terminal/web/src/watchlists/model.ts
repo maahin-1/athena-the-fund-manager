@@ -23,6 +23,9 @@ export class WatchlistError extends Error {}
 
 export const INDEX_DEFAULTS = ['NIFTY 50', 'NIFTY BANK'];
 
+/** An index name (`NIFTY 50`, `INDIA VIX`), as against a stock or an ETF such as NIFTYBEES. Indices have no depth, volume or statements. */
+export const isIndexSymbol = (symbol: string): boolean => /^NIFTY( |$)/.test(symbol) || symbol === 'INDIA VIX';
+
 const norm = (symbol: string): string => symbol.trim().toUpperCase();
 const isFlag = (x: unknown): x is Flag => typeof x === 'string' && (FLAGS as readonly string[]).includes(x);
 const isColumn = (x: unknown): x is Column => typeof x === 'string' && (COLUMNS as readonly string[]).includes(x);
@@ -268,6 +271,21 @@ export function exportText(list: List): string {
   return lines.join('\n');
 }
 
+const PREFIX = /^\s*(NSE|BSE|NFO|BFO|MCX)\s*:/i;
+
+/** Every symbol the text names, upper-case, exchange prefix dropped, each once (so the page can check them before importing). */
+export function symbolsInText(text: string): string[] {
+  const out = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim().startsWith('###')) continue;
+    for (const token of line.split(',')) {
+      const s = norm(token.replace(PREFIX, ''));
+      if (s) out.add(s);
+    }
+  }
+  return [...out];
+}
+
 export interface Imported { doc: Doc; added: number; skipped: string[] }
 
 /** Read the text form (or plain symbols split by commas and new lines) into a list. `known` says which symbols the market has; others are skipped. */
@@ -288,7 +306,7 @@ export function importText(doc: Doc, text: string, known: (symbol: string) => bo
       continue;
     }
     for (const token of trimmed.split(',')) {
-      const s = norm(token.replace(/^\s*(NSE|BSE|NFO|BFO|MCX)\s*:/i, ''));
+      const s = norm(token.replace(PREFIX, ''));
       if (!s) continue;
       if (!known(s)) {
         skipped.push(s);

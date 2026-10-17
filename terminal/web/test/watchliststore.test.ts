@@ -35,7 +35,8 @@ describe('WatchlistsStore', () => {
   it('starts from the seed symbols when nothing is saved anywhere, and sends them to the server on the first sync', async () => {
     const { state, io } = fakeServer(null);
     const store = new WatchlistsStore(io, new Memory(), ['SBIN', 'TCS']);
-    expect(store.items).toEqual(['NIFTY 50', 'NIFTY BANK', 'SBIN', 'TCS']);
+    expect(store.items).toEqual(['SBIN', 'TCS']); // the two index rows are in the list but not in `items`
+    expect(store.all).toEqual(['NIFTY 50', 'NIFTY BANK', 'SBIN', 'TCS']);
     await store.sync();
     await vi.advanceTimersByTimeAsync(1);
     await store.flush();
@@ -68,7 +69,7 @@ describe('WatchlistsStore', () => {
     await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS + 5);
     expect(state.saves).toHaveLength(1);
     expect(store.dirty).toBe(false);
-    expect(store.items).toEqual(['NIFTY 50', 'SBIN', 'TCS']);
+    expect(store.all).toEqual(['NIFTY 50', 'SBIN', 'TCS']);
   });
 
   it('adding what is already there changes nothing and saves nothing', async () => {
@@ -123,5 +124,27 @@ describe('WatchlistsStore', () => {
     expect(await serverIO(status(200, { a: 1 })).load()).toEqual({ a: 1 });
     await expect(serverIO(status(500)).load()).rejects.toThrow(/500/);
     await expect(serverIO(status(413)).save('{}')).rejects.toThrow(/413/);
+  });
+});
+
+describe('seeding from a layout', () => {
+  it('a layout\'s own list seeds the very first document only', async () => {
+    const { state, io } = fakeServer(null);
+    const store = new WatchlistsStore(io, new Memory(), ['SBIN']);
+    await store.sync();
+    store.seedFrom(['LUPIN', 'RVNL']);
+    expect(store.items).toEqual(['LUPIN', 'RVNL']);
+    store.seedFrom(['TCS']); // too late: the document already exists
+    expect(store.items).toEqual(['LUPIN', 'RVNL']);
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS + 5);
+    expect(JSON.stringify(state.doc)).toContain('LUPIN');
+  });
+
+  it('is ignored when the server already holds the lists', async () => {
+    const { io } = fakeServer(migrate(['HDFCBANK']));
+    const store = new WatchlistsStore(io, new Memory(), ['SBIN']);
+    await store.sync();
+    store.seedFrom(['LUPIN']);
+    expect(store.items).toEqual(['HDFCBANK']);
   });
 });
