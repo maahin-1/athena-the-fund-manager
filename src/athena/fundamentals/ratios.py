@@ -70,6 +70,8 @@ def year_ratios(layout: str, income: dict[str, float], balance: dict[str, float]
     net_profit, sales, pbt, interest = income.get("net_profit"), income.get("sales"), income.get("pbt"), income.get("interest")
     if equity and net_profit is not None:
         out["roe"] = net_profit / equity * 100
+    if layout == "insurer":
+        return out  # return on equity only: working-capital and debt measures do not describe an insurer
     if layout == "bank":
         if balance.get("advances") and balance.get("deposits"):
             out["credit_deposit"] = balance["advances"] / balance["deposits"] * 100

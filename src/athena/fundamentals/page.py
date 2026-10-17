@@ -33,10 +33,17 @@ INCOME_ROWS = {
     ),
 }
 INCOME_ROWS["finance"] = INCOME_ROWS["indas"]
+INCOME_ROWS["insurer"] = (
+    ("gross_premium", "Gross Premium"), ("net_premium", "Net Premium"), ("investment_income", "Investment Income"), ("sales", "Total Income"),
+    ("benefits_paid", "Benefits Paid"), ("actuarial_liability", "Change in Actuarial Liability"), ("commission", "Commission"),
+    ("operating_expenses", "Operating Expenses"), ("total_expenses", "Total Expenses"), ("pbt", "Profit before tax"), ("tax_pct", "Tax %"),
+    ("net_profit", "Net Profit"), ("eps", "EPS in Rs"),
+)
 BALANCE_ROWS = (
     ("equity_capital", "Equity Capital"), ("reserves", "Reserves"), ("deposits", "Deposits"), ("borrowings", "Borrowings"),
     ("other_liabilities", "Other Liabilities"), ("total_assets", "Total Assets"), ("fixed_assets", "Fixed Assets"), ("cwip", "CWIP"),
-    ("investments", "Investments"), ("advances", "Advances"), ("loans", "Loans"), ("other_assets", "Other Assets"),
+    ("investments", "Investments"), ("advances", "Advances"), ("loans", "Loans"), ("policyholders_funds", "Policyholders' Funds"),
+    ("other_assets", "Other Assets"),
 )
 CASH_ROWS = (
     ("cfo", "Cash from Operating Activity"), ("cfi", "Cash from Investing Activity"), ("cff", "Cash from Financing Activity"),

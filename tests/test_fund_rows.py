@@ -111,3 +111,30 @@ def test_a_profit_that_does_not_follow_from_the_lines_is_noted():
     assert rows.reconcile({period: {"sales": 1000.0, "expenses": 100.0, "pbt": 500.0}})
     assert not rows.reconcile({period: {"sales": 1000.0, "expenses": 100.0, "pbt": 900.0}})
     assert not rows.reconcile({period: {"sales": 1000.0, "expenses": 100.0, "exceptional": -50.0, "pbt": 850.0}})
+
+
+def test_a_life_insurers_filing_uses_the_insurer_layout():
+    st = load("hdfclife_fy2026")
+    year = (date(2025, 4, 1), date(2026, 3, 31))
+    assert (st.symbol, st.basis, st.layout) == ("HDFCLIFE", "consolidated", "insurer")
+    inc = st.income[year]
+    assert inc["sales"] > inc["pbt"] > 0 and inc["net_premium"] < inc["gross_premium"]
+    assert inc["benefits_paid"] > 0 and inc["net_profit"] == pytest.approx(inc["eps"] * st.shares, rel=1e-9)
+    assert "operating_profit" not in inc and "opm" not in inc  # an insurer has no operating profit in the industrial sense
+    bal = st.balance[date(2026, 3, 31)]
+    assert bal["equity_capital"] == 21578200000.0 and bal["reserves"] == 153017500000.0  # reserves come from the period context
+    assert bal["policyholders_funds"] > 0
+    assert bal["equity_capital"] + bal["reserves"] + bal["borrowings"] + bal["policyholders_funds"] + bal["other_liabilities"] == pytest.approx(bal["total_assets"])
+    assert 2.1e9 < st.shares < 2.2e9  # implied from net profit over earnings per share: the filing gives no face value
+    assert st.notes == ()
+
+
+def test_a_period_start_with_day_and_month_swapped_in_the_filing_is_repaired_with_a_note():
+    notes: list[str] = []
+    assert rows._start("2025-04-01", notes) == date(2025, 4, 1)
+    assert rows._start(None, notes) is None and notes == []
+    assert rows._start("2025-01-10", notes) == date(2025, 10, 1)  # a life insurer's own filing
+    assert rows._start("2025-01-04", notes) == date(2025, 4, 1)
+    assert len(notes) == 2 and "read as 2025-10-01" in notes[0]
+    assert rows._start("2025-03-15", notes) is None  # not a month start and not a swap: ignored, and said so
+    assert "not a month start" in notes[2]

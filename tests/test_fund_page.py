@@ -136,3 +136,14 @@ def test_a_filing_with_no_revenue_line_says_it_is_not_supported_yet():
         store.save_company("LIFE", "Some Life Insurance", "INE", "Insurance", "indas", 1.0)
         doc = page.build_page(store, "LIFE", "consolidated", None)
     assert any("insurers are not supported" in g for g in doc["gaps"])
+
+
+def test_an_insurer_page_has_premium_rows_and_return_on_equity_only():
+    with stored("hdfclife_fy2026") as store:
+        doc = page.build_page(store, "HDFCLIFE", "consolidated", 700.0)
+    keys = {r["key"] for r in doc["annual"]["income"]}
+    assert {"gross_premium", "net_premium", "benefits_paid", "net_profit"} <= keys
+    assert "operating_profit" not in keys and "opm" not in keys
+    assert {r["key"] for r in doc["ratios"]["rows"]} == {"roe"}
+    assert doc["gaps"] == [] or all("insurers" not in g for g in doc["gaps"])
+    assert any(k["label"] == "Market Cap" for k in doc["key"])  # shares are implied from profit over earnings per share

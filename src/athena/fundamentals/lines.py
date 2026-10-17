@@ -1,7 +1,7 @@
 """Which exchange tag feeds which row of a company page. A tag the filing does not carry leaves its row absent; a figure is never guessed.
 
-Three layouts cover the filings: `indas` (industrial and service companies), `finance` (Ind-AS lenders: the same income lines as `indas`, a balance
-sheet of loans and borrowings) and `bank` (the banking taxonomy). Every figure is in rupees, as the exchange files it. Derived rows (operating
+Four layouts cover the filings: `indas` (industrial and service companies), `finance` (Ind-AS lenders: the same income lines as `indas`, a balance
+sheet of loans and borrowings), `bank` (the banking taxonomy) and `insurer` (life insurers' revenue account lines). Every figure is in rupees, as the exchange files it. Derived rows (operating
 profit, other assets and so on) are added in `athena.fundamentals.rows`."""
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from athena.pit.xbrl import INCOME_TAGS
 
-INDAS, FINANCE, BANK = "indas", "finance", "bank"
+INDAS, FINANCE, BANK, INSURER = "indas", "finance", "bank", "insurer"
 INCOME, BALANCE, CASHFLOW, BANKING = "income", "balance", "cashflow", "banking"
 
 
@@ -57,7 +57,25 @@ _BANK_INCOME = (
         "BasicEarningsPerShareAfterExtraordinaryItems", "BasicEarningsPerShareBeforeExtraordinaryItems",
     ),
 )
-INCOME_LINES: dict[str, tuple[Line, ...]] = {INDAS: _INDAS_INCOME, FINANCE: _INDAS_INCOME, BANK: _BANK_INCOME}
+_INSURER_INCOME = (
+    _l("gross_premium", "Gross premium", "GrossPremiumIncome"),
+    _l("net_premium", "Net premium", "NetPremiumIncome"),
+    _l("investment_income", "Income from investments", "IncomeFromInvestmentsNet"),
+    _l("sales", "Total income", "Income"),
+    _l("benefits_paid", "Benefits paid", "BenefitsPaidNet"),
+    _l("actuarial_liability", "Change in actuarial liability", "ChangeInActuarialLiability"),
+    _l("commission", "Commission", "NetCommission", "Commission"),
+    _l("operating_expenses", "Operating expenses", "OperatingExpensesRelatedToInsuranceBusiness"),
+    _l("total_expenses", "Total expenses", "Expenses"),
+    _l("pbt", "Profit before tax", "ProfitLossBeforeTax"),
+    _l("tax", "Tax", "ProvisionsForTaxes"),
+    _l("net_profit", "Net Profit", "ProfitLossAfterTaxAndExtraordinaryItems", "ProfitLossAfterTaxBeforeExtraordinaryItems"),
+    _l(
+        "eps", "EPS in Rs", "BasicAndDilutedEPSAfterExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",
+        "BasicAndDilutedEPSBeforeExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",
+    ),
+)
+INCOME_LINES: dict[str, tuple[Line, ...]] = {INDAS: _INDAS_INCOME, FINANCE: _INDAS_INCOME, BANK: _BANK_INCOME, INSURER: _INSURER_INCOME}
 
 BALANCE_LINES: dict[str, tuple[Line, ...]] = {
     INDAS: (
@@ -93,6 +111,16 @@ BALANCE_LINES: dict[str, tuple[Line, ...]] = {
         _l("receivables", "Receivables", "TradeReceivables", "OtherReceivables", how="sum"),
         _l("cash", "Cash and equivalents", "CashAndCashEquivalents"),
         _l("bank_balances", "Other bank balances", "BankBalanceOtherThanCashAndCashEquivalents"),
+    ),
+    INSURER: (
+        _l("equity_capital", "Equity Capital", "ShareCapital", "PaidUpEquityShareCapital"),
+        _l("reserves", "Reserves", "ReservesAndSurplusExcludingRevaluationReserve", "ReservesAndSurplus"),
+        _l("borrowings", "Borrowings", "Borrowings"),
+        _l("policyholders_funds", "Policyholders' funds", "PolicyholdersFunds"),
+        _l("total_assets", "Total Assets", "Assets", "SourcesOfFunds"),
+        _l("fixed_assets", "Fixed Assets", "FixedAssets"),
+        _l("investments", "Investments", "Investments", "InvestmentsShareholders", "InvestmentsPolicyholders", "AssetsHeldToCoverLinkLiabilities"),
+        _l("loans", "Loans", "Loans"),
     ),
     BANK: (
         _l("equity_capital", "Capital", "Capital"),

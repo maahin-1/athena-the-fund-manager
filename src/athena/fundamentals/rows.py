@@ -19,7 +19,7 @@ RECONCILE_TOLERANCE = 0.005  # of sales
 class Statements:
     symbol: str
     basis: str  # "consolidated" | "standalone" | ""
-    layout: str  # spec.INDAS | spec.FINANCE | spec.BANK
+    layout: str  # spec.INDAS | spec.FINANCE | spec.BANK | spec.INSURER
     audited: bool | None
     shares: float | None  # paid-up equity capital over face value
     income: dict[tuple[date, date], dict[str, float]]
@@ -41,6 +41,21 @@ def _day(text: str | None) -> date | None:
         return date.fromisoformat((text or "").strip()[:10])
     except ValueError:
         return None
+
+
+def _start(text: str | None, notes: list[str]) -> date | None:
+    """A period's start date as filed. Periods start on the first of a month; a start on any other day is a day-and-month swap in the filing (one
+    life insurer filed 2025-01-10 for 1 October 2025) and is read swapped, with a note. A start that is neither is ignored."""
+    day = _day(text)
+    if day is None or day.day == 1:
+        return day
+    if day.day <= 12:
+        swapped = date(day.year, day.day, 1) if day.month == 1 else None  # 2025-01-10 and 2025-01-04 are 1 Oct and 1 Apr written day-first
+        if swapped is not None:
+            notes.append(f"the filing gives a period start of {day}; read as {swapped}")
+            return swapped
+    notes.append(f"the filing gives a period start of {day}, which is not a month start; ignored")
+    return None
 
 
 def _quarter_start(end: date) -> date:
@@ -79,7 +94,9 @@ def derive_income(got: dict[str, float], layout: str) -> dict[str, float]:
     out = dict(got)
     sales = got.get("sales")
     base = sales  # what OPM is a percentage of
-    if layout == spec.BANK:
+    if layout == spec.INSURER:
+        base = None  # an insurer has no operating profit in this sense: its surplus is split between policyholders and shareholders
+    elif layout == spec.BANK:
         interest, opex = got.get("interest"), got.get("operating_expenses")
         if None not in (sales, interest, opex):
             other = got.get("other_income", 0.0)
@@ -106,7 +123,9 @@ def derive_balance(got: dict[str, float]) -> dict[str, float]:
     if total is None:
         return out
     out["other_assets"] = total - got.get("fixed_assets", 0.0) - got.get("cwip", 0.0) - got.get("investments", 0.0)
-    funded = got.get("equity_capital", 0.0) + got.get("reserves", 0.0) + got.get("borrowings", 0.0) + got.get("deposits", 0.0)
+    funded = (
+        got.get("equity_capital", 0.0) + got.get("reserves", 0.0) + got.get("borrowings", 0.0) + got.get("deposits", 0.0) + got.get("policyholders_funds", 0.0)
+    )
     out["other_liabilities"] = total - funded
     return out
 
@@ -138,6 +157,14 @@ def reconcile(income: dict[tuple[date, date], dict[str, float]]) -> tuple[str, .
     return tuple(notes)
 
 
+def _implied_shares(income: dict[tuple[date, date], dict[str, float]], year: tuple[date, date]) -> float | None:
+    """Shares outstanding when the filing gives no share capital and face value (insurers): the year's net profit over its earnings per share, which
+    is the weighted average the company itself used. Approximate, and only used when nothing better is filed."""
+    got = income.get(year, {})
+    profit, eps = got.get("net_profit"), got.get("eps")
+    return profit / eps if profit and eps and eps > 0 and profit > 0 else None
+
+
 def parse_rows(text: str) -> Statements:
     """A results filing as `Statements`. Raises ValueError for anything that is not one (the exchange answers with an error page for filings that
     predate XBRL)."""
@@ -156,14 +183,17 @@ def parse_rows(text: str) -> Statements:
     end = _day(current.get("DateOfEndOfReportingPeriod"))
     if end is None:
         raise ValueError("the filing does not say which period it covers")
-    quarter = (_day(current.get("DateOfStartOfReportingPeriod")) or _quarter_start(end), end)
+    date_notes: list[str] = []
+    quarter = (_start(current.get("DateOfStartOfReportingPeriod"), date_notes) or _quarter_start(end), end)
     year = (
-        _day(whole.get("DateOfStartOfReportingPeriod")) or _day(current.get("DateOfStartOfFinancialYear")) or quarter[0],
+        _start(whole.get("DateOfStartOfReportingPeriod"), date_notes) or _day(current.get("DateOfStartOfFinancialYear")) or quarter[0],
         _day(whole.get("DateOfEndOfReportingPeriod")) or end,
     )
     present = set(current) | set(whole) | set(instant)
     if "InterestExpended" in present:
         layout = spec.BANK
+    elif {"NetPremiumIncome", "GrossPremiumIncome"} & present:
+        layout = spec.INSURER
     elif {"Loans", "DebtSecurities"} <= present:
         layout = spec.FINANCE
     else:
@@ -174,7 +204,8 @@ def parse_rows(text: str) -> Statements:
         got = derive_income(_lines(facts, spec.INCOME_LINES[layout]), layout)
         if got and period not in income:  # the quarter's own context wins when both name one period
             income[period] = got
-    balance_lines = derive_balance(_lines(instant, spec.BALANCE_LINES[layout]))
+    # an insurer's reserves are filed in the period contexts, the rest of its balance sheet in the instant one (which wins when both name a tag)
+    balance_lines = derive_balance(_lines({**whole, **instant} if layout == spec.INSURER else instant, spec.BALANCE_LINES[layout]))
     balance = {end: balance_lines} if balance_lines else {}
     cash = derive_cashflow(_lines(whole, spec.CASHFLOW_LINES), layout)
     cashflow = {year: cash} if cash else {}
@@ -192,10 +223,10 @@ def parse_rows(text: str) -> Statements:
         basis=nature if nature in ("consolidated", "standalone") else "",
         layout=layout,
         audited=None if audited is None else audited.strip().lower() == "audited",
-        shares=paid_up / face_value if paid_up and face_value else None,
+        shares=paid_up / face_value if paid_up and face_value else _implied_shares(income, year),
         income=income,
         balance=balance,
         cashflow=cashflow,
         banking=banking,
-        notes=reconcile(income),
+        notes=(*date_notes, *(() if layout == spec.INSURER else reconcile(income))),  # an insurer's profit is not total income less expenses (the policyholders' share)
     )

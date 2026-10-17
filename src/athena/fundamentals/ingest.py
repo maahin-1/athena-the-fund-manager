@@ -2,6 +2,7 @@
 
     python -m athena.fundamentals.ingest --universe nifty50 --resume
     python -m athena.fundamentals.ingest --universe TCS,SBIN --standalone
+    python -m athena.fundamentals.ingest --universe HDFCLIFE --refresh     (read the kept filings again with the current mapping; no network)
 
 Resumable and gentle: it goes through `NseResults` (1.5 s between requests, back-off when the exchange refuses), keeps every downloaded filing on
 disk, skips filings already stored and companies finished recently (`--resume`), and stops cleanly when the exchange blocks it, recording when it may
@@ -71,7 +72,8 @@ def _text(results: Any, ref: FilingRef, cache_dir: Path) -> str:
 
 
 def ingest_symbol(
-    member: Member, results: Any, store_path: str | Path, *, quarters: int = 13, standalone: bool = False, cache_dir: Path = CACHE_DIR
+    member: Member, results: Any, store_path: str | Path, *, quarters: int = 13, standalone: bool = False, refresh: bool = False,
+    cache_dir: Path = CACHE_DIR,
 ) -> Report:
     """Fetch and store one company's filings. Raises `Blocked` when the exchange refuses; any other failure is counted and the run goes on."""
     report = Report(member.symbol)
@@ -86,7 +88,7 @@ def ingest_symbol(
     for ref in wanted(refs, quarters, standalone):
         basis = "consolidated" if ref.consolidated else "standalone"
         with FundamentalsStore(store_path) as store:
-            if store.filing_status(ref.url) == "ok":
+            if store.filing_status(ref.url) == "ok" and not refresh:
                 report.skipped += 1
                 continue
         try:
@@ -106,6 +108,8 @@ def ingest_symbol(
             report.notes.append(f"{ref.period_end}: {exc}")
             continue
         with FundamentalsStore(store_path) as store:
+            if refresh:
+                store.forget_filing(ref.url)
             store.save_statements(statements, ref.url, ref.filed)
             store.record_filing(ref.url, member.symbol, basis, ref.period_end, ref.annual, ref.filed, "ok")
             store.save_company(member.symbol, member.name, member.isin, member.industry, statements.layout, statements.shares)
@@ -116,7 +120,7 @@ def ingest_symbol(
 
 def run(
     members: Sequence[Member], results: Any, store_path: str | Path, *, resume: bool, max_age_days: int, limit: int | None,
-    quarters: int, standalone: bool, out: TextIO = sys.stdout,
+    quarters: int, standalone: bool, refresh: bool = False, out: TextIO = sys.stdout,
 ) -> int:
     """Ingest each member in turn. Returns 0 when done, 3 when the exchange blocked it (or a block is still running)."""
     with FundamentalsStore(store_path) as store:
@@ -130,12 +134,12 @@ def run(
             break
         with FundamentalsStore(store_path) as store:
             state = store.run(member.symbol)
-        if resume and state and state["status"] == "ok" and state["finished"] > now() - timedelta(days=max_age_days):
+        if resume and not refresh and state and state["status"] == "ok" and state["finished"] > now() - timedelta(days=max_age_days):
             print(f"{member.symbol:<12} skipped (finished {state['finished']:%Y-%m-%d})", file=out)
             continue
         started = now()
         try:
-            report = ingest_symbol(member, results, store_path, quarters=quarters, standalone=standalone)
+            report = ingest_symbol(member, results, store_path, quarters=quarters, standalone=standalone, refresh=refresh)
         except Blocked as exc:
             with FundamentalsStore(store_path) as store:
                 store.set_run(member.symbol, "blocked", error=str(exc)[:200], blocked_until=now() + BLOCK_PAUSE)
@@ -160,13 +164,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="stop after this many companies")
     parser.add_argument("--quarters", type=int, default=13)
     parser.add_argument("--standalone", action="store_true", help="also fetch standalone filings")
+    parser.add_argument("--refresh", action="store_true", help="read filings already stored again with the current mapping (uses the kept copies)")
     parser.add_argument("--store", default=str(DEFAULT_PATH))
     args = parser.parse_args(argv)
     members = universe(args.universe)
     print(f"{len(members)} companies in {args.universe}", flush=True)
     return run(
         members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters,
-        standalone=args.standalone,
+        standalone=args.standalone, refresh=args.refresh,
     )
 
 

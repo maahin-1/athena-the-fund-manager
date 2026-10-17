@@ -94,6 +94,10 @@ class FundamentalsStore:
         )
         return len(rows)
 
+    def forget_filing(self, url: str) -> None:
+        """Drop every row a filing gave, so it can be read again with a changed mapping."""
+        self._con.execute("DELETE FROM statement_lines WHERE filing_url = ?", [url])
+
     def record_filing(
         self, url: str, symbol: str, basis: str, period_end: date, annual: bool, filed: datetime, status: str, error: str = ""
     ) -> None:

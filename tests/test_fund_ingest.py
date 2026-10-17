@@ -119,3 +119,22 @@ def test_resume_skips_a_company_finished_recently(tmp_path):
     out = io.StringIO()
     assert ingest.run([TCS], results, path, out=out, **args) == 0
     assert listed == [] and "skipped" in out.getvalue()
+
+
+def test_refresh_reads_a_stored_filing_again_from_the_kept_copy_and_drops_what_the_old_mapping_left(tmp_path):
+    text = (FIXTURES / "tcs_fy2024.xml").read_text(encoding="utf-8")
+    results = FakeResults([ref(date(2024, 3, 31), True, url="tcs24")], {"tcs24": text})
+    path = tmp_path / "f.duckdb"
+    ingest.ingest_symbol(TCS, results, path, cache_dir=tmp_path / "cache")
+    with FundamentalsStore(path) as store:  # a row an earlier mapping stored by mistake
+        store._con.execute(
+            "INSERT INTO statement_lines VALUES ('TCS', 'consolidated', 'income', DATE '2023-04-01', DATE '2024-03-31', 'wrong_row', 1.0, 'tcs24', now(), 'nse-xbrl')"
+        )
+    plain = ingest.ingest_symbol(TCS, results, path, cache_dir=tmp_path / "cache")
+    assert plain.skipped == 1  # without --refresh the stored filing is left alone
+    again = ingest.ingest_symbol(TCS, results, path, refresh=True, cache_dir=tmp_path / "cache")
+    assert (again.fetched, again.skipped) == (1, 0)
+    assert results.fetched == ["tcs24"]  # still one download: the kept copy was read
+    with FundamentalsStore(path) as store:
+        assert all("wrong_row" not in got for got in store.lines("TCS", "consolidated", "income").values())
+        assert store.lines("TCS", "consolidated", "income")
