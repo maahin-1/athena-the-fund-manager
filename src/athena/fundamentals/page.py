@@ -265,7 +265,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             doc = build_page(store, args.symbol.upper(), args.basis, args.price, args.price_note)
     except AthenaError as exc:
         doc = {"symbol": args.symbol.upper(), "basis": args.basis, "error": str(exc), "busy": True}
-    sys.stdout.write(json.dumps(doc, ensure_ascii=False, allow_nan=False))
+    sys.stdout.write(json.dumps(doc, allow_nan=False))  # ASCII with escapes: a Windows pipe uses a legacy code page, and raw non-ASCII text is then not valid UTF-8 for the server
     return 0
 
 

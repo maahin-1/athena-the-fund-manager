@@ -216,3 +216,24 @@ def test_the_documents_section_lists_stored_links_newest_first_and_merges_an_ear
     assert [x["title"] for x in d["concalls"]] == ["Transcript"] and d["announcements"] == []
     assert [x["title"] for x in alone["documents"]["annual_reports"]] == ["FY2025-26"]
     assert dataclasses.is_dataclass(Doc)
+
+
+def test_the_page_a_server_reads_is_plain_ascii_whatever_the_titles_hold(tmp_path, capsys):
+    """A pipe on Windows carries the legacy code page, so a title with a non-breaking space or a rupee sign once made the output invalid UTF-8 and the
+    page for that stock never loaded. The document is written with escapes, which every reader decodes the same way."""
+    import json
+
+    from athena.fundamentals.documents import Doc
+
+    path = tmp_path / "f.duckdb"
+    ist = timezone.utc
+    statements = parse_rows((FIXTURES / "tcs_fy2024.xml").read_text(encoding="utf-8"))
+    with FundamentalsStore(path) as store:
+        store.save_statements(statements, "u0", datetime(2024, 4, 12, tzinfo=timezone.utc))
+        store.save_company("TCS", "TCS Ltd", "INE", "IT", statements.layout, statements.shares)
+        store.save_documents("TCS", ("announcement",), [Doc("announcement", "Ministry of Railways\xa0has submitted ₹ 5,000 crore plan – notice", "Updates", datetime(2026, 10, 15, tzinfo=ist), "https://nsearchives.nseindia.com/a.pdf", "")])
+    assert page.main(["TCS", "--store", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert out.isascii()
+    titles = [d["title"] for d in json.loads(out)["documents"]["announcements"]]
+    assert titles == ["Ministry of Railways\xa0has submitted ₹ 5,000 crore plan – notice"]

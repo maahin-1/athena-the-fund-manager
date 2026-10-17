@@ -197,3 +197,15 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Next in this track (5e-2):** the symbol details panel (performance 1W to 1Y and year to date, seasonals, technicals gauge, key facts from the statements), the advanced view with fundamentals columns, alerts on a list (5g), BSE indices.
 
+## 16. Search and on-demand fundamentals (2026-10-18, fixes asked for by the user)
+
+**Asked for:** the Streamlit-style search (suggestions as you type, by name or part of a name) in the terminal; quotes not loading; Fundamentals not loading for stocks such as RVNL.
+
+**Done:** a server-side instrument search with a drop-down on the command line, the Chart Lab boxes and a new Fundamentals search box; a **Fetch now** button that fetches one company's statements, shareholding and documents through the server (RVNL: about 40 seconds, statements 18 filings, shareholding 12 quarters, 290 documents); and a fix for pages that failed with 502 because of non-ASCII announcement titles.
+
+**Root causes found:** (1) Fundamentals held only the Nifty 50 plus the earlier symbols of renamed companies, and the empty page told the user to run a command; (2) the page builder's output was not UTF-8 on Windows pipes; (3) the command line only accepted exact symbols, so a name such as "tata motors" said "unknown command".
+
+**Not reproduced:** quotes. With the live server the watchlist, Quote, Depth, Tape and chart panels load for 16 symbols tried (stocks, ETFs, M&M, BAJAJ-AUTO, new listings); the likely cause was the name typed in the command line, which now resolves. To be confirmed by the user on their screen; if it persists, the symbol and the market hour are needed.
+
+**Still open:** fundamentals exist only for companies fetched so far (the Nifty 50, RVNL, IRFC and what is fetched through the button); a full-market fetch is a long manual run (`--universe all`, about a minute per company).
+

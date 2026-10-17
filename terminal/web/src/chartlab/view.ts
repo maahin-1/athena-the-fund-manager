@@ -1,3 +1,4 @@
+import { attachSuggest } from '../suggest';
 import type { Bar } from '../bars';
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
@@ -294,6 +295,13 @@ export class ChartLabView {
     this.symbolInput.placeholder = 'symbol';
     this.symbolInput.setAttribute('aria-label', 'chart symbol');
     this.symbolInput.addEventListener('keydown', (e) => e.key === 'Enter' && this.pick(this.symbolInput.value));
+    attachSuggest(this.symbolInput, {
+      enterTakesBest: true,
+      onPick: (hit) => {
+        this.symbolInput.value = hit.s;
+        this.pick(hit.s);
+      },
+    });
     for (const tf of INTERVALS) {
       const b = el('button', 'rbtn', tf);
       b.dataset.interval = tf;
@@ -313,12 +321,19 @@ export class ChartLabView {
     indicators.classList.add('lab-ind');
     this.compareInput.placeholder = 'compare symbol';
     this.compareInput.setAttribute('aria-label', 'compare symbol');
-    this.compareInput.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
+    const compare = (): void => {
       const s = this.compareInput.value.trim().toUpperCase();
       if (!s) return this.commit(() => this.model.setCompare(null));
       this.commit(() => this.model.setCompare(s, []));
       void this.loadCompare(s);
+    };
+    this.compareInput.addEventListener('keydown', (e) => e.key === 'Enter' && compare());
+    attachSuggest(this.compareInput, {
+      enterTakesBest: true,
+      onPick: (hit) => {
+        this.compareInput.value = hit.s;
+        compare();
+      },
     });
     for (const s of SCALES) {
       const b = el('button', 'rbtn', s.label);

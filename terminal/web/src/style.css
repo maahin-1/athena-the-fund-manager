@@ -373,3 +373,15 @@ html, body { overflow: hidden; }
 .wl-row.dragging, .wl-section.dragging { opacity: 0.4; }
 .wl-row.drop-above, .wl-section.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
 .wl-row.drop-below, .wl-section.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* ---- search drop-down ---- */
+.suggest { position: fixed; z-index: 1000; max-height: 340px; overflow-y: auto; background: var(--panel, var(--bg)); border: 1px solid var(--grid); border-radius: 4px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.sg-item { display: flex; align-items: baseline; gap: 10px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+.sg-item.on { background: var(--grid); }
+.sg-sym { min-width: 96px; font-weight: 600; color: var(--fg); }
+.sg-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-dim); }
+.sg-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-dim); }
+.fsearch { width: calc(100% - 12px); margin: 6px; box-sizing: border-box; }
+.ffetch { margin-top: 8px; }
+.ffetching::after { content: ' ●'; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.2; } }

@@ -1,3 +1,4 @@
+import { attachSuggest } from '../suggest';
 import type { Quote } from '../feed';
 import { pct, price, signed } from '../format';
 import { el, type AppContext } from '../panels/base';
@@ -80,6 +81,8 @@ export class FundamentalsView {
   private head = el('div', 'ftitle');
   private body = el('div', 'fbody');
   private picker = el('select', 'fpick');
+  private searchBox = el('input', 'cmd fsearch');
+  private fetched = ''; // a company whose filings were just fetched, so an empty result is explained rather than offered again
   private livePrice = el('span', 'fprice');
   private liveChange = el('span', 'fchg');
   private chart: PriceChart;
@@ -96,6 +99,16 @@ export class FundamentalsView {
     this.element.hidden = true;
     this.chart = (options.makeChart ?? makePriceChart)();
     this.picker.setAttribute('aria-label', 'pick a stock');
+    this.searchBox.placeholder = 'Search a company…';
+    this.searchBox.setAttribute('aria-label', 'search company');
+    attachSuggest(this.searchBox, {
+      kinds: 'stock',
+      enterTakesBest: true,
+      onPick: (hit) => {
+        this.searchBox.value = '';
+        this.pick(hit.s);
+      },
+    });
     this.picker.addEventListener('change', () => this.pick(this.picker.value));
     this.main.append(this.head, this.body);
     this.element.append(this.list, this.main);
@@ -132,7 +145,7 @@ export class FundamentalsView {
   }
 
   private paintList(): void {
-    this.list.replaceChildren(el('div', 'flisthead', 'Watchlist'));
+    this.list.replaceChildren(this.searchBox, el('div', 'flisthead', 'Watchlist'));
     this.picker.replaceChildren();
     const items = this.ctx.watchlist.items.includes(this.symbol) || !this.symbol ? this.ctx.watchlist.items : [this.symbol, ...this.ctx.watchlist.items];
     for (const s of items) {
@@ -176,11 +189,81 @@ export class FundamentalsView {
     this.render(got.page, note);
   }
 
+  /** Nothing stored: offer to fetch it now (or follow a fetch that is already running). */
+  private offerFetch(symbol: string): void {
+    const note = el('div', 'note', `No statements are stored for ${symbol} yet.`);
+    const button = el('button', 'btn ffetch', 'Fetch now');
+    button.title = 'Download the statements, shareholding and documents from the exchange (about a minute)';
+    button.addEventListener('click', () => void this.startFetch(symbol));
+    this.body.replaceChildren(note, button);
+  }
+
+  private async startFetch(symbol: string): Promise<void> {
+    this.body.replaceChildren(el('div', 'note ffetching', 'starting…'));
+    try {
+      const r = await fetch(`/api/fund-fetch/${encodeURIComponent(symbol)}`, { method: 'POST' });
+      if (r.status === 409) {
+        const other = ((await r.json().catch(() => ({}))) as { symbol?: string }).symbol ?? 'another company';
+        this.body.replaceChildren(el('div', 'note bad', `The exchange is being asked for ${other} right now; try again when that finishes.`));
+        return this.addRetry(symbol);
+      }
+      if (!r.ok && r.status !== 202) throw new Error(`HTTP ${r.status}`);
+    } catch {
+      this.body.replaceChildren(el('div', 'note bad', 'The fetch could not be started.'));
+      return this.addRetry(symbol);
+    }
+    void this.followFetch(symbol);
+  }
+
+  private addRetry(symbol: string): void {
+    const again = el('button', 'btn ffetch', 'Try again');
+    again.addEventListener('click', () => void this.startFetch(symbol));
+    this.body.append(again);
+  }
+
+  /** Show the running fetch's step until it ends, then load the page (only while this company is still the one on show). */
+  private async followFetch(symbol: string): Promise<void> {
+    for (;;) {
+      if (this.symbol !== symbol) return; // the person moved on; the fetch carries on and the page is there when they come back
+      let status: { state: string; symbol?: string; stage?: string; step?: number; of?: number; error?: string } = { state: 'idle' };
+      try {
+        status = await (await fetch('/api/fund-fetch')).json();
+      } catch {
+        /* the server may be busy; look again */
+      }
+      if (status.symbol === symbol && status.state === 'running') {
+        this.body.replaceChildren(el('div', 'note ffetching', `${status.stage ?? 'fetching'}… (step ${status.step} of ${status.of}); this takes about a minute`));
+      } else if (status.symbol === symbol && status.state === 'done') {
+        this.fetched = symbol;
+        return void this.load();
+      } else if (status.symbol === symbol && status.state === 'failed') {
+        this.body.replaceChildren(el('div', 'note bad', `${status.error ?? 'The fetch failed.'}`));
+        return this.addRetry(symbol);
+      } else if (status.state === 'idle' || status.symbol !== symbol) {
+        return this.offerFetch(symbol); // nothing running for this company
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+
   private fail(symbol: string, status: number, error?: string): void {
     this.head.replaceChildren(el('span', 'fsym', symbol));
+    if (status === 404 && this.fetched === symbol) {
+      this.fetched = '';
+      this.body.replaceChildren(el('div', 'note bad', `The exchange has no financial results for ${symbol} in the form this page reads (it may be an ETF, an SME or a very recent listing).`));
+      return;
+    }
+    if (status === 404) {
+      this.offerFetch(symbol);
+      void fetch('/api/fund-fetch').then(async (r) => {
+        const s = (await r.json()) as { state?: string; symbol?: string };
+        if (s.state === 'running' && s.symbol === symbol && this.symbol === symbol) void this.followFetch(symbol);
+      }).catch(() => undefined);
+      return;
+    }
     const text =
       status === 404
-        ? `No statements are stored for ${symbol}. Fetch them with: python -m athena.fundamentals.ingest --universe ${symbol}`
+        ? ''
         : status === 503
           ? 'The statements store is busy (an ingest is writing to it); try again in a moment.'
           : (error ?? 'The statements could not be loaded.');

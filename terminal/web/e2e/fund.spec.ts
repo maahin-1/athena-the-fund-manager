@@ -25,10 +25,11 @@ test('the Fundamentals tab shows a stored company with its statements', async ({
   await expect(page.locator('[data-basis="standalone"]')).toBeDisabled();
 });
 
-test('a company with nothing stored says how to fetch it', async ({ page }) => {
+test('a company with nothing stored offers to fetch it', async ({ page }) => {
   await page.getByLabel('command line').fill('FUND RELIANCE');
   await page.getByLabel('command line').press('Enter');
-  await expect(page.locator('.fund .note.bad')).toContainText('athena.fundamentals.ingest');
+  await expect(page.locator('.fund .note')).toContainText('No statements are stored for RELIANCE yet');
+  await expect(page.getByRole('button', { name: 'Fetch now' })).toBeVisible();
 });
 
 test('Export to Excel downloads a workbook', async ({ page }) => {

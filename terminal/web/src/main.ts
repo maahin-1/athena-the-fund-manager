@@ -1,7 +1,8 @@
 import { createDockview, themeDark, themeLight, type DockviewApi, type DockviewGroupPanel, type IContentRenderer, type IHeaderActionsRenderer } from 'dockview-core';
 import './dockview.css';
 import './style.css';
-import { parse } from './command';
+import { parse, type Command } from './command';
+import { attachSuggest, commandContext, commandFor, searchInstruments } from './suggest';
 import { Feed } from './feed';
 import {
   deserialize, LayoutError, PRESET_NAMES, PRESETS, serialize, DEFAULT_WATCHLIST,
@@ -391,6 +392,13 @@ class App implements AppContext {
         this.command.value = '';
       } else if (e.key === 'Escape') this.command.blur();
     });
+    attachSuggest(this.command, {
+      query: (value) => commandContext(value)?.text ?? null,
+      onPick: (hit, value) => {
+        this.command.value = '';
+        void this.exec(commandFor(hit.s, commandContext(value)), true);
+      },
+    });
     const theme = el('button', 'btn', 'Theme');
     theme.addEventListener('click', () => {
       this.setTheme(this.theme === 'dark' ? 'light' : 'dark');
@@ -512,8 +520,23 @@ class App implements AppContext {
   }
 
   private async run(input: string): Promise<void> {
-    const cmd = parse(input, { layouts: this.saved });
-    if ('symbol' in cmd && typeof cmd.symbol === 'string' && cmd.kind !== 'remove' && !(await this.isKnown(cmd.symbol))) {
+    let cmd = parse(input, { layouts: this.saved });
+    let checked = false;
+    const unlisted = 'symbol' in cmd && typeof cmd.symbol === 'string' && cmd.kind !== 'remove' && !(await this.isKnown(cmd.symbol));
+    if (cmd.kind === 'error' || unlisted) {
+      // not a command, or not a listed symbol (an old name such as ZOMATO): a name such as "tata motors" takes the best match, as a search box does on Enter
+      const ctx = commandContext(input);
+      const best = ctx ? (await searchInstruments(ctx.text, { limit: 1 }))[0] : undefined;
+      if (best) {
+        cmd = commandFor(best.s, ctx);
+        checked = true; // the search only offers instruments the market lists
+      }
+    }
+    return this.exec(cmd, checked);
+  }
+
+  private async exec(cmd: Command, checked = false): Promise<void> {
+    if (!checked && 'symbol' in cmd && typeof cmd.symbol === 'string' && cmd.kind !== 'remove' && !(await this.isKnown(cmd.symbol))) {
       return this.say(`${cmd.symbol} is not a listed stock, ETF or index`, true);
     }
     switch (cmd.kind) {
