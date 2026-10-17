@@ -5,31 +5,38 @@ import { marketState } from '../market';
 import { el, type AppContext } from '../panels/base';
 import { barLimit, type Range, type Timeframe } from '../ranges';
 import { settingsDialog } from './dialog';
-import { CHART_TYPES, ChartModel, type ChartType, type LabState, type ScaleMode } from './model';
+import { CHART_TYPES, ChartModel, isDerived, type ChartType, type LabState, type ScaleMode } from './model';
 import { caption, REGISTRY } from './registry';
+import { build, SOURCE } from './resample';
 import { lightweightRenderer, type ChartRenderer, type RendererFactory } from './render';
 import { deserialize, History, serialize, StateError, Templates, type KeyValue } from './store';
 
 const LINK_GROUP = 'blue' as const;
 const STATE_KEY = 'athena.chartlab.state';
-const INTERVALS: Timeframe[] = ['1m', '5m', '15m', '1D'];
+const INTERVALS: Timeframe[] = ['1m', '2m', '3m', '5m', '10m', '15m', '30m', '1h', '1D', '1W', '1M'];
 const SCALES: { id: ScaleMode; label: string; title: string }[] = [
   { id: 'auto', label: 'Auto', title: 'Linear price scale' },
   { id: 'log', label: 'Log', title: 'Logarithmic price scale' },
   { id: 'percent', label: '%', title: 'Percent change from the first visible bar' },
 ];
 
-/** The ranges an interval offers (a range implies its interval). `bars` null shows every bar; 'ytd' is worked out from today's date. */
+/** The ranges an interval offers (a range implies its interval). `bars` null shows every bar; 'ytd' is worked out from today's date. The counts
+ *  follow the trading day (375 minutes) and what the free source holds: 5 days of 1-minute bars, a month of 5, 15 and 30-minute bars, a year of hourly. */
+const r = (label: string, tf: Timeframe, bars: number | null | 'ytd'): Range => ({ label, tf, bars });
 const RANGES: Record<Timeframe, Range[]> = {
-  '1m': [{ label: '1D', tf: '1m', bars: 375 }],
-  '5m': [{ label: '1D', tf: '5m', bars: 75 }, { label: '5D', tf: '5m', bars: 375 }],
-  '15m': [{ label: '5D', tf: '15m', bars: 125 }, { label: 'All', tf: '15m', bars: null }],
-  '1D': [
-    { label: '1M', tf: '1D', bars: 22 }, { label: '3M', tf: '1D', bars: 63 }, { label: '6M', tf: '1D', bars: 126 }, { label: 'YTD', tf: '1D', bars: 'ytd' },
-    { label: '1Y', tf: '1D', bars: 252 }, { label: '5Y', tf: '1D', bars: 1260 }, { label: 'All', tf: '1D', bars: null },
-  ],
+  '1m': [r('1D', '1m', 375), r('5D', '1m', 1875)],
+  '2m': [r('1D', '2m', 188), r('5D', '2m', 938)],
+  '3m': [r('1D', '3m', 125), r('5D', '3m', 625)],
+  '5m': [r('1D', '5m', 75), r('5D', '5m', 375), r('1M', '5m', 1650)],
+  '10m': [r('1D', '10m', 38), r('5D', '10m', 188), r('1M', '10m', 825)],
+  '15m': [r('5D', '15m', 125), r('1M', '15m', 550)],
+  '30m': [r('5D', '30m', 65), r('1M', '30m', 275)],
+  '1h': [r('5D', '1h', 35), r('1M', '1h', 154), r('6M', '1h', 880), r('1Y', '1h', null)],
+  '1D': [r('1M', '1D', 22), r('3M', '1D', 63), r('6M', '1D', 126), r('YTD', '1D', 'ytd'), r('1Y', '1D', 252), r('5Y', '1D', 1260), r('8Y', '1D', 2016), r('All', '1D', null)],
+  '1W': [r('1Y', '1W', 52), r('5Y', '1W', 260), r('All', '1W', null)],
+  '1M': [r('5Y', '1M', 60), r('All', '1M', null)],
 };
-const DEFAULT_RANGE: Record<Timeframe, string> = { '1m': '1D', '5m': '5D', '15m': '5D', '1D': '1Y' };
+const DEFAULT_RANGE: Record<Timeframe, string> = { '1m': '1D', '2m': '1D', '3m': '1D', '5m': '5D', '10m': '5D', '15m': '5D', '30m': '1M', '1h': '1M', '1D': '1Y', '1W': '5Y', '1M': 'All' };
 
 export interface Fetched {
   bars: Bar[];
@@ -184,17 +191,19 @@ export class ChartLabView {
     if (!this.symbol) return;
     const mine = ++this.token;
     const range = this.range();
+    const source = SOURCE[this.tf];
+    // daily bars are asked for by count; weekly and monthly bars are built from every daily bar held, so their ranges slice after the build
     const limit = this.tf === '1D' ? (range.bars === 'ytd' ? barLimit(range, new Date()) : range.bars) : null;
     this.say('loading…');
     let fetched: Fetched;
     try {
-      fetched = await this.fetcher(this.symbol, this.tf, limit, this.model.adjusted);
+      fetched = await this.fetcher(this.symbol, source.fetch, limit, this.model.adjusted);
     } catch {
       if (mine === this.token) this.say('could not reach the server');
       return;
     }
     if (mine !== this.token) return;
-    let bars = fetched.bars;
+    let bars = build(this.tf, fetched.bars);
     if (this.tf !== '1D' && typeof range.bars === 'number') bars = bars.slice(-range.bars);
     this.hover = null;
     this.model.setBars(bars, this.tf);
@@ -207,8 +216,8 @@ export class ChartLabView {
   private async loadCompare(symbol: string): Promise<void> {
     const mine = this.token;
     try {
-      const got = await this.fetcher(symbol, this.tf, null, true);
-      if (mine === this.token && this.model.compare?.symbol === symbol) this.model.setCompare(symbol, got.bars);
+      const got = await this.fetcher(symbol, SOURCE[this.tf].fetch, null, true);
+      if (mine === this.token && this.model.compare?.symbol === symbol) this.model.setCompare(symbol, build(this.tf, got.bars));
     } catch {
       this.say(`could not load ${symbol} to compare`);
     }
@@ -432,6 +441,7 @@ export class ChartLabView {
 
   private paintChart(): void {
     this.renderer?.paint(this.model);
+    if (isDerived(this.model.type) && (this.model.indicators.length || this.model.compare)) this.say('Indicators, compare and volume are not drawn on Renko, line-break or range charts; they come back with another chart type.');
     this.paintLegends();
     this.paintValues();
     this.paintBar();

@@ -1,14 +1,41 @@
 import { applyTick, tickFitsChart, type Bar } from '../bars';
 import type { Timeframe } from '../ranges';
-import type { Series } from './maths';
+import { atr, type Series } from './maths';
+import { lineBreak, rangeBars, renko, sequence } from './derived';
+import { MINUTES } from './resample';
 import { defaults, find, validate, type IndicatorDef, type Params } from './registry';
 
-export type ChartType = 'candles' | 'hollow' | 'bars' | 'line' | 'area' | 'heikin';
+export type ChartType = 'candles' | 'hollow' | 'bars' | 'line' | 'area' | 'baseline' | 'columns' | 'step' | 'heikin' | 'renko' | 'linebreak' | 'range';
 export type ScaleMode = 'auto' | 'log' | 'percent';
 export const CHART_TYPES: { id: ChartType; label: string }[] = [
   { id: 'candles', label: 'Candles' }, { id: 'hollow', label: 'Hollow candles' }, { id: 'bars', label: 'Bars' },
-  { id: 'line', label: 'Line' }, { id: 'area', label: 'Area' }, { id: 'heikin', label: 'Heikin Ashi' },
+  { id: 'line', label: 'Line' }, { id: 'area', label: 'Area' }, { id: 'baseline', label: 'Baseline' }, { id: 'columns', label: 'Columns' },
+  { id: 'step', label: 'Step line' }, { id: 'heikin', label: 'Heikin Ashi' }, { id: 'renko', label: 'Renko' }, { id: 'linebreak', label: 'Line break' },
+  { id: 'range', label: 'Range bars' },
 ];
+
+/** Types built from price moves, not time: indicators, compare and volume are not drawn on them. */
+export const isDerived = (type: ChartType): boolean => type === 'renko' || type === 'linebreak' || type === 'range';
+
+/** Types drawn as one value per bar (the close) rather than as open, high, low and close. */
+export const isValueType = (type: ChartType): boolean => ['line', 'area', 'baseline', 'columns', 'step'].includes(type);
+
+/** Seconds between the stamps given to derived bars, so a time axis shows them in order. */
+export function stepSeconds(tf: Timeframe): number {
+  const minutes = MINUTES[tf];
+  return minutes ? minutes * 60 : tf === '1W' ? 7 * 86_400 : tf === '1M' ? 30 * 86_400 : 86_400;
+}
+
+/** A brick or range size from the bars: the latest 14-bar average true range, rounded to two significant figures; one percent of the last close
+ *  when there are too few bars for it. */
+export function autoSize(bars: Bar[], factor = 1): number {
+  const range = atr(bars.map((b) => b.h), bars.map((b) => b.l), bars.map((b) => b.c), 14);
+  const last = [...range].reverse().find((v) => v !== null) ?? (bars.length ? bars[bars.length - 1].c * 0.01 : 1);
+  const raw = Math.max((last as number) * factor, 1e-9);
+  const digits = Math.floor(Math.log10(raw));
+  const unit = 10 ** (digits - 1);
+  return Math.max(Math.round(raw / unit) * unit, 1e-9);
+}
 
 /** One indicator on the chart. `colors` overrides an output's theme colour by output key. */
 export interface IndicatorInstance {
@@ -173,9 +200,17 @@ export class ChartModel {
     return out;
   }
 
-  /** The bars as drawn: the real ones, or Heikin Ashi bars when that type is chosen. */
+  /** The bars as drawn: the real ones, Heikin Ashi bars, or (Renko, line break, range) bricks and lines stamped in sequence after the first bar. */
   displayBars(): Bar[] {
-    return this.type === 'heikin' ? heikinAshi(this.bars) : this.bars;
+    if (this.type === 'heikin') return heikinAshi(this.bars);
+    if (!isDerived(this.type) || !this.bars.length) return this.bars;
+    const built = this.type === 'renko' ? renko(this.bars, autoSize(this.bars)) : this.type === 'linebreak' ? lineBreak(this.bars, 3) : rangeBars(this.bars, autoSize(this.bars, 0.5));
+    return sequence(built, this.bars[0].t, stepSeconds(this.tf));
+  }
+
+  /** Whether the chart now shows price moves rather than time (so indicators, compare and volume are not drawn). */
+  get derived(): boolean {
+    return isDerived(this.type);
   }
 
   /** The compare symbol's closes on this chart's bars, rebased so that it starts level with the chart's own close at the first bar both have. A
@@ -196,11 +231,12 @@ export class ChartModel {
 
   /** What the data window shows for bar `index`: its prices, change from the bar before, and every visible indicator's values there. */
   window(index: number): WindowData | null {
-    const b = this.bars[index];
+    const source = this.derived ? this.displayBars() : this.bars;
+    const b = source[index];
     if (!b) return null;
-    const prev = index > 0 ? this.bars[index - 1].c : b.o;
+    const prev = index > 0 ? source[index - 1].c : b.o;
     const values: WindowData['values'] = {};
-    for (const inst of this.indicators.filter((i) => !i.hidden)) {
+    for (const inst of this.indicators.filter((i) => !i.hidden && !this.derived)) {
       const s = this.series(inst.uid);
       values[inst.uid] = Object.fromEntries(this.def(inst).outputs.map((o) => [o.key, s[o.key]?.[index] ?? null]));
     }

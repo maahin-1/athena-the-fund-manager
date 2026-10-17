@@ -72,7 +72,23 @@ test('log scale, percent scale, chart types, compare and raw prices all keep the
   await expect(page.getByRole('button', { name: 'ADJ' })).not.toHaveClass(/on/);
   await expect(page.locator('.lab-head')).toContainText('SBIN · 1D');
   await page.locator('[data-interval="5m"]').click();
-  await expect(page.locator('.lab [data-range]')).toHaveText(['1D', '5D']);
+  await expect(page.locator('.lab [data-range]')).toHaveText(['1D', '5D', '1M']);
+});
+
+test('every chart type and interval draws without an error', async ({ page }) => {
+  await openLab(page);
+  await addIndicator(page, 'rsi');
+  for (const type of ['baseline', 'columns', 'step', 'renko', 'linebreak', 'range', 'heikin', 'candles']) {
+    await page.locator('.lab-type').selectOption(type);
+    await expect(page.locator('.lab-host canvas').first()).toBeVisible();
+  }
+  for (const tf of ['1W', '1M', '1D']) {
+    await page.locator(`[data-interval="${tf}"]`).click();
+    await expect(page.locator(`[data-interval="${tf}"]`)).toHaveClass(/on/);
+    await expect(page.locator('.lab-head')).toContainText(`SBIN · ${tf}`);
+  }
+  await page.locator('.lab [data-range="All"]').click();
+  await expect(page.locator('.lab-head')).toContainText('SBIN · 1D');
 });
 
 test('a template saved by name comes back after a reload, with the chart state', async ({ page }) => {

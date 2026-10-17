@@ -1,4 +1,7 @@
-export type Timeframe = '1m' | '5m' | '15m' | '1D';
+export type Timeframe = '1m' | '2m' | '3m' | '5m' | '10m' | '15m' | '30m' | '1h' | '1D' | '1W' | '1M';
+
+/** Whether bars of this interval are inside one trading day (the others are a day, a week or a month, stamped with a date). */
+export const isIntraday = (tf: Timeframe): boolean => tf !== '1D' && tf !== '1W' && tf !== '1M';
 
 export interface Range {
   label: string;

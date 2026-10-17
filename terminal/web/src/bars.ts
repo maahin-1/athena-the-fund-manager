@@ -1,4 +1,4 @@
-import type { Timeframe } from './ranges';
+import { isIntraday, type Timeframe } from './ranges';
 
 export interface Bar {
   t: number; // unix seconds; a daily bar is midnight UTC of its trading date
@@ -14,6 +14,26 @@ const IST_OFFSET = 19_800; // seconds
 /** Start of the bar a timestamp falls in. Intraday bars are aligned to the clock (IST is a whole number of 15 minutes from UTC). */
 export function barTime(tsSec: number, tf: Timeframe): number {
   switch (tf) {
+    case '2m':
+    case '3m':
+    case '10m':
+    case '30m':
+    case '1h': {
+      // anchored to the 09:15 open, so a 30-minute bar starts 09:15, 09:45 and so on
+      const width = { '2m': 120, '3m': 180, '10m': 600, '30m': 1800, '1h': 3600 }[tf];
+      const local = tsSec + IST_OFFSET;
+      const day = Math.floor(local / 86_400);
+      const open = day * 86_400 + 9 * 3600 + 15 * 60;
+      return open + Math.floor((local - open) / width) * width - IST_OFFSET;
+    }
+    case '1W': {
+      const day = Math.floor((tsSec + IST_OFFSET) / 86_400);
+      return (day - ((day + 3) % 7)) * 86_400; // Monday (1970-01-01 was a Thursday), as midnight UTC of the date
+    }
+    case '1M': {
+      const d = new Date((Math.floor((tsSec + IST_OFFSET) / 86_400) * 86_400) * 1000);
+      return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
+    }
     case '1m':
       return Math.floor(tsSec / 60) * 60;
     case '5m':
@@ -42,7 +62,7 @@ export function inSession(tsSec: number): boolean {
 /** Whether a tick should move the chart. Intraday bars only grow during the session (an exchange snapshot stamped after the close must not start a bar), and a price far from the last bar's is ignored rather than drawn as a candle that is not this stock's. */
 export function tickFitsChart(last: Bar | undefined, price: number, tsSec: number, tf: Timeframe): boolean {
   if (!(price > 0)) return false;
-  if (tf !== '1D' && !inSession(tsSec)) return false;
+  if (isIntraday(tf) && !inSession(tsSec)) return false;
   if (last && last.c > 0 && Math.abs(price / last.c - 1) > MAX_MOVE) return false;
   return true;
 }

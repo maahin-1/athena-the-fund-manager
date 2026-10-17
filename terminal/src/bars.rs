@@ -66,9 +66,12 @@ pub fn yahoo_symbol(symbol: &str) -> String {
 /// `(interval, range)` Yahoo accepts for a page timeframe; `None` for a timeframe that is not intraday.
 pub fn yahoo_params(tf: &str) -> Option<(&'static str, &'static str)> {
     match tf {
-        "1m" => Some(("1m", "1d")),
-        "5m" => Some(("5m", "5d")),
-        "15m" => Some(("15m", "5d")),
+        // the free source holds 5 days of 1-minute bars, 60 days of 5, 15 and 30-minute bars and two years of hourly ones; the page slices what it shows
+        "1m" => Some(("1m", "5d")),
+        "5m" => Some(("5m", "1mo")),
+        "15m" => Some(("15m", "1mo")),
+        "30m" => Some(("30m", "1mo")),
+        "1h" => Some(("60m", "1y")),
         _ => None,
     }
 }
@@ -289,7 +292,10 @@ mod tests {
         assert_eq!(yahoo_symbol("SBIN"), "SBIN.NS");
         assert_eq!(yahoo_symbol("NIFTY 50"), "^NSEI");
         assert_eq!(yahoo_symbol("nifty bank"), "^NSEBANK");
-        assert_eq!(yahoo_params("5m"), Some(("5m", "5d")));
+        assert_eq!(yahoo_params("5m"), Some(("5m", "1mo")));
+        assert_eq!(yahoo_params("1h"), Some(("60m", "1y")));
+        assert_eq!(yahoo_params("30m"), Some(("30m", "1mo")));
+        assert_eq!(yahoo_params("2m"), None); // built from 1-minute bars by the page
         assert_eq!(yahoo_params("1D"), None);
     }
 

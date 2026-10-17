@@ -155,14 +155,42 @@ describe('chart lab page', () => {
 
   it('an interval implies its own ranges and a range button refetches', async () => {
     const h = await shown();
-    expect([...h.view.element.querySelectorAll('[data-range]')].map((b) => b.textContent)).toEqual(['1M', '3M', '6M', 'YTD', '1Y', '5Y', 'All']);
+    expect([...h.view.element.querySelectorAll('[data-range]')].map((b) => b.textContent)).toEqual(['1M', '3M', '6M', 'YTD', '1Y', '5Y', '8Y', 'All']);
     click(h.view.element, '[data-range="1M"]');
     await flush();
     expect(h.fetched[h.fetched.length - 1][2]).toBe(22);
     click(h.view.element, '[data-interval="5m"]');
     await flush();
     expect(h.fetched[h.fetched.length - 1].slice(0, 2)).toEqual(['SBIN', '5m']);
-    expect([...h.view.element.querySelectorAll('[data-range]')].map((b) => b.textContent)).toEqual(['1D', '5D']);
+    expect([...h.view.element.querySelectorAll('[data-range]')].map((b) => b.textContent)).toEqual(['1D', '5D', '1M']);
+  });
+
+  it('weekly and monthly bars are built from every daily bar, and a derived interval is asked for from a finer source', async () => {
+    const h = await shown();
+    click(h.view.element, '[data-interval="1W"]');
+    await flush();
+    expect(h.fetched[h.fetched.length - 1].slice(0, 3)).toEqual(['SBIN', '1D', null]); // all the daily bars, then built into weeks
+    expect(h.view.model.tf).toBe('1W');
+    expect(h.view.model.bars.length).toBeLessThan(80); // 80 daily bars make about 16 weeks
+    click(h.view.element, '[data-interval="2m"]');
+    await flush();
+    expect(h.fetched[h.fetched.length - 1].slice(0, 2)).toEqual(['SBIN', '1m']);
+    click(h.view.element, '[data-interval="1h"]');
+    await flush();
+    expect(h.fetched[h.fetched.length - 1].slice(0, 2)).toEqual(['SBIN', '1h']);
+  });
+
+  it('every chart type is offered, and a price-move type says indicators are not drawn on it', async () => {
+    const h = await shown();
+    const type = h.view.element.querySelector('.lab-type') as HTMLSelectElement;
+    expect([...type.options].map((o) => o.value)).toEqual(['candles', 'hollow', 'bars', 'line', 'area', 'baseline', 'columns', 'step', 'heikin', 'renko', 'linebreak', 'range']);
+    h.view.model.addIndicator('rsi');
+    type.value = 'renko';
+    type.dispatchEvent(new Event('change'));
+    expect(h.view.element.querySelector('.lab-note')?.textContent).toMatch(/not drawn on Renko/);
+    type.value = 'candles';
+    type.dispatchEvent(new Event('change'));
+    expect(h.view.model.derived).toBe(false);
   });
 
   it('compare fetches the other symbol, draws it and can be cleared', async () => {

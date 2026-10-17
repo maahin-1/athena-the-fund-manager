@@ -1,9 +1,10 @@
 import {
-  AreaSeries, BarSeries, CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, LineStyle, PriceScaleMode,
+  AreaSeries, BarSeries, BaselineSeries, CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode,
   type IChartApi, type ISeriesApi, type SeriesType, type UTCTimestamp,
 } from 'lightweight-charts';
 import type { Bar } from '../bars';
-import type { ChartModel } from './model';
+import { isValueType, type ChartModel } from './model';
+import { isIntraday } from '../ranges';
 import type { Series } from './maths';
 
 const IST_OFFSET = 19_800;
@@ -65,7 +66,8 @@ export const lightweightRenderer: RendererFactory = (host) => {
 
   const mainData = (model: ChartModel): unknown[] => {
     const bars = model.displayBars();
-    return model.type === 'line' || model.type === 'area'
+    if (model.type === 'columns') return bars.map((b) => ({ time: time(b.t), value: b.c, color: b.c >= b.o ? css('--up-dim') : css('--dn-dim') }));
+    return isValueType(model.type)
       ? bars.map((b) => ({ time: time(b.t), value: b.c }))
       : bars.map((b) => ({ time: time(b.t), open: b.o, high: b.h, low: b.l, close: b.c }));
   };
@@ -78,32 +80,42 @@ export const lightweightRenderer: RendererFactory = (host) => {
       series = [];
       panes.clear();
       parts.clear();
-      intraday = model.tf !== '1D';
-      times = model.bars.map((b) => time(b.t) as number);
+      intraday = isIntraday(model.tf);
+      times = model.displayBars().map((b) => time(b.t) as number);
       chart.priceScale('right').applyOptions({ mode: MODES[model.scale] });
       chart.timeScale().applyOptions({ timeVisible: intraday });
       const up = css('--up');
       const dn = css('--dn');
       if (model.type === 'line') main = chart.addSeries(LineSeries, { color: css('--accent'), lineWidth: 2 });
       else if (model.type === 'area') main = chart.addSeries(AreaSeries, { lineColor: css('--accent'), topColor: css('--up-dim'), bottomColor: 'rgba(0,0,0,0)', lineWidth: 2 });
+      else if (model.type === 'baseline') {
+        main = chart.addSeries(BaselineSeries, {
+          baseValue: { type: 'price', price: model.bars[0]?.c ?? 0 }, topLineColor: up, bottomLineColor: dn, topFillColor1: css('--up-dim'), topFillColor2: 'rgba(0,0,0,0)',
+          bottomFillColor1: 'rgba(0,0,0,0)', bottomFillColor2: css('--dn-dim'), lineWidth: 2,
+        });
+      } else if (model.type === 'columns') main = chart.addSeries(HistogramSeries, { priceLineVisible: true });
+      else if (model.type === 'step') main = chart.addSeries(LineSeries, { color: css('--accent'), lineWidth: 2, lineType: LineType.WithSteps });
       else if (model.type === 'bars') main = chart.addSeries(BarSeries, { upColor: up, downColor: dn });
       else if (model.type === 'hollow') main = chart.addSeries(CandlestickSeries, { upColor: 'rgba(0,0,0,0)', downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn, borderVisible: true });
       else main = chart.addSeries(CandlestickSeries, { upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn });
       main.setData(mainData(model) as never);
       main.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.3 } });
       series.push(main);
-      volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'volume', lastValueVisible: false, priceLineVisible: false });
-      volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
-      volume.setData(volumeData(model.bars));
-      series.push(volume);
+      volume = null;
+      if (!model.derived) {
+        volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'volume', lastValueVisible: false, priceLineVisible: false });
+        volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
+        volume.setData(volumeData(model.bars));
+        series.push(volume);
+      }
       compare = null;
-      if (model.compare) {
+      if (model.compare && !model.derived) {
         compare = chart.addSeries(LineSeries, { color: css('--ind3'), lineWidth: 2, title: model.compare.symbol, priceLineVisible: false });
         compare.setData(points(model.bars, model.compareSeries()));
         series.push(compare);
       }
       let next = 1;
-      for (const inst of model.indicators.filter((i) => !i.hidden)) {
+      for (const inst of model.indicators.filter((i) => !i.hidden && !model.derived)) {
         const def = model.def(inst);
         const pane = def.pane === 'overlay' ? 0 : next++;
         panes.set(inst.uid, pane);
@@ -133,11 +145,11 @@ export const lightweightRenderer: RendererFactory = (host) => {
     tick(model) {
       if (!main) return;
       const data = mainData(model);
-      if (model.type === 'heikin') main.setData(data as never);
+      if (model.type === 'heikin' || model.derived) main.setData(data as never);
       else main.update(data[data.length - 1] as never);
       const last = model.bars[model.bars.length - 1];
-      times = model.bars.map((b) => time(b.t) as number);
-      volume?.update(volumeData([last])[0]);
+      times = model.displayBars().map((b) => time(b.t) as number);
+      if (!model.derived) volume?.update(volumeData([last])[0]);
       if (compare && model.compare) compare.setData(points(model.bars, model.compareSeries()));
       for (const [uid, list] of parts) {
         const values = model.series(uid);

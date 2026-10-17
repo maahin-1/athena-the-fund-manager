@@ -1,7 +1,7 @@
 import type { ChartType, LabState, ScaleMode } from './model';
 import { find } from './registry';
 
-const TYPES: ChartType[] = ['candles', 'hollow', 'bars', 'line', 'area', 'heikin'];
+const TYPES: ChartType[] = ['candles', 'hollow', 'bars', 'line', 'area', 'baseline', 'columns', 'step', 'heikin', 'renko', 'linebreak', 'range'];
 const SCALES: ScaleMode[] = ['auto', 'log', 'percent'];
 const NAME = /^[A-Za-z0-9 _-]{1,40}$/;
 const KEY = 'athena.chartlab.templates';
