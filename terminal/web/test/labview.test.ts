@@ -105,7 +105,7 @@ describe('chart lab page', () => {
     const h = await shown();
     click(h.view.element, '.lab-ind');
     const search = h.view.element.querySelector('.lab-pop input') as HTMLInputElement;
-    search.value = 'band';
+    search.value = 'bands';
     search.dispatchEvent(new Event('input'));
     expect([...h.view.element.querySelectorAll('.lab-item')].map((i) => (i as HTMLElement).dataset.indicator)).toEqual(['bb']);
   });

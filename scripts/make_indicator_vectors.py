@@ -32,6 +32,7 @@ def main() -> None:
     macd, macd_signal, macd_hist = talib.MACD(close, 12, 26, 9)
     upper, middle, lower = talib.BBANDS(close, 20, 2, 2, 0)
     aroon_down, aroon_up = talib.AROON(high, low, 14)
+    stochrsi_k, stochrsi_d = talib.STOCHRSI(close, 14, 14, 3, 0)
     expected = {
         "sma_20": clean(talib.SMA(close, 20)),
         "ema_20": clean(talib.EMA(close, 20)),
@@ -50,6 +51,26 @@ def main() -> None:
         "trix_15": clean(talib.TRIX(close, 15)),
         "aroon_up": clean(aroon_up), "aroon_down": clean(aroon_down),
         "sar": clean(talib.SAR(high, low, 0.02, 0.2)),
+        "dema_20": clean(talib.DEMA(close, 20)),
+        "tema_20": clean(talib.TEMA(close, 20)),
+        "trima_20": clean(talib.TRIMA(close, 20)),
+        "kama_30": clean(talib.KAMA(close, 30)),
+        "ppo_12_26": clean(talib.PPO(close, 12, 26, 0)),
+        "apo_12_26": clean(talib.APO(close, 12, 26, 0)),
+        "mom_10": clean(talib.MOM(close, 10)),
+        "cmo_14": clean(talib.CMO(close, 14)),
+        "stochrsi_k": clean(stochrsi_k), "stochrsi_d": clean(stochrsi_d),
+        "ultosc": clean(talib.ULTOSC(high, low, close, 7, 14, 28)),
+        "ad": clean(talib.AD(high, low, close, volume)),
+        "adosc_3_10": clean(talib.ADOSC(high, low, close, volume, 3, 10)),
+        "natr_14": clean(talib.NATR(high, low, close, 14)),
+        "plus_di_14": clean(talib.PLUS_DI(high, low, close, 14)),
+        "minus_di_14": clean(talib.MINUS_DI(high, low, close, 14)),
+        "bop": clean(talib.BOP(open_, high, low, close)),
+        "linearreg_14": clean(talib.LINEARREG(close, 14)),
+        "linearreg_slope_14": clean(talib.LINEARREG_SLOPE(close, 14)),
+        "stddev_20": clean(talib.STDDEV(close, 20, 1)),
+        "aroonosc_14": clean(talib.AROONOSC(high, low, 14)),
     }
     bars = [{"t": 1_700_000_000 + 86_400 * i, "o": round(float(open_[i]), 4), "h": round(float(high[i]), 4), "l": round(float(low[i]), 4),
              "c": round(float(close[i]), 4), "v": float(volume[i])} for i in range(n)]

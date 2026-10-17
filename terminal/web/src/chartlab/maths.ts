@@ -41,13 +41,13 @@ export function wma(values: number[], n: number): Series {
   return out;
 }
 
-function highest(values: number[], i: number, n: number): number {
+export function highest(values: number[], i: number, n: number): number {
   let m = -Infinity;
   for (let j = i - n + 1; j <= i; j++) m = Math.max(m, values[j]);
   return m;
 }
 
-function lowest(values: number[], i: number, n: number): number {
+export function lowest(values: number[], i: number, n: number): number {
   let m = Infinity;
   for (let j = i - n + 1; j <= i; j++) m = Math.min(m, values[j]);
   return m;
@@ -73,7 +73,7 @@ export function stoch(h: number[], l: number[], c: number[], n: number, smoothK:
 }
 
 /** True range of each bar; the first bar has none (it needs a previous close). */
-function trueRange(h: number[], l: number[], c: number[]): Series {
+export function trueRange(h: number[], l: number[], c: number[]): Series {
   const out = blank(c.length);
   for (let i = 1; i < c.length; i++) out[i] = Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1]));
   return out;

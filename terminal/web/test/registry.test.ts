@@ -10,9 +10,9 @@ describe('indicator registry', () => {
     const ids = REGISTRY.map((d) => d.id);
     expect(new Set(ids).size).toBe(ids.length);
     const overlay = REGISTRY.filter((d) => d.pane === 'overlay').map((d) => d.id).sort();
-    expect(overlay).toEqual(['bb', 'donchian', 'ema', 'keltner', 'sar', 'sma', 'supertrend', 'vwap', 'wma']);
+    expect(overlay).toEqual(['bb', 'dema', 'donchian', 'ema', 'hma', 'kama', 'keltner', 'linreg', 'sar', 'sma', 'supertrend', 'tema', 'trima', 'vwap', 'wma']);
     const own = REGISTRY.filter((d) => d.pane === 'own').map((d) => d.id).sort();
-    expect(own).toEqual(['adx', 'aroon', 'atr', 'cci', 'macd', 'mfi', 'obv', 'roc', 'rsi', 'stoch', 'trix', 'willr']);
+    expect(own).toEqual(['ad', 'adosc', 'adx', 'aroon', 'aroonosc', 'atr', 'ao', 'bbpb', 'bbw', 'bop', 'cci', 'chop', 'cmf', 'cmo', 'di', 'force', 'hv', 'macd', 'mfi', 'mom', 'natr', 'obv', 'ppo', 'roc', 'rsi', 'stddev', 'stoch', 'stochrsi', 'trix', 'ultosc', 'vortex', 'willr'].sort());
   });
 
   it('computes every declared output at the length of the bars with its defaults', () => {

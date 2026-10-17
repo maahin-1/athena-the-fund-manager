@@ -1,5 +1,6 @@
 import type { Bar } from '../bars';
 import * as m from './maths';
+import * as m2 from './maths2';
 
 /** One setting of an indicator, as the settings dialog shows it. */
 export interface Input {
@@ -102,6 +103,54 @@ export const REGISTRY: IndicatorDef[] = [
     outputs: [line('up', 'Up', '--up'), line('down', 'Down', '--dn')], levels: [50],
     compute: (b, p) => ({ ...m.aroon(highs(b), lows(b), n(p, 'length')) }),
   },
+  { id: 'dema', name: 'Double Exponential Moving Average', pane: 'overlay', inputs: [int('length', 'Length', 20)], outputs: [line('ma', 'DEMA', '--ind1', 2)], compute: (b, p) => ({ ma: m2.dema(closes(b), n(p, 'length')) }) },
+  { id: 'tema', name: 'Triple Exponential Moving Average', pane: 'overlay', inputs: [int('length', 'Length', 20)], outputs: [line('ma', 'TEMA', '--ind3', 2)], compute: (b, p) => ({ ma: m2.tema(closes(b), n(p, 'length')) }) },
+  { id: 'trima', name: 'Triangular Moving Average', pane: 'overlay', inputs: [int('length', 'Length', 20)], outputs: [line('ma', 'TRIMA', '--ind2', 2)], compute: (b, p) => ({ ma: m2.trima(closes(b), n(p, 'length')) }) },
+  { id: 'hma', name: 'Hull Moving Average', pane: 'overlay', inputs: [int('length', 'Length', 21)], outputs: [line('ma', 'HMA', '--ind1', 2)], compute: (b, p) => ({ ma: m2.hma(closes(b), n(p, 'length')) }) },
+  { id: 'kama', name: 'Kaufman Adaptive Moving Average', pane: 'overlay', inputs: [int('length', 'Efficiency length', 30)], outputs: [line('ma', 'KAMA', '--ind3', 2)], compute: (b, p) => ({ ma: m2.kama(closes(b), n(p, 'length')) }) },
+  { id: 'linreg', name: 'Linear Regression', pane: 'overlay', inputs: [int('length', 'Length', 50)], outputs: [line('value', 'Regression', '--ind2', 2)], compute: (b, p) => ({ value: m2.linreg(closes(b), n(p, 'length')).value }) },
+  { id: 'ppo', name: 'Percentage Price Oscillator', pane: 'own', inputs: [int('fast', 'Fast', 12), int('slow', 'Slow', 26)], outputs: [line('ppo', 'PPO', '--ind1')], levels: [0], compute: (b, p) => ({ ppo: m2.ppo(closes(b), n(p, 'fast'), n(p, 'slow'), true) }) },
+  { id: 'mom', name: 'Momentum', pane: 'own', inputs: [int('length', 'Length', 10)], outputs: [line('mom', 'MOM', '--ind2')], levels: [0], compute: (b, p) => ({ mom: m2.mom(closes(b), n(p, 'length')) }) },
+  { id: 'cmo', name: 'Chande Momentum Oscillator', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('cmo', 'CMO', '--ind3')], levels: [-50, 50], compute: (b, p) => ({ cmo: m2.cmo(closes(b), n(p, 'length')) }) },
+  {
+    id: 'stochrsi', name: 'Stochastic RSI', pane: 'own', inputs: [int('length', 'RSI length', 14), int('k', 'Stochastic length', 14), int('d', '%D smoothing', 3)],
+    outputs: [line('k', '%K', '--ind1'), line('d', '%D', '--ind2')], levels: [20, 80],
+    compute: (b, p) => ({ ...m2.stochRsi(closes(b), n(p, 'length'), n(p, 'k'), n(p, 'd')) }),
+  },
+  {
+    id: 'ultosc', name: 'Ultimate Oscillator', pane: 'own', inputs: [int('a', 'Short', 7), int('b', 'Middle', 14), int('z', 'Long', 28)],
+    outputs: [line('uo', 'UO', '--ind3')], levels: [30, 70], compute: (b, p) => ({ uo: m2.ultosc(highs(b), lows(b), closes(b), n(p, 'a'), n(p, 'b'), n(p, 'z')) }),
+  },
+  { id: 'ad', name: 'Accumulation/Distribution', pane: 'own', inputs: [], outputs: [line('ad', 'A/D', '--ind1')], compute: (b) => ({ ad: m2.ad(highs(b), lows(b), closes(b), volumes(b)) }) },
+  {
+    id: 'adosc', name: 'Chaikin Oscillator', pane: 'own', inputs: [int('fast', 'Fast', 3), int('slow', 'Slow', 10)], outputs: [line('adosc', 'Chaikin', '--ind2')], levels: [0],
+    compute: (b, p) => ({ adosc: m2.adosc(highs(b), lows(b), closes(b), volumes(b), n(p, 'fast'), n(p, 'slow')) }),
+  },
+  { id: 'cmf', name: 'Chaikin Money Flow', pane: 'own', inputs: [int('length', 'Length', 20)], outputs: [line('cmf', 'CMF', '--ind1')], levels: [0], compute: (b, p) => ({ cmf: m2.cmf(highs(b), lows(b), closes(b), volumes(b), n(p, 'length')) }) },
+  { id: 'force', name: 'Force Index', pane: 'own', inputs: [int('length', 'Length', 13)], outputs: [line('force', 'Force', '--ind3')], levels: [0], compute: (b, p) => ({ force: m2.force(closes(b), volumes(b), n(p, 'length')) }) },
+  { id: 'ao', name: 'Awesome Oscillator', pane: 'own', inputs: [], outputs: [line('ao', 'AO', '--ind1')], levels: [0], compute: (b) => ({ ao: m2.awesome(highs(b), lows(b)) }) },
+  { id: 'natr', name: 'Normalized ATR', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('natr', 'NATR %', '--ind2', 2)], compute: (b, p) => ({ natr: m2.natr(highs(b), lows(b), closes(b), n(p, 'length')) }) },
+  {
+    id: 'di', name: 'Directional Indicators', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('plus', '+DI', '--up'), line('minus', '-DI', '--dn')],
+    compute: (b, p) => ({ ...m2.directional(highs(b), lows(b), closes(b), n(p, 'length')) }),
+  },
+  {
+    id: 'vortex', name: 'Vortex Indicator', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('plus', 'VI+', '--up'), line('minus', 'VI-', '--dn')], levels: [1],
+    compute: (b, p) => ({ ...m2.vortex(highs(b), lows(b), closes(b), n(p, 'length')) }),
+  },
+  { id: 'chop', name: 'Choppiness Index', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('chop', 'CHOP', '--ind3')], levels: [38.2, 61.8], compute: (b, p) => ({ chop: m2.choppiness(highs(b), lows(b), closes(b), n(p, 'length')) }) },
+  { id: 'stddev', name: 'Standard Deviation', pane: 'own', inputs: [int('length', 'Length', 20)], outputs: [line('sd', 'StdDev', '--ind2')], compute: (b, p) => ({ sd: m2.stddev(closes(b), n(p, 'length')) }) },
+  { id: 'hv', name: 'Historical Volatility', pane: 'own', inputs: [int('length', 'Length', 20, 2)], outputs: [line('hv', 'HV %', '--ind1')], compute: (b, p) => ({ hv: m2.volatility(closes(b), n(p, 'length')) }) },
+  {
+    id: 'bbpb', name: 'Bollinger %B', pane: 'own', inputs: [int('length', 'Length', 20), flt('mult', 'Std dev', 2, 0.1, 10)], outputs: [line('percentB', '%B', '--ind3')], levels: [0, 0.5, 1],
+    compute: (b, p) => ({ percentB: m2.bollingerStats(closes(b), n(p, 'length'), n(p, 'mult')).percentB }),
+  },
+  {
+    id: 'bbw', name: 'Bollinger Bandwidth', pane: 'own', inputs: [int('length', 'Length', 20), flt('mult', 'Std dev', 2, 0.1, 10)], outputs: [line('width', 'Bandwidth %', '--ind2')],
+    compute: (b, p) => ({ width: m2.bollingerStats(closes(b), n(p, 'length'), n(p, 'mult')).width }),
+  },
+  { id: 'bop', name: 'Balance of Power', pane: 'own', inputs: [], outputs: [line('bop', 'BOP', '--ind1')], levels: [0], compute: (b) => ({ bop: m2.bop(b.map((x) => x.o), highs(b), lows(b), closes(b)) }) },
+  { id: 'aroonosc', name: 'Aroon Oscillator', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('osc', 'Aroon osc', '--ind3')], levels: [0], compute: (b, p) => ({ osc: m2.aroonOsc(highs(b), lows(b), n(p, 'length')) }) },
 ];
 
 export function find(id: string): IndicatorDef | undefined {
