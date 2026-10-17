@@ -19,12 +19,12 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from athena.contracts import AthenaError
+from athena.fundamentals.integrated import FundamentalsResults, is_block
 from athena.fundamentals.rows import parse_rows
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore, now
 from athena.fundamentals.universe import Member, universe
-from athena.pit.nse_results import CACHE_DIR, FilingRef, NseResults
+from athena.pit.nse_results import CACHE_DIR, FilingRef
 
-BLOCK_MARKERS = ("HTTP 403", "HTTP 429", "HTTP 503")
 BLOCK_PAUSE = timedelta(minutes=30)
 
 
@@ -41,8 +41,7 @@ class Report:
     notes: list[str] = field(default_factory=list)
 
 
-def _blocked(exc: Exception) -> bool:
-    return any(marker in str(exc) for marker in BLOCK_MARKERS)
+_blocked = is_block
 
 
 def wanted(refs: Sequence[FilingRef], quarters: int = 13, standalone: bool = False) -> list[FilingRef]:
@@ -166,7 +165,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     members = universe(args.universe)
     print(f"{len(members)} companies in {args.universe}", flush=True)
     return run(
-        members, NseResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters,
+        members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters,
         standalone=args.standalone,
     )
 
