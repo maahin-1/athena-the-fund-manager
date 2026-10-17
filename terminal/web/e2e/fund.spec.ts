@@ -44,7 +44,8 @@ test('Export to Excel downloads a workbook', async ({ page }) => {
   expect(Buffer.concat(chunks).subarray(0, 2).toString()).toBe('PK'); // an .xlsx is a zip file
 });
 
-test('F6 reaches the Fundamentals tab from the terminal', async ({ page }) => {
+test('F6 reaches the Fundamentals tab from the terminal (after the Chart Lab)', async ({ page }) => {
+  await page.keyboard.press('F6');
   await page.keyboard.press('F6');
   await expect(page.locator('.vtab.on')).toHaveText('Fundamentals');
 });

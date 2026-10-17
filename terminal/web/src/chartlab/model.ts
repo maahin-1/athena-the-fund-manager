@@ -40,6 +40,8 @@ export interface WindowData {
   values: Record<string, Record<string, number | null>>;
 }
 
+/** `tick`: only the last bar (and what depends on it) moved; `structure`: bars, indicators, type, scale or compare changed. */
+export type ChangeKind = 'tick' | 'structure';
 export type TickResult = 'updated' | 'appended' | 'ignored';
 
 /** Heikin Ashi bars from ordinary ones: close is the four-price average, open the midpoint of the previous Heikin Ashi bar. */
@@ -63,17 +65,17 @@ export class ChartModel {
   indicators: IndicatorInstance[] = [];
   compare: { symbol: string; bars: Bar[] } | null = null;
   private cache = new Map<string, Record<string, Series>>();
-  private listeners = new Set<() => void>();
+  private listeners = new Set<(kind: ChangeKind) => void>();
   private counter = 0;
 
-  subscribe(fn: () => void): () => void {
+  subscribe(fn: (kind: ChangeKind) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 
-  private changed(): void {
+  private changed(kind: ChangeKind = 'structure'): void {
     this.cache.clear();
-    this.listeners.forEach((fn) => fn());
+    this.listeners.forEach((fn) => fn(kind));
   }
 
   setBars(bars: Bar[], tf: Timeframe): void {
@@ -91,11 +93,11 @@ export class ChartModel {
     if (next === last) return 'ignored';
     if (next.t === last.t) {
       this.bars[this.bars.length - 1] = next;
-      this.changed();
+      this.changed('tick');
       return 'updated';
     }
     this.bars.push(next);
-    this.changed();
+    this.changed('tick');
     return 'appended';
   }
 

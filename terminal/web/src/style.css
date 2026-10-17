@@ -226,6 +226,45 @@ html, body { overflow: hidden; }
 .fnotes { padding: 4px 2px 16px; }
 .fexport { text-decoration: none; }
 
+/* chart lab */
+.lab { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.lab[hidden] { display: none; }
+.lab-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 10px; background: var(--bg-bar); border-bottom: 1px solid var(--border); }
+.lab-sub { display: flex; align-items: center; gap: 12px; padding: 3px 10px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.lab-select { background: var(--bg-panel); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 3px 6px; font: inherit; }
+.lab-symbol { width: 110px; text-transform: uppercase; }
+.lab-compare { width: 130px; }
+.lab-badge.good { color: var(--up); } .lab-badge.warn { color: var(--label); }
+.lab-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 230px; }
+.lab-chart { position: relative; min-width: 0; min-height: 0; background: var(--bg-panel); }
+.lab-host { position: absolute; inset: 0; }
+.lab-legends { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.lab-legend { position: absolute; left: 8px; right: 70px; display: flex; flex-direction: column; gap: 1px; font-size: 12px; }
+.lab-legend > * { pointer-events: none; }
+.lab-lrow { display: flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--bg-panel) 70%, transparent); width: fit-content; max-width: 100%; }
+.lab-lrow .lg { pointer-events: auto; background: none; border: none; color: var(--fg-dim); cursor: pointer; padding: 0 3px; font: inherit; }
+.lab-lrow .lg:hover { color: var(--fg); }
+.lab-lrow.off .lg-name { opacity: 0.45; text-decoration: line-through; }
+.lg-val { font-variant-numeric: tabular-nums; margin-right: 6px; }
+.lab-head { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.lab-window { border-left: 1px solid var(--border); background: var(--bg-panel); overflow-y: auto; padding: 8px 12px; font-size: 12px; }
+.lab-wh { color: var(--label); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; margin: 10px 0 3px; }
+.lab-wrow { display: flex; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; padding: 1px 0; }
+.lab-note { padding: 3px 10px; }
+.lab-pop { position: absolute; top: 74px; left: 300px; z-index: 20; width: 320px; max-height: 60vh; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--bg-bar); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4); }
+.lab-pop[hidden] { display: none; }
+.lab-list { overflow-y: auto; display: flex; flex-direction: column; }
+.lab-item { display: flex; justify-content: space-between; text-align: left; background: none; color: var(--fg); border: none; padding: 5px 8px; font: inherit; cursor: pointer; }
+.lab-item:hover { background: var(--grid); }
+.lab-modal { position: absolute; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; }
+.lab-dialog { background: var(--bg-bar); border: 1px solid var(--border); border-radius: 6px; padding: 14px 18px; min-width: 300px; }
+.lab-dialog h3 { margin: 0 0 10px; color: var(--label); font-size: 13px; }
+.lab-form { display: flex; flex-direction: column; gap: 8px; }
+.lab-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.lab-row input[type='number'], .lab-row select { width: 110px; background: var(--bg-panel); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 3px 6px; font: inherit; }
+.lab-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+@media (max-width: 900px) { .lab-main { grid-template-columns: minmax(0, 1fr); } .lab-window { display: none; } }
+
 /* one title row per panel: the link colour dot lives on the group's tab bar */
 .link-dot { font-size: 12px; }
 .link-dot[data-group='none'] { color: var(--fg-dim); }

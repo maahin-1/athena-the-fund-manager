@@ -9,6 +9,7 @@ import {
 } from './layout';
 import { LinkBus } from './links';
 import { marketState } from './market';
+import { ChartLabView } from './chartlab/view';
 import { FundamentalsView } from './fundamentals/view';
 import { ResearchView } from './research';
 import { ScreenView } from './screen';
@@ -25,7 +26,7 @@ const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
 const VIEW_KEY = 'athena.terminal.view';
 const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'analysis', 'verdict', 'tape'];
-type View = 'terminal' | 'fund' | 'research' | 'screen';
+type View = 'terminal' | 'lab' | 'fund' | 'research' | 'screen';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
   watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel,
 };
@@ -56,6 +57,7 @@ class App implements AppContext {
   private dockHost = el('div', 'dock');
   private research!: ResearchView;
   private fund!: FundamentalsView;
+  private lab!: ChartLabView;
   private screen!: ScreenView;
   private view: View = 'terminal';
   private lastPreset: PresetName = 'A';
@@ -78,8 +80,9 @@ class App implements AppContext {
     const host = this.dockHost;
     this.research = new ResearchView(this);
     this.fund = new FundamentalsView(this);
+    this.lab = new ChartLabView(this);
     this.screen = new ScreenView(this);
-    root.append(this.buildBar(), host, this.fund.element, this.research.element, this.screen.element);
+    root.append(this.buildBar(), host, this.lab.element, this.fund.element, this.research.element, this.screen.element);
     this.dock = createDockview(host, {
       theme: themeDark,
       createRightHeaderActionComponent: (group) => this.headerActions(group),
@@ -113,7 +116,7 @@ class App implements AppContext {
     } catch {
       /* storage can be blocked */
     }
-    this.setView(view === 'fund' || view === 'research' || view === 'screen' ? view : 'terminal');
+    this.setView(view === 'lab' || view === 'fund' || view === 'research' || view === 'screen' ? view : 'terminal');
   }
 
   showSymbol(symbol: string): void {
@@ -153,6 +156,8 @@ class App implements AppContext {
     }
     this.dockHost.hidden = view !== 'terminal';
     this.viewTabs.forEach((b, v) => b.classList.toggle('on', v === view));
+    if (view === 'lab') this.lab.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
+    else this.lab.hide();
     if (view === 'fund') this.fund.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
     else this.fund.hide();
     if (view === 'research') this.research.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
@@ -397,9 +402,9 @@ class App implements AppContext {
       this.setView('terminal');
       this.addPanel(t);
     });
-    for (const [v, label] of [['terminal', 'Terminal'], ['fund', 'Fundamentals'], ['research', 'Research'], ['screen', 'Screen']] as [View, string][]) {
+    for (const [v, label] of [['terminal', 'Terminal'], ['lab', 'Chart Lab'], ['fund', 'Fundamentals'], ['research', 'Research'], ['screen', 'Screen']] as [View, string][]) {
       const b = el('button', 'vtab', label);
-      b.title = v === 'fund' ? 'Statements, ratios and growth for one company, from its filings (F6 cycles the views)' : v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F6 cycles the views)' : v === 'screen' ? 'Screen every stock and ETF with presets and filters (F6 cycles the views)' : 'Charts, depth and the dockable panels (F6 cycles the views)';
+      b.title = v === 'lab' ? 'One big chart with indicators, compare, log and percent scales, templates and a data window (F6 cycles the views)' : v === 'fund' ? 'Statements, ratios and growth for one company, from its filings (F6 cycles the views)' : v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F6 cycles the views)' : v === 'screen' ? 'Screen every stock and ETF with presets and filters (F6 cycles the views)' : 'Charts, depth and the dockable panels (F6 cycles the views)';
       b.addEventListener('click', () => this.setView(v));
       this.viewTabs.set(v, b);
     }
@@ -496,6 +501,10 @@ class App implements AppContext {
         this.watchlist.remove(cmd.symbol);
         this.changed();
         return this.say(`removed ${cmd.symbol}`);
+      case 'lab':
+        this.say(cmd.symbol ? `chart lab ${cmd.symbol}` : 'chart lab');
+        if (cmd.symbol) this.bus.setSymbol('blue', cmd.symbol);
+        return this.setView('lab', cmd.symbol ?? undefined);
       case 'fund':
         this.say(cmd.symbol ? `fundamentals ${cmd.symbol}` : 'fundamentals');
         if (cmd.symbol) this.bus.setSymbol('blue', cmd.symbol);
@@ -514,6 +523,11 @@ class App implements AppContext {
         return;
       case 'symbol':
       case 'chart': {
+        if ((this.view === 'lab' || this.view === 'fund') && cmd.kind === 'symbol') {
+          this.say(cmd.symbol);
+          this.bus.setSymbol('blue', cmd.symbol);
+          return this.view === 'lab' ? this.lab.show(cmd.symbol) : this.fund.show(cmd.symbol);
+        }
         if (this.view === 'research' && cmd.kind === 'symbol') {
           this.say(cmd.symbol);
           this.bus.setSymbol('blue', cmd.symbol);
@@ -554,7 +568,7 @@ class App implements AppContext {
     }
     if (e.key === 'F6') {
       e.preventDefault();
-      this.setView(this.view === 'terminal' ? 'fund' : this.view === 'fund' ? 'research' : this.view === 'research' ? 'screen' : 'terminal');
+      this.setView(this.view === 'terminal' ? 'lab' : this.view === 'lab' ? 'fund' : this.view === 'fund' ? 'research' : this.view === 'research' ? 'screen' : 'terminal');
       return;
     }
     const groups: Record<string, PanelType[]> = { F1: ['watchlist'], F2: ['chart'], F3: ['depth', 'quote'], F4: ['tape'] };

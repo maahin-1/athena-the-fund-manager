@@ -6,6 +6,7 @@ export type Command =
   | { kind: 'remove'; symbol: string }
   | { kind: 'research'; symbol: string | null } // the Research page, on a stock when one is given
   | { kind: 'fund'; symbol: string | null } // the Fundamentals page, on a stock when one is given
+  | { kind: 'lab'; symbol: string | null } // the Chart Lab page, on a stock when one is given
   | { kind: 'terminal' }
   | { kind: 'screen' }
   | { kind: 'error'; message: string };
@@ -49,6 +50,7 @@ export function parse(input: string, ctx: CommandContext): Command {
     if (saved) return { kind: 'layout', name: saved };
     if (head === 'RESEARCH') return { kind: 'research', symbol: null };
     if (head === 'FUND') return { kind: 'fund', symbol: null };
+    if (head === 'LAB') return { kind: 'lab', symbol: null };
     if (head === 'TERMINAL') return { kind: 'terminal' };
     if (head === 'SCREEN') return { kind: 'screen' };
     return SYMBOL.test(head) ? { kind: 'symbol', symbol: head } : fail(`"${words[0]}" is not a symbol`);
@@ -56,6 +58,13 @@ export function parse(input: string, ctx: CommandContext): Command {
   if (head === 'RESEARCH' && words.length === 2) {
     const symbol = words[1].toUpperCase();
     return SYMBOL.test(symbol) ? { kind: 'research', symbol } : fail(`"${words[1]}" is not a symbol`);
+  }
+  if (head === 'LAB' && words.length === 2) {
+    const symbol = words[1].toUpperCase();
+    return SYMBOL.test(symbol) ? { kind: 'lab', symbol } : fail(`"${words[1]}" is not a symbol`);
+  }
+  if (words.length === 2 && words[1].toUpperCase() === 'LAB') {
+    return SYMBOL.test(head) ? { kind: 'lab', symbol: head } : fail(`"${words[0]}" is not a symbol`);
   }
   if (head === 'FUND' && words.length === 2) {
     const symbol = words[1].toUpperCase();
