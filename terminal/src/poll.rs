@@ -25,7 +25,7 @@ pub fn market_open(now: DateTime<Utc>) -> bool {
     ist.weekday().number_from_monday() <= 5 && (9 * 60 + 15..=15 * 60 + 30).contains(&minutes)
 }
 
-fn number(v: Option<&Value>) -> Option<f64> {
+pub(crate) fn number(v: Option<&Value>) -> Option<f64> {
     let n = match v? {
         Value::Number(n) => n.as_f64()?,
         Value::String(s) => s.trim().replace(',', "").parse::<f64>().ok()?,

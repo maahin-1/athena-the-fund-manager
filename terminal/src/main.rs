@@ -4,6 +4,7 @@ mod angel;
 mod bars;
 mod config;
 mod fake;
+mod indices;
 mod fundamentals;
 mod hub;
 mod layouts;
@@ -177,9 +178,12 @@ async fn main() {
     let hub = Hub::new();
     let (status, _keep) = watch::channel(if args.fake_feed { FeedStatus::On } else { FeedStatus::Connecting });
     let shutdown = CancellationToken::new();
+    let index_store = indices::IndexStore::new();
     if args.fake_feed {
         tokio::spawn(fake::run_fake(hub.clone(), shutdown.clone()));
+        tokio::spawn(indices::run_fake(index_store.clone(), shutdown.clone()));
     } else {
+        tokio::spawn(indices::run_refresher(index_store.clone(), reqwest::Client::new(), shutdown.clone()));
         tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), status.clone(), shutdown.clone()));
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
     }
@@ -188,11 +192,12 @@ async fn main() {
         warehouse: args.warehouse,
         intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())),
     });
+    let lists = Arc::new(layouts::LayoutStore::new(args.layouts_dir.parent().map(|p| p.join("lists")).unwrap_or_else(|| PathBuf::from(".athena/terminal/lists"))));
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
     let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
     let fundamentals = Arc::new(fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone()));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals };
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))

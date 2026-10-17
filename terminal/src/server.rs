@@ -36,6 +36,9 @@ pub struct AppState {
     pub verdicts: VerdictJobs,
     pub analyse: Arc<crate::analyse_worker::AnalyseWorker>,
     pub fundamentals: Arc<FundamentalsJobs>,
+    pub indices: crate::indices::IndexStore,
+    /// Documents the page keeps on the server beside the layouts (the watchlists), one fixed name each.
+    pub lists: Arc<LayoutStore>,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -275,6 +278,29 @@ fn layout_status(e: LayoutError) -> StatusCode {
     }
 }
 
+async fn api_indices(State(state): State<AppState>) -> Response {
+    match state.indices.json() {
+        Some(v) => Json(v).into_response(),
+        None => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": "no index snapshot yet"}))).into_response(),
+    }
+}
+
+const WATCHLISTS: &str = "watchlists";
+
+async fn watchlists_get(State(state): State<AppState>) -> Response {
+    match state.lists.get(WATCHLISTS) {
+        Ok(body) => ([("content-type", "application/json")], body).into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+async fn watchlists_put(State(state): State<AppState>, body: Bytes) -> Response {
+    match state.lists.put(WATCHLISTS, &body) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
 async fn layouts_list(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({"names": state.layouts.list()}))
 }
@@ -360,6 +386,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/analysis", get(api_analysis))
         .route("/api/known", get(api_known))
         .route("/api/screen", get(api_screen))
+        .route("/api/indices", get(api_indices))
+        .route("/api/watchlists", get(watchlists_get).put(watchlists_put))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
         .route("/api/fund-status", get(api_fund_status))
@@ -407,7 +435,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))) };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -478,6 +506,35 @@ mod tests {
         assert_eq!(client.put(format!("{base}/Mine-1")).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
         assert_eq!(client.delete(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 204);
         assert_eq!(client.get(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 404);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn watchlists_are_one_document_saved_and_loaded_over_http() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}/api/watchlists");
+        assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().status(), 404);
+        assert_eq!(client.put(&url).header("Origin", &origin).body(r#"{"version":1,"lists":[]}"#).send().await.unwrap().status(), 204);
+        let got = client.get(&url).header("Origin", &origin).send().await.unwrap();
+        assert_eq!(got.text().await.unwrap(), r#"{"version":1,"lists":[]}"#);
+        assert_eq!(client.put(&url).header("Origin", &origin).body("[]").send().await.unwrap().status(), 400);
+        let big = format!(r#"{{"x":"{}"}}"#, "a".repeat(250 * 1024));
+        assert_eq!(client.put(&url).header("Origin", &origin).body(big).send().await.unwrap().status(), 413);
+        assert_eq!(client.put(&url).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn indices_are_unavailable_until_a_snapshot_exists_and_then_served() {
+        let (port, state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let url = format!("http://127.0.0.1:{port}/api/indices");
+        assert_eq!(client.get(&url).send().await.unwrap().status(), 503);
+        state.indices.set(crate::indices::Snapshot { as_of: "16-Oct-2026 15:30".into(), rows: vec![] });
+        let v: serde_json::Value = client.get(&url).send().await.unwrap().json().await.unwrap();
+        assert_eq!(v["as_of"], "16-Oct-2026 15:30");
         stop.cancel();
     }
 
