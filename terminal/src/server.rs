@@ -89,6 +89,8 @@ struct BarsQuery {
     symbol: String,
     tf: Option<String>,
     limit: Option<usize>,
+    /// `adj=0` asks for the bars as printed, without the split and bonus adjustment.
+    adj: Option<u8>,
 }
 
 fn symbol_ok(symbol: &str) -> bool {
@@ -105,7 +107,8 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
         let path = state.bars.warehouse.clone();
         let (sym, limit) = (symbol.clone(), q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 5000));
         // a stock's prices are adjusted for splits and bonuses (as Streamlit's were); an index has none, and if the adjustment cannot run the raw bars are shown and say so
-        let adjusted = if symbol.to_ascii_uppercase().starts_with("NIFTY ") { None } else { state.bars.adjusted.get(&symbol).await };
+        let raw_wanted = q.adj == Some(0);
+        let adjusted = if raw_wanted || symbol.to_ascii_uppercase().starts_with("NIFTY ") { None } else { state.bars.adjusted.get(&symbol).await };
         match adjusted {
             Some(a) => {
                 let from = a.bars.len().saturating_sub(limit);
@@ -114,10 +117,11 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
             }
             None => match tokio::task::spawn_blocking(move || daily_bars(&path, &sym, limit)).await {
                 Ok(Ok(bars)) => {
-                    let raw = !symbol.to_ascii_uppercase().starts_with("NIFTY ");
-                    (bars, "warehouse", if raw { "Split and bonus adjustment is unavailable; prices are as printed." } else { "" })
+                    let stock = !symbol.to_ascii_uppercase().starts_with("NIFTY ");
+                    let note = if raw_wanted && stock { "Prices are as printed, not adjusted for splits and bonuses." } else if stock { "Split and bonus adjustment is unavailable; prices are as printed." } else { "" };
+                    (bars, if raw_wanted { "warehouse, raw" } else { "warehouse" }, note)
                 }
-                _ => (Vec::new(), "warehouse", "warehouse busy"),
+                _ => (Vec::new(), if raw_wanted { "warehouse, raw" } else { "warehouse" }, "warehouse busy"),
             },
         }
     } else if yahoo_params(&tf).is_some() {
@@ -490,6 +494,18 @@ mod tests {
         assert_eq!(client.post(format!("{base}/verdict/a;b")).header("Origin", &origin).send().await.unwrap().status(), 400);
         assert_eq!(client.post(format!("{base}/verdict/SBIN")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         assert_eq!(client.post(format!("{base}/verdict/SBIN")).header("Origin", &origin).send().await.unwrap().status(), 202);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn raw_bars_are_asked_for_with_adj_zero_and_say_so() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api/bars?symbol=SBIN&tf=1D");
+        let raw: serde_json::Value = client.get(format!("{base}&adj=0")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(raw["source"], "warehouse, raw"); // no warehouse in this test, so no bars, but the raw path was taken
+        let adjusted: serde_json::Value = client.get(&base).send().await.unwrap().json().await.unwrap();
+        assert_eq!(adjusted["source"], "warehouse");
         stop.cancel();
     }
 
