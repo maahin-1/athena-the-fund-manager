@@ -160,8 +160,9 @@ def run(
             print(f"{member.symbol:<12} BLOCKED ({exc}); stopping, try again after {BLOCK_PAUSE.seconds // 60} minutes", file=out)
             return 3
         with FundamentalsStore(store_path) as store:
-            ok = report.failed == 0 or report.fetched + report.skipped > 0
-            store.set_run(member.symbol, "ok" if ok else "failed", filings=report.fetched + report.skipped)
+            # "partial": some filings could not be read; a later --resume tries the company again (a finished company is skipped)
+            status = "ok" if report.failed == 0 else "partial" if report.fetched + report.skipped > 0 else "failed"
+            store.set_run(member.symbol, status, filings=report.fetched + report.skipped)
         seconds = (now() - started).total_seconds()
         print(f"{member.symbol:<12} fetched {report.fetched:>3} skipped {report.skipped:>3} failed {report.failed:>3}  {seconds:5.0f}s", file=out)
         for note in report.notes[:3]:

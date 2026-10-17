@@ -173,3 +173,9 @@ Built: indicator maths against TA-Lib (23 series), the 21-indicator registry, th
 
 **Not done in this batch (named so they are not lost):** drawing tools and the object tree (5d), further chart types (Renko, Kagi, point and figure, range, line break, baseline, columns, high-low, volume candles) and custom intervals (5b), watchlist-based symbol search and live index quotes (5e), alerts (5g), formula and Python indicators (5h), multi-chart grid (5k), replay (5j), the verdict overlay and other AI items (5l). Ticks for a live chart are verified only by unit tests with a fake feed; check them in a market session with `python scripts/terminal-market-check.py`.
 
+## 13. Nifty 50 clean-up (2026-10-17, after B1c)
+
+Done from the audit in section 11: the `insurer` layout (HDFC Life, SBI Life now show premium, benefit and profit rows), the symbol-history table (Eternal, TMPV, Tata Consumer, Shriram Finance and Bajaj Auto now run back to FY2019 to FY2022 with a note), the period-date repair for a filing that swapped day and month, `--refresh` and the `partial` company state. Tata Steel went from three years to eight once its failed filings were retried; HCL Tech's FY2019 filing answers 404 from the exchange and stays missing.
+
+Still true of the Nifty 50 after this: Nestle India has two comparable years because it changed its financial year-end (the transition period is not a year); Jio Financial and Max Healthcare are recent listings; Eternal has five years of its own and its predecessor's; HDFC Life and SBI Life have two annual and six or seven quarterly filings in the format the exchange serves (older insurer results are not in the Integrated Filing format and have not been looked at); general insurers (ICICI Lombard, Star Health, New India) use other tags and are not read. Next in this area: shareholding, documents and the pre-FY2023 balance-sheet gap-fill (B2), then the full-market ingest.
+

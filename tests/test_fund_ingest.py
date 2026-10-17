@@ -149,3 +149,17 @@ def test_earlier_symbols_of_a_renamed_company_are_fetched_after_it_and_never_twi
     assert [m.symbol for m in out] == ["NEW", "OLD", "OTHER"]
     assert out[1].name == "New Ltd"  # the earlier symbol is the same company
     assert ingest.with_predecessors([Member("OTHER", "Other", "IT", "INE2")], table)[0].symbol == "OTHER"
+
+
+def test_a_company_with_one_unreadable_filing_is_partial_and_resume_tries_it_again(tmp_path):
+    good = (FIXTURES / "tcs_fy2024.xml").read_text(encoding="utf-8")
+    results = FakeResults([ref(date(2024, 3, 31), True, url="good"), ref(date(2023, 3, 31), True, url="gone")], {"good": good, "gone": AthenaError("HTTP 404")})
+    path = tmp_path / "f.duckdb"
+    kwargs = dict(resume=True, max_age_days=30, limit=None, quarters=13, standalone=False, out=io.StringIO())
+    ingest.run([TCS], results, path, **kwargs)
+    with FundamentalsStore(path) as store:
+        assert store.run("TCS")["status"] == "partial"
+    results.texts["gone"] = good  # the exchange serves it now
+    ingest.run([TCS], results, path, **kwargs)
+    with FundamentalsStore(path) as store:
+        assert store.run("TCS")["status"] == "ok"
