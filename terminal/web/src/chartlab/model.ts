@@ -1,0 +1,227 @@
+import { applyTick, tickFitsChart, type Bar } from '../bars';
+import type { Timeframe } from '../ranges';
+import type { Series } from './maths';
+import { defaults, find, validate, type IndicatorDef, type Params } from './registry';
+
+export type ChartType = 'candles' | 'hollow' | 'bars' | 'line' | 'area' | 'heikin';
+export type ScaleMode = 'auto' | 'log' | 'percent';
+export const CHART_TYPES: { id: ChartType; label: string }[] = [
+  { id: 'candles', label: 'Candles' }, { id: 'hollow', label: 'Hollow candles' }, { id: 'bars', label: 'Bars' },
+  { id: 'line', label: 'Line' }, { id: 'area', label: 'Area' }, { id: 'heikin', label: 'Heikin Ashi' },
+];
+
+/** One indicator on the chart. `colors` overrides an output's theme colour by output key. */
+export interface IndicatorInstance {
+  uid: string;
+  id: string;
+  params: Params;
+  hidden: boolean;
+  colors: Record<string, string>;
+}
+
+/** Everything about the chart a template or the undo history needs to restore. */
+export interface LabState {
+  type: ChartType;
+  scale: ScaleMode;
+  adjusted: boolean;
+  indicators: { id: string; params: Params; hidden: boolean; colors: Record<string, string> }[];
+  compare: string | null;
+}
+
+export interface WindowData {
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+  change: number;
+  changePct: number;
+  values: Record<string, Record<string, number | null>>;
+}
+
+export type TickResult = 'updated' | 'appended' | 'ignored';
+
+/** Heikin Ashi bars from ordinary ones: close is the four-price average, open the midpoint of the previous Heikin Ashi bar. */
+export function heikinAshi(bars: Bar[]): Bar[] {
+  const out: Bar[] = [];
+  for (const b of bars) {
+    const close = (b.o + b.h + b.l + b.c) / 4;
+    const open = out.length ? (out[out.length - 1].o + out[out.length - 1].c) / 2 : (b.o + b.c) / 2;
+    out.push({ t: b.t, o: open, h: Math.max(b.h, open, close), l: Math.min(b.l, open, close), c: close, v: b.v });
+  }
+  return out;
+}
+
+/** The chart's state without any drawing: bars, live ticks, indicators, the compare series and the data window. The view binds to it. */
+export class ChartModel {
+  bars: Bar[] = [];
+  tf: Timeframe = '1D';
+  type: ChartType = 'candles';
+  scale: ScaleMode = 'auto';
+  adjusted = true;
+  indicators: IndicatorInstance[] = [];
+  compare: { symbol: string; bars: Bar[] } | null = null;
+  private cache = new Map<string, Record<string, Series>>();
+  private listeners = new Set<() => void>();
+  private counter = 0;
+
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private changed(): void {
+    this.cache.clear();
+    this.listeners.forEach((fn) => fn());
+  }
+
+  setBars(bars: Bar[], tf: Timeframe): void {
+    this.bars = bars;
+    this.tf = tf;
+    this.changed();
+  }
+
+  /** A live trade. The last bar is updated when the trade is in it, a new bar is added when it is in a later one, and a trade that does not fit
+   *  (outside the session for an intraday chart, far from the last price, for an earlier bar) changes nothing. */
+  tick(price: number, tsSec: number, volume = 0): TickResult {
+    const last = this.bars[this.bars.length - 1];
+    if (!last || !tickFitsChart(last, price, tsSec, this.tf)) return 'ignored';
+    const next = applyTick(last, price, tsSec, this.tf, volume);
+    if (next === last) return 'ignored';
+    if (next.t === last.t) {
+      this.bars[this.bars.length - 1] = next;
+      this.changed();
+      return 'updated';
+    }
+    this.bars.push(next);
+    this.changed();
+    return 'appended';
+  }
+
+  addIndicator(defId: string, params?: Params): string | null {
+    const def = find(defId);
+    if (!def) return null;
+    const checked = validate(def, { ...defaults(def), ...params });
+    if (!checked.ok) return null;
+    const uid = `i${++this.counter}`;
+    this.indicators.push({ uid, id: defId, params: checked.params, hidden: false, colors: {} });
+    this.changed();
+    return uid;
+  }
+
+  /** Change an indicator's settings or colours. Returns an error text when a setting is not acceptable (nothing is changed then). */
+  updateIndicator(uid: string, params: Params, colors?: Record<string, string>): string | null {
+    const inst = this.indicators.find((i) => i.uid === uid);
+    const def = inst && find(inst.id);
+    if (!inst || !def) return 'no such indicator';
+    const checked = validate(def, { ...inst.params, ...params });
+    if (!checked.ok) return checked.error;
+    inst.params = checked.params;
+    if (colors) inst.colors = { ...inst.colors, ...colors };
+    this.changed();
+    return null;
+  }
+
+  hideIndicator(uid: string, hidden: boolean): void {
+    const inst = this.indicators.find((i) => i.uid === uid);
+    if (inst) {
+      inst.hidden = hidden;
+      this.changed();
+    }
+  }
+
+  removeIndicator(uid: string): void {
+    this.indicators = this.indicators.filter((i) => i.uid !== uid);
+    this.changed();
+  }
+
+  setType(type: ChartType): void {
+    this.type = type;
+    this.changed();
+  }
+
+  setScale(scale: ScaleMode): void {
+    this.scale = scale;
+    this.changed();
+  }
+
+  setAdjusted(adjusted: boolean): void {
+    this.adjusted = adjusted;
+    this.changed();
+  }
+
+  setCompare(symbol: string | null, bars: Bar[] = []): void {
+    this.compare = symbol ? { symbol, bars } : null;
+    this.changed();
+  }
+
+  def(inst: IndicatorInstance): IndicatorDef {
+    return find(inst.id) as IndicatorDef;
+  }
+
+  /** An indicator's series, computed on the real bars (never on Heikin Ashi ones) and kept until the bars or settings change. */
+  series(uid: string): Record<string, Series> {
+    const hit = this.cache.get(uid);
+    if (hit) return hit;
+    const inst = this.indicators.find((i) => i.uid === uid);
+    if (!inst) return {};
+    const out = this.def(inst).compute(this.bars, inst.params);
+    this.cache.set(uid, out);
+    return out;
+  }
+
+  /** The bars as drawn: the real ones, or Heikin Ashi bars when that type is chosen. */
+  displayBars(): Bar[] {
+    return this.type === 'heikin' ? heikinAshi(this.bars) : this.bars;
+  }
+
+  /** The compare symbol's closes on this chart's bars, rebased so that it starts level with the chart's own close at the first bar both have. A
+   *  bar the compare symbol lacks is `null`. */
+  compareSeries(): Series {
+    const out: Series = new Array(this.bars.length).fill(null);
+    if (!this.compare) return out;
+    const theirs = new Map(this.compare.bars.map((b) => [b.t, b.c]));
+    const base = this.bars.findIndex((b) => theirs.has(b.t));
+    if (base < 0) return out;
+    const scale = this.bars[base].c / (theirs.get(this.bars[base].t) as number);
+    this.bars.forEach((b, i) => {
+      const value = theirs.get(b.t);
+      if (value !== undefined && i >= base) out[i] = value * scale;
+    });
+    return out;
+  }
+
+  /** What the data window shows for bar `index`: its prices, change from the bar before, and every visible indicator's values there. */
+  window(index: number): WindowData | null {
+    const b = this.bars[index];
+    if (!b) return null;
+    const prev = index > 0 ? this.bars[index - 1].c : b.o;
+    const values: WindowData['values'] = {};
+    for (const inst of this.indicators.filter((i) => !i.hidden)) {
+      const s = this.series(inst.uid);
+      values[inst.uid] = Object.fromEntries(this.def(inst).outputs.map((o) => [o.key, s[o.key]?.[index] ?? null]));
+    }
+    return { t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, change: b.c - prev, changePct: prev ? ((b.c - prev) / prev) * 100 : 0, values };
+  }
+
+  state(): LabState {
+    return {
+      type: this.type, scale: this.scale, adjusted: this.adjusted,
+      indicators: this.indicators.map((i) => ({ id: i.id, params: { ...i.params }, hidden: i.hidden, colors: { ...i.colors } })),
+      compare: this.compare?.symbol ?? null,
+    };
+  }
+
+  /** Put a saved state back. The compare symbol is returned for the caller to fetch its bars (the model holds no data it was not given). */
+  restore(state: LabState): string | null {
+    this.type = state.type;
+    this.scale = state.scale;
+    this.adjusted = state.adjusted;
+    this.indicators = state.indicators.map((i) => ({ uid: `i${++this.counter}`, id: i.id, params: { ...i.params }, hidden: i.hidden, colors: { ...i.colors } }));
+    if (!state.compare) this.compare = null;
+    else if (this.compare?.symbol !== state.compare) this.compare = { symbol: state.compare, bars: [] }; // no line until `setCompare` gets its bars
+    this.changed();
+    return state.compare;
+  }
+}
