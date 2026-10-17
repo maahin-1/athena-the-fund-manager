@@ -230,13 +230,15 @@ export class ScreenView {
     chart.addEventListener('click', () => this.ctx.showSymbol(symbol));
     const research = el('button', 'btn', 'Research');
     research.addEventListener('click', () => this.ctx.openResearch(symbol));
+    const fund = el('button', 'btn', 'Fundamentals');
+    fund.addEventListener('click', () => this.ctx.openFundamentals(symbol));
     const add = el('button', 'btn', '+ Watchlist');
     add.addEventListener('click', () => {
       this.ctx.watchlist.add(symbol);
       this.ctx.changed();
       add.textContent = 'Added';
     });
-    this.actions.append(chart, research, add);
+    this.actions.append(chart, research, fund, add);
     this.element.querySelectorAll('.srow').forEach((r) => r.classList.toggle('selected', (r as HTMLElement).dataset.symbol === symbol));
   }
 }

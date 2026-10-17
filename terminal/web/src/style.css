@@ -161,7 +161,7 @@ html, body { overflow: hidden; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* research page */
-.research { flex: 1; min-height: 0; min-width: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr); }
+.research, .fund { flex: 1; min-height: 0; min-width: 0; display: grid; grid-template-columns: 170px minmax(0, 1fr); }
 .rlist { border-right: 1px solid var(--border); background: var(--bg-panel); overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 1px; }
 .rlisthead { color: var(--fg-dim); text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; padding: 4px 6px; }
 .ritem { text-align: left; background: none; color: var(--fg); border: 1px solid transparent; border-radius: 3px; padding: 4px 8px; font: inherit; cursor: pointer; }
@@ -198,11 +198,33 @@ html, body { overflow: hidden; }
 .rcard .facts .k { overflow-wrap: anywhere; }
 
 @media (max-width: 760px) {
-  .research { grid-template-columns: minmax(0, 1fr); }
+  .research, .fund { grid-template-columns: minmax(0, 1fr); }
   .rlist { display: none; }
   .rpick { display: inline-block; }
   .rprice { margin-left: 0; }
 }
+
+/* fundamentals page */
+.fbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px; align-items: start; }
+.basis-toggle { display: inline-flex; gap: 2px; }
+.fkeys { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.fkey { background: var(--bg-panel); padding: 8px 12px; display: flex; justify-content: space-between; gap: 8px; cursor: help; }
+.fk-label { color: var(--fg-dim); }
+.fk-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.fchart-host { height: 300px; }
+.ftable-wrap { overflow-x: auto; max-width: 100%; }
+.ftable { border-collapse: collapse; font-variant-numeric: tabular-nums; min-width: 100%; }
+.ftable th, .ftable td { padding: 4px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+.ftable th { color: var(--fg-dim); font-weight: 600; position: sticky; top: 0; background: var(--bg-panel); }
+.ftable td:first-child, .ftable th:first-child { text-align: left; position: sticky; left: 0; background: var(--bg-panel); min-width: 200px; }
+.ftable tbody tr:hover td { background: var(--grid); }
+.ftable td.has-how { cursor: help; text-decoration: underline dotted var(--fg-dim); text-underline-offset: 3px; }
+.fgrowth { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 12px; }
+.fgrow { border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; background: var(--bg); }
+.fg-title { color: var(--label); font-weight: 600; margin-bottom: 4px; }
+.fg-row { display: flex; justify-content: space-between; gap: 12px; }
+.fnotes { padding: 4px 2px 16px; }
+.fexport { text-decoration: none; }
 
 /* one title row per panel: the link colour dot lives on the group's tab bar */
 .link-dot { font-size: 12px; }
