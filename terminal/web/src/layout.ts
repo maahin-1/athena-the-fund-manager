@@ -1,6 +1,6 @@
 import { GROUPS, type Group } from './links';
 
-export const PANEL_TYPES = ['watchlist', 'chart', 'depth', 'quote', 'tape', 'analysis', 'verdict'] as const;
+export const PANEL_TYPES = ['watchlist', 'chart', 'depth', 'quote', 'tape', 'analysis', 'verdict', 'details'] as const;
 export type PanelType = (typeof PANEL_TYPES)[number];
 
 export interface PanelState {
@@ -9,6 +9,7 @@ export interface PanelState {
   symbol?: string;
   range?: string; // a label from RANGES
   indicators?: string[];
+  collapsed?: string[]; // the Details panel's sections that are shut
 }
 
 /** Where a panel goes when a layout is built from a recipe (the presets) rather than from a saved dock. */
@@ -80,6 +81,7 @@ export const PRESETS: Record<PresetName, () => LayoutModel> = {
         'watchlist-1': { type: 'watchlist', group: 'blue' },
         'depth-1': { type: 'depth', group: 'blue', symbol: 'SBIN' },
         'quote-1': { type: 'quote', group: 'blue', symbol: 'SBIN' },
+        'details-1': { type: 'details', group: 'blue', symbol: 'SBIN' },
         'tape-1': { type: 'tape', group: 'none' },
       },
       [
@@ -87,6 +89,7 @@ export const PRESETS: Record<PresetName, () => LayoutModel> = {
         { id: 'watchlist-1', type: 'watchlist', ref: 'chart-1', direction: 'left', size: 280 },
         { id: 'depth-1', type: 'depth', ref: 'chart-1', direction: 'right', size: 280 },
         { id: 'quote-1', type: 'quote', ref: 'depth-1', direction: 'below', size: 310 },
+        { id: 'details-1', type: 'details', ref: 'watchlist-1', direction: 'below', size: 420 },
         { id: 'tape-1', type: 'tape', ref: 'chart-1', direction: 'below', size: 40 },
       ],
     ),
@@ -131,12 +134,14 @@ export const PRESETS: Record<PresetName, () => LayoutModel> = {
         'watchlist-1': { type: 'watchlist', group: 'blue' },
         'quote-1': { type: 'quote', group: 'blue', symbol: 'SBIN' },
         'depth-1': { type: 'depth', group: 'blue', symbol: 'SBIN' },
+        'details-1': { type: 'details', group: 'blue', symbol: 'SBIN' },
         'tape-1': { type: 'tape', group: 'none' },
       },
       [
         { id: 'chart-1', type: 'chart' },
         { id: 'watchlist-1', type: 'watchlist', ref: 'chart-1', direction: 'below', size: 300 },
         { id: 'quote-1', type: 'quote', ref: 'watchlist-1', direction: 'within' },
+        { id: 'details-1', type: 'details', ref: 'watchlist-1', direction: 'within' },
         { id: 'depth-1', type: 'depth', ref: 'watchlist-1', direction: 'within' },
         { id: 'tape-1', type: 'tape', ref: 'chart-1', direction: 'above', size: 36 },
       ],

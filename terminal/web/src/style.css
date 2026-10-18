@@ -393,3 +393,54 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 .wl-menu { flex-direction: column; align-items: stretch; gap: 4px; }
 .wl-menu .wl-btn { text-align: left; }
 .wl-menu select { width: 100%; }
+
+/* ---- the Details panel ---- */
+.det { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.det-head { padding: 2px 0 4px; border-bottom: 1px solid var(--border); }
+.det-name { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.det-name b { font-size: 13px; }
+.det-full { color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.det-price { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.det-price .big { font-size: 22px; }
+.det-price .sub { margin: 0; }
+.det-sec { border-bottom: 1px solid var(--grid); padding-bottom: 4px; min-width: 0; }
+.det-toggle { all: unset; cursor: pointer; display: block; width: 100%; color: var(--label); font-weight: 600; letter-spacing: 0.3px; padding: 3px 0; }
+.det-toggle::before { content: '▾ '; color: var(--fg-dim); }
+.det-toggle[aria-expanded='false']::before { content: '▸ '; }
+.det-toggle:focus-visible { outline: 1px solid var(--accent); }
+.det-body { padding-top: 2px; min-width: 0; }
+.det .facts .v { overflow-wrap: anywhere; }
+.rng { position: relative; height: 4px; margin: 6px 0 2px; background: var(--grid); border-radius: 2px; }
+.rng i { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--accent); transform: translateX(-1px); }
+.perf { display: grid; gap: 3px; }
+.perf-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 64px; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+.perf-row .k { color: var(--fg-dim); }
+.perf-row .v { text-align: right; }
+.perf-bar { height: 6px; background: var(--grid); border-radius: 2px; overflow: hidden; }
+.perf-bar i { display: block; height: 100%; }
+.perf-bar i.up { background: var(--up); } .perf-bar i.dn { background: var(--dn); } .perf-bar i.flat { background: var(--fg-dim); }
+.det-frames { display: flex; gap: 4px; margin-bottom: 4px; }
+.det-frames .btn.on { background: var(--accent); color: #fff; }
+.gauge { text-align: center; }
+.dial { width: min(100%, 220px); height: auto; }
+.dial .needle { stroke: var(--fg); stroke-width: 2.5; stroke-linecap: round; }
+.dial .hub { fill: var(--fg); }
+.dial-end { fill: var(--fg-dim); font-size: 9px; }
+.gauge-label { font-size: 15px; font-weight: 600; margin-top: -4px; }
+.tech-row { display: grid; grid-template-columns: minmax(0, 1.4fr) 38px 52px 32px minmax(0, 1fr); gap: 4px; padding: 2px 0; text-align: right; font-variant-numeric: tabular-nums; }
+.tech-row .k { text-align: left; color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tech-head { font-size: 10px; text-transform: uppercase; }
+.tech-list { margin-top: 4px; }
+.tech-list summary { cursor: pointer; color: var(--fg-dim); }
+.tech-item { display: grid; grid-template-columns: minmax(0, 1fr) 70px 56px; gap: 6px; padding: 1px 0; text-align: right; font-variant-numeric: tabular-nums; }
+.tech-item .k { text-align: left; color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seas { width: 100%; height: auto; display: block; }
+.seas .zero { stroke: var(--border); stroke-dasharray: 2 3; }
+.seas .axis { fill: var(--fg-dim); font-size: 8px; }
+.seas .yr { fill: none; stroke: var(--fg-dim); stroke-width: 0.8; opacity: 0.55; }
+.seas .yr.cur { stroke: var(--accent); stroke-width: 1.8; opacity: 1; }
+.seas .avg { fill: none; stroke: var(--label); stroke-width: 1.4; stroke-dasharray: 4 3; }
+.months { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; margin-top: 4px; }
+.month { display: flex; flex-direction: column; align-items: center; padding: 2px 0; border: 1px solid var(--grid); border-radius: 3px; font-variant-numeric: tabular-nums; }
+.month .k { color: var(--fg-dim); font-size: 10px; }
+.month.up .v { color: var(--up); } .month.dn .v { color: var(--dn); }

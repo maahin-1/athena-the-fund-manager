@@ -4,7 +4,9 @@ import { nextGroup, type Group, type LinkBus } from '../links';
 
 /** The ordered list of symbols the watchlist shows; shared by every panel that needs it. */
 
+import type { BarsCache } from '../details/data';
 import type { IndexFeed } from '../indices';
+import type { ScreenStore } from '../screenrows';
 import type { WatchlistsStore } from '../watchlists/store';
 
 export interface AppContext {
@@ -12,6 +14,8 @@ export interface AppContext {
   bus: LinkBus;
   watchlist: WatchlistsStore;
   indices: IndexFeed;
+  market: ScreenStore; // the stored market screen: sector, market cap, P/E and more for every stock
+  history: BarsCache; // daily bars, kept five minutes
   state(id: string): PanelState;
   changed(): void; // something worth saving changed
   openResearch(symbol: string): void; // switch to the Research page on this stock
@@ -22,7 +26,7 @@ export interface AppContext {
   isKnown(symbol: string): Promise<boolean>; // whether the market lists this stock, ETF or index
 }
 
-export const TITLES: Record<PanelType, string> = { watchlist: 'Watchlist', chart: 'Chart', depth: 'Depth', quote: 'Quote', tape: 'Tape', analysis: 'Analysis', verdict: 'Verdict' };
+export const TITLES: Record<PanelType, string> = { watchlist: 'Watchlist', chart: 'Chart', depth: 'Depth', quote: 'Quote', tape: 'Tape', analysis: 'Analysis', verdict: 'Verdict', details: 'Details' };
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);

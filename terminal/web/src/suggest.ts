@@ -37,13 +37,13 @@ export function nextActive(active: number, count: number, key: 'ArrowDown' | 'Ar
   return active <= -1 ? count - 1 : active - 1;
 }
 
-const VERBS: Record<string, 'add' | 'remove' | 'research' | 'fund' | 'lab'> = { ADD: 'add', REMOVE: 'remove', RESEARCH: 'research', FUND: 'fund', LAB: 'lab' };
-const VIEWS = ['CHART', 'RESEARCH', 'FUND', 'LAB'] as const;
+const VERBS: Record<string, 'add' | 'remove' | 'research' | 'fund' | 'lab' | 'details'> = { ADD: 'add', REMOVE: 'remove', RESEARCH: 'research', FUND: 'fund', LAB: 'lab', DETAILS: 'details', DET: 'details' };
+const VIEWS = ['CHART', 'RESEARCH', 'FUND', 'LAB', 'DETAILS'] as const;
 
 export interface Context {
-  verb: 'add' | 'remove' | 'research' | 'fund' | 'lab' | null;
+  verb: 'add' | 'remove' | 'research' | 'fund' | 'lab' | 'details' | null;
   /** `SBIN chart`, `SBIN fund`...: the word after the name. */
-  view: 'chart' | 'research' | 'fund' | 'lab' | null;
+  view: 'chart' | 'research' | 'fund' | 'lab' | 'details' | null;
   /** `ADD TCS TO Banks`: the list named. */
   list: string | null;
   /** What is left to search for. */

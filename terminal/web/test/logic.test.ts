@@ -57,6 +57,19 @@ describe('command line', () => {
   });
 });
 
+describe('details command', () => {
+  const ctx = { layouts: [] };
+  it('opens the Details panel with or without a stock', () => {
+    expect(parse('details', ctx)).toEqual({ kind: 'details', symbol: null });
+    expect(parse('DET', ctx)).toEqual({ kind: 'details', symbol: null });
+    expect(parse('details sbin', ctx)).toEqual({ kind: 'details', symbol: 'SBIN' });
+    expect(parse('sbin details', ctx)).toEqual({ kind: 'details', symbol: 'SBIN' });
+    expect(parse('nifty 50 details', ctx)).toEqual({ kind: 'details', symbol: 'NIFTY 50' });
+    expect(parse('details nifty bank', ctx)).toEqual({ kind: 'details', symbol: 'NIFTY BANK' });
+    expect(parse('details bad symbol!', ctx).kind).toBe('error');
+  });
+});
+
 describe('link groups', () => {
   it('moves panels in the same colour and leaves the rest', () => {
     const bus = new LinkBus();
@@ -98,7 +111,7 @@ describe('layouts', () => {
   });
   it('presets hold the panels the spec lists', () => {
     const types = (n: 'A' | 'B' | 'C') => Object.values(PRESETS[n]().panels).map((p) => p.type).sort();
-    expect(types('A')).toEqual(['chart', 'depth', 'quote', 'tape', 'watchlist']);
+    expect(types('A')).toEqual(['chart', 'depth', 'details', 'quote', 'tape', 'watchlist']);
     expect(types('B')).toEqual(['chart', 'chart', 'chart', 'chart', 'tape']);
     expect(types('C')).toEqual(['chart', 'depth', 'quote', 'tape', 'watchlist']);
     expect(PRESETS.D().arrangement?.length).toBe(5);

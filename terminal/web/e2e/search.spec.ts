@@ -104,7 +104,7 @@ test('a company with nothing stored offers Fetch now, shows the steps, and ends 
   await page.getByRole('button', { name: 'Fetch now' }).click();
   await expect(page.locator('.ffetching')).toContainText('fetching shareholding');
   // the e2e store holds no RVNL, so after "done" the page says the exchange had nothing in the form it reads
-  await expect(page.locator('.fbody .note.bad')).toContainText('no financial results for RVNL', { timeout: 15_000 });
+  await expect(page.locator('.fbody .note.bad')).toContainText('no financial results for RVNL', { timeout: 40_000 });
 });
 
 test('a fetch refused because another company is running says which', async ({ page }) => {

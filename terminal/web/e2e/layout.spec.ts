@@ -139,7 +139,7 @@ test('a narrow window gets the one-column arrangement and does not overwrite the
   expect(await page.evaluate(() => window.localStorage.getItem('athena.terminal.current'))).toBeNull();
   await page.setViewportSize({ width: 1400, height: 800 });
   await page.reload();
-  await expect(page.locator('.dv-groupview')).toHaveCount(5); // layout A again
+  await expect(page.locator('.dv-groupview')).toHaveCount(6); // layout A again: chart, watchlist, details, depth, quote, tape
 });
 
 test('the Fundamentals search box is still there in a phone-width window', async ({ page }) => {

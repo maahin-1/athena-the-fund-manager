@@ -16,12 +16,15 @@ import { ResearchView } from './research';
 import { ScreenView } from './screen';
 import { el, TITLES, type AppContext, type Panel } from './panels/base';
 import { IndexFeed } from './indices';
+import { BarsCache } from './details/data';
+import { ScreenStore } from './screenrows';
 import { pct, price } from './format';
 import { activeList, addSymbol, findList, setActive } from './watchlists/model';
 import { serverIO, WatchlistsStore } from './watchlists/store';
 import { AnalysisPanel } from './panels/analysis';
 import { ChartPanel } from './panels/chart';
 import { DepthPanel } from './panels/depth';
+import { DetailsPanel } from './panels/details';
 import { QuotePanel } from './panels/quote';
 import { TapePanel } from './panels/tape';
 import { VerdictPanel } from './panels/verdict';
@@ -30,10 +33,10 @@ import { WatchlistPanel } from './panels/watchlist';
 const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
 const VIEW_KEY = 'athena.terminal.view';
-const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'analysis', 'verdict', 'tape'];
+const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'details', 'analysis', 'verdict', 'tape'];
 type View = 'terminal' | 'lab' | 'fund' | 'research' | 'screen';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
-  watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel,
+  watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel, details: DetailsPanel,
 };
 
 class App implements AppContext {
@@ -41,6 +44,8 @@ class App implements AppContext {
   bus = new LinkBus();
   watchlist = new WatchlistsStore(serverIO(), (() => { try { return localStorage; } catch { return null; } })(), DEFAULT_WATCHLIST);
   indices = new IndexFeed();
+  market = new ScreenStore();
+  history = new BarsCache();
   private indexStrip = el('span', 'idxstrip');
   private states: Record<string, PanelState> = {};
   private theme: 'dark' | 'light' = 'dark';
@@ -593,6 +598,8 @@ class App implements AppContext {
         this.say(cmd.symbol ? `research ${cmd.symbol}` : 'research');
         if (cmd.symbol) this.bus.setSymbol('blue', cmd.symbol);
         return this.setView('research', cmd.symbol ?? undefined);
+      case 'details':
+        return this.showDetails(cmd.symbol);
       case 'terminal':
         return this.setView('terminal');
       case 'screen':
@@ -623,6 +630,23 @@ class App implements AppContext {
         return;
       }
     }
+  }
+
+  /** Bring the Details panel forward (adding one when the layout has none), on this stock when one is given. */
+  private showDetails(symbol: string | null): void {
+    if (this.view !== 'terminal') this.setView('terminal');
+    let id = Object.entries(this.states).find(([, s]) => s.type === 'details')?.[0];
+    if (!id) {
+      this.addPanel('details');
+      id = Object.entries(this.states).find(([, s]) => s.type === 'details')?.[0];
+    }
+    if (!id) return;
+    if (symbol) {
+      this.say(`details ${symbol}`);
+      this.panels.get(id)?.setSymbol(symbol); // an unlinked panel does not hear the bus, so move it directly
+      this.bus.setSymbol(this.states[id]?.group ?? 'none', symbol);
+    }
+    this.dock.getPanel(id)?.api.setActive();
   }
 
   /** The panel a typed symbol goes to: the active one if it shows a symbol, else the first chart. */
