@@ -185,6 +185,25 @@ async fn api_backtest(State(state): State<AppState>, Json(body): Json<BacktestBo
     }
 }
 
+#[derive(serde::Deserialize)]
+struct CalendarQuery {
+    from: Option<String>,
+    to: Option<String>,
+}
+
+/// Board meetings and corporate actions for a range of dates (default: today and the next 30 days).
+async fn api_calendar(State(state): State<AppState>, Query(q): Query<CalendarQuery>) -> Response {
+    let today = chrono::Utc::now().date_naive();
+    let from = q.from.unwrap_or_else(|| today.to_string());
+    let to = q.to.unwrap_or_else(|| (today + chrono::Duration::days(30)).to_string());
+    let path = state.bars.warehouse.clone();
+    match tokio::task::spawn_blocking(move || crate::calendar::calendar(&path, &from, &to)).await {
+        Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Err(crate::calendar::CalendarError::BadRange)) => (StatusCode::BAD_REQUEST, "the dates must be YYYY-MM-DD, in order, at most 366 days apart").into_response(),
+        _ => (StatusCode::SERVICE_UNAVAILABLE, "the warehouse is busy").into_response(),
+    }
+}
+
 async fn api_screen(State(state): State<AppState>) -> Response {
     let path = state.bars.warehouse.clone();
     match tokio::task::spawn_blocking(move || crate::analysis::screen_all(&path)).await {
@@ -490,6 +509,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/analysis", get(api_analysis))
         .route("/api/known", get(api_known))
         .route("/api/screen", get(api_screen))
+        .route("/api/calendar", get(api_calendar))
         .route("/api/indices", get(api_indices))
         .route("/api/search", get(api_search))
         .route("/api/watchlists", get(watchlists_get).put(watchlists_put))
@@ -765,6 +785,19 @@ mod tests {
         assert_eq!(raw["source"], "warehouse, raw"); // no warehouse in this test, so no bars, but the raw path was taken
         let adjusted: serde_json::Value = client.get(&base).send().await.unwrap().json().await.unwrap();
         assert_eq!(adjusted["source"], "warehouse");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_calendar_route_refuses_bad_dates_and_reports_a_missing_warehouse() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api/calendar");
+        assert_eq!(client.get(format!("{base}?from=2026-13-01&to=2026-12-01")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}?from=2026-10-20&to=2026-10-19")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}?from=2026-01-01&to=2028-01-01")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}?from=2026-10-19&to=2026-10-31")).send().await.unwrap().status(), 503); // no warehouse in this test
+        assert_eq!(client.get(&base).send().await.unwrap().status(), 503); // the default range is valid
         stop.cancel();
     }
 

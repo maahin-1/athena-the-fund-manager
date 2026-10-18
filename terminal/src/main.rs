@@ -2,6 +2,7 @@ mod analyse_worker;
 mod analysis;
 mod angel;
 mod bars;
+mod calendar;
 mod config;
 mod fake;
 mod fund_fetch;
