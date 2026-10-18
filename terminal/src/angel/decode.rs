@@ -18,6 +18,9 @@ pub struct Tick {
     pub lower: i64,
     pub high_52: i64,
     pub low_52: i64,
+    /// Open interest in contracts (futures and options; zero for a share) and its change in percent since the previous close.
+    pub open_interest: i64,
+    pub oi_change_pct: f64,
     /// `(price, quantity)`, best first as the packet lists them; empty levels dropped.
     pub bids: Vec<(i64, i64)>,
     pub asks: Vec<(i64, i64)>,
@@ -30,6 +33,10 @@ pub enum DecodeError {
 
 fn i64_at(p: &[u8], at: usize) -> i64 {
     i64::from_le_bytes(p[at..at + 8].try_into().expect("slice of 8"))
+}
+
+fn f64_at(p: &[u8], at: usize) -> f64 {
+    f64::from_le_bytes(p[at..at + 8].try_into().expect("slice of 8"))
 }
 
 fn u16_at(p: &[u8], at: usize) -> u16 {
@@ -70,6 +77,8 @@ pub fn decode(packet: &[u8]) -> Result<Tick, DecodeError> {
         lower: i64_at(packet, 355),
         high_52: i64_at(packet, 363),
         low_52: i64_at(packet, 371),
+        open_interest: i64_at(packet, 131),
+        oi_change_pct: f64_at(packet, 139),
         bids,
         asks,
     })
@@ -91,6 +100,7 @@ pub fn test_packet(token: &str, ms: i64, last: i64, prev: i64, depth: &[(u16, i6
         p[o + 2..o + 10].copy_from_slice(&qty.to_le_bytes());
         p[o + 10..o + 18].copy_from_slice(&price.to_le_bytes());
     }
+    p[131..139].copy_from_slice(&0i64.to_le_bytes());
     p[347..355].copy_from_slice(&88290i64.to_le_bytes());
     p[355..363].copy_from_slice(&72240i64.to_le_bytes());
     p[363..371].copy_from_slice(&91000i64.to_le_bytes());
@@ -110,6 +120,30 @@ mod tests {
         assert_eq!(t.exchange_ms, 1_760_000_000_000);
         assert_eq!((t.last, t.prev_close), (81240, 80270));
         assert_eq!((t.upper, t.lower, t.high_52, t.low_52), (88290, 72240, 91000, 60000));
+    }
+
+    #[test]
+    fn open_interest_and_its_change_are_read_from_a_derivative_packet_and_are_zero_for_a_share() {
+        let mut p = test_packet("53300", 0, 12_550, 11_000, &[]);
+        p[1] = 2; // the NSE derivatives segment
+        p[131..139].copy_from_slice(&1_234_500i64.to_le_bytes());
+        p[139..147].copy_from_slice(&(-7.25f64).to_le_bytes());
+        let t = decode(&p).unwrap();
+        assert_eq!(t.open_interest, 1_234_500);
+        assert!((t.oi_change_pct - -7.25).abs() < 1e-12);
+        let share = decode(&test_packet("3045", 0, 81240, 80270, &[])).unwrap();
+        assert_eq!((share.open_interest, share.oi_change_pct), (0, 0.0));
+    }
+
+    #[test]
+    fn open_interest_does_not_disturb_the_neighbouring_fields() {
+        let mut p = test_packet("53300", 1_760_000_000_000, 12_550, 11_000, &[(1, 75, 12_545), (0, 150, 12_555)]);
+        p[131..139].copy_from_slice(&i64::MAX.to_le_bytes());
+        p[139..147].copy_from_slice(&f64::MAX.to_le_bytes());
+        let t = decode(&p).unwrap();
+        assert_eq!((t.last, t.prev_close, t.exchange_ms), (12_550, 11_000, 1_760_000_000_000));
+        assert_eq!((t.upper, t.lower, t.high_52, t.low_52), (88290, 72240, 91000, 60000));
+        assert_eq!((t.bids.clone(), t.asks.clone()), (vec![(12_545, 75)], vec![(12_555, 150)]));
     }
 
     #[test]

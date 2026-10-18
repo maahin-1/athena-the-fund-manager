@@ -21,6 +21,22 @@ use crate::quote::Quote;
 pub const STREAM_URL: &str = "wss://smartapisocket.angelone.in/smart-stream";
 const SNAP_QUOTE: u8 = 3;
 const NSE_CASH: u8 = 1;
+
+/// The stream's exchange type for a segment of the instrument list: NSE cash 1, NFO 2, BSE cash 3, BFO 4, MCX 5, NCDEX 7, currency 13. None for a segment the
+/// stream does not carry. Used when derivative tokens are subscribed (not yet: that part awaits a market session to be checked live).
+#[allow(dead_code)]
+pub fn exchange_type(segment: &str) -> Option<u8> {
+    Some(match segment {
+        "NSE" => NSE_CASH,
+        "NFO" => 2,
+        "BSE" => 3,
+        "BFO" => 4,
+        "MCX" => 5,
+        "NCDEX" => 7,
+        "CDS" => 13,
+        _ => return None,
+    })
+}
 const HEARTBEAT: Duration = Duration::from_secs(10);
 const SYNC_EVERY: Duration = Duration::from_millis(500);
 
@@ -127,6 +143,17 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio_tungstenite::accept_hdr_async;
     use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+
+    #[test]
+    fn each_segment_of_the_instrument_list_has_its_stream_exchange_type() {
+        let want = [("NSE", 1), ("NFO", 2), ("BSE", 3), ("BFO", 4), ("MCX", 5), ("NCDEX", 7), ("CDS", 13)];
+        for (segment, kind) in want {
+            assert_eq!(exchange_type(segment), Some(kind), "{segment}");
+        }
+        assert_eq!(exchange_type("NCO"), None);
+        assert_eq!(exchange_type(""), None);
+        assert_eq!(exchange_type("nfo"), None); // the list's own spelling only
+    }
 
     fn session() -> Session {
         Session { api_key: "K".into(), client_code: "C1".into(), jwt: "J".into(), feed_token: "F".into() }

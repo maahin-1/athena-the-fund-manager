@@ -43,6 +43,8 @@ pub struct AppState {
     pub lists: Arc<LayoutStore>,
     /// The Python indicator files the user placed in a folder, switched on one by one.
     pub pyind: Arc<crate::pyind::PyInd>,
+    /// The futures and options contracts of NFO, BFO and MCX, from the instrument list.
+    pub derivs: crate::derivs::DerivsStore,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -207,6 +209,55 @@ async fn api_calendar(State(state): State<AppState>, Query(q): Query<CalendarQue
         Ok(Err(crate::calendar::CalendarError::BadRange)) => (StatusCode::BAD_REQUEST, "the dates must be YYYY-MM-DD, in order, at most 366 days apart").into_response(),
         _ => (StatusCode::SERVICE_UNAVAILABLE, "the warehouse is busy").into_response(),
     }
+}
+
+#[derive(serde::Deserialize)]
+struct DerivsQuery {
+    underlying: Option<String>,
+    expiry: Option<String>,
+    segment: Option<String>,
+}
+
+/// An underlying's name as the list spells it: letters, digits, `&`, `-` and `_`, at most 24 characters.
+fn derivs_name(q: &DerivsQuery) -> Option<String> {
+    let name = q.underlying.as_deref()?.trim().to_ascii_uppercase();
+    (!name.is_empty() && name.len() <= 24 && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '&' | '-' | '_'))).then_some(name)
+}
+
+fn derivs_reply(result: Result<Result<serde_json::Value, crate::derivs::DerivsError>, crate::derivs::NotReady>) -> Response {
+    use crate::derivs::{DerivsError::*, NotReady};
+    match result {
+        Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Err(UnknownUnderlying)) => (StatusCode::NOT_FOUND, "no contracts for that underlying").into_response(),
+        Ok(Err(UnknownExpiry)) => (StatusCode::NOT_FOUND, "that underlying has no contracts expiring that day").into_response(),
+        Ok(Err(BadDate)) => (StatusCode::BAD_REQUEST, "the expiry must be a date, YYYY-MM-DD").into_response(),
+        Ok(Err(TooManyStrikes)) => (StatusCode::BAD_REQUEST, format!("more than {} strikes in that expiry", crate::derivs::MAX_STRIKES)).into_response(),
+        Err(NotReady::Loading) => (StatusCode::SERVICE_UNAVAILABLE, "the contract list is loading").into_response(),
+        Err(NotReady::Failed(why)) => (StatusCode::SERVICE_UNAVAILABLE, why).into_response(),
+    }
+}
+
+async fn api_derivs_underlyings(State(state): State<AppState>, Query(q): Query<DerivsQuery>) -> Response {
+    let segment = q.segment.as_deref().unwrap_or("ALL").to_ascii_uppercase();
+    if segment != "ALL" && !crate::derivs::SEGMENTS.contains(&segment.as_str()) {
+        return (StatusCode::BAD_REQUEST, "the segment must be NFO, BFO, MCX or ALL").into_response();
+    }
+    derivs_reply(state.derivs.with(|t| Ok(t.underlyings(&segment))))
+}
+
+async fn api_derivs_expiries(State(state): State<AppState>, Query(q): Query<DerivsQuery>) -> Response {
+    let Some(name) = derivs_name(&q) else { return (StatusCode::BAD_REQUEST, "give an underlying").into_response() };
+    derivs_reply(state.derivs.with(|t| t.expiries(&name)))
+}
+
+async fn api_derivs_chain(State(state): State<AppState>, Query(q): Query<DerivsQuery>) -> Response {
+    let (Some(name), Some(expiry)) = (derivs_name(&q), q.expiry.clone()) else { return (StatusCode::BAD_REQUEST, "give an underlying and an expiry").into_response() };
+    derivs_reply(state.derivs.with(|t| t.chain(&name, &expiry)))
+}
+
+async fn api_derivs_futures(State(state): State<AppState>, Query(q): Query<DerivsQuery>) -> Response {
+    let Some(name) = derivs_name(&q) else { return (StatusCode::BAD_REQUEST, "give an underlying").into_response() };
+    derivs_reply(state.derivs.with(|t| t.futures(&name)))
 }
 
 async fn api_screen(State(state): State<AppState>) -> Response {
@@ -606,6 +657,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/known", get(api_known))
         .route("/api/screen", get(api_screen))
         .route("/api/calendar", get(api_calendar))
+        .route("/api/derivs/underlyings", get(api_derivs_underlyings))
+        .route("/api/derivs/expiries", get(api_derivs_expiries))
+        .route("/api/derivs/chain", get(api_derivs_chain))
+        .route("/api/derivs/futures", get(api_derivs_futures))
         .route("/api/indices", get(api_indices))
         .route("/api/search", get(api_search))
         .route("/api/watchlists", get(watchlists_get).put(watchlists_put))
@@ -666,7 +721,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))) };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new() };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -952,6 +1007,44 @@ mod tests {
         assert_eq!(client.get(format!("{base}?from=2026-01-01&to=2028-01-01")).send().await.unwrap().status(), 400);
         assert_eq!(client.get(format!("{base}?from=2026-10-19&to=2026-10-31")).send().await.unwrap().status(), 503); // no warehouse in this test
         assert_eq!(client.get(&base).send().await.unwrap().status(), 503); // the default range is valid
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_derivatives_routes_wait_for_the_list_then_answer_and_refuse_bad_input() {
+        let (port, state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api/derivs");
+        assert_eq!(client.get(format!("{base}/underlyings")).send().await.unwrap().status(), 503); // still loading
+        let rows = serde_json::json!([
+            {"token": "1", "symbol": "NIFTY27NOV35FUT", "name": "NIFTY", "expiry": "27NOV2035", "strike": "-1.000000", "lotsize": "65", "instrumenttype": "FUTIDX", "exch_seg": "NFO", "tick_size": "5.000000"},
+            {"token": "2", "symbol": "NIFTY27NOV3523000CE", "name": "NIFTY", "expiry": "27NOV2035", "strike": "2300000.000000", "lotsize": "65", "instrumenttype": "OPTIDX", "exch_seg": "NFO", "tick_size": "5.000000"},
+            {"token": "3", "symbol": "NIFTY27NOV3523000PE", "name": "NIFTY", "expiry": "27NOV2035", "strike": "2300000.000000", "lotsize": "65", "instrumenttype": "OPTIDX", "exch_seg": "NFO", "tick_size": "5.000000"}
+        ]);
+        state.derivs.set_ready(crate::derivs::Derivs::from_rows(&rows, chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap()));
+        let get = |path: String| {
+            let client = client.clone();
+            async move { client.get(path).send().await.unwrap() }
+        };
+        let u = get(format!("{base}/underlyings?segment=nfo")).await;
+        assert_eq!(u.status(), 200);
+        let body: serde_json::Value = u.json().await.unwrap();
+        assert_eq!(body["underlyings"][0]["underlying"], "NIFTY");
+        assert_eq!(get(format!("{base}/underlyings?segment=XXX")).await.status(), 400);
+        assert_eq!(get(format!("{base}/expiries?underlying=nifty")).await.status(), 200);
+        assert_eq!(get(format!("{base}/expiries")).await.status(), 400);
+        assert_eq!(get(format!("{base}/expiries?underlying=a;b")).await.status(), 400);
+        assert_eq!(get(format!("{base}/expiries?underlying=NOPE")).await.status(), 404);
+        let chain: serde_json::Value = get(format!("{base}/chain?underlying=NIFTY&expiry=2035-11-27")).await.json().await.unwrap();
+        assert_eq!(chain["strikes"][0]["strike"], 23000.0);
+        assert_eq!(chain["strikes"][0]["call"]["token"], "2");
+        assert_eq!(chain["future"]["token"], "1");
+        assert_eq!(get(format!("{base}/chain?underlying=NIFTY&expiry=27NOV2035")).await.status(), 400);
+        assert_eq!(get(format!("{base}/chain?underlying=NIFTY&expiry=2035-11-28")).await.status(), 404);
+        assert_eq!(get(format!("{base}/chain?underlying=NIFTY")).await.status(), 400);
+        assert_eq!(get(format!("{base}/futures?underlying=NIFTY")).await.status(), 200);
+        assert_eq!(get(format!("{base}/futures?underlying=NOPE")).await.status(), 404);
+        assert_eq!(client.get(format!("{base}/underlyings")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         stop.cancel();
     }
 

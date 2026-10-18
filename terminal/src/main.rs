@@ -4,6 +4,7 @@ mod angel;
 mod bars;
 mod calendar;
 mod config;
+mod derivs;
 mod fake;
 mod fund_fetch;
 mod indices;
@@ -42,6 +43,8 @@ struct Args {
     python: String,
     indicators_dir: PathBuf,
     indicator_runner: PathBuf,
+    derivs_master: PathBuf,
+    derivs_offline: bool,
 }
 
 fn args() -> Args {
@@ -58,6 +61,8 @@ fn args() -> Args {
         python: ".venv/Scripts/python.exe".to_string(),
         indicators_dir: PathBuf::from(".athena/indicators"),
         indicator_runner: PathBuf::from("src/athena/indicators_user/runner.py"),
+        derivs_master: PathBuf::from(".athena/derivs_master.json"),
+        derivs_offline: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -100,6 +105,12 @@ fn args() -> Args {
                     out.indicator_runner = PathBuf::from(v);
                 }
             }
+            "--derivs-master" => {
+                if let Some(v) = it.next() {
+                    out.derivs_master = PathBuf::from(v);
+                }
+            }
+            "--derivs-offline" => out.derivs_offline = true,
             "--fund-store" => {
                 if let Some(v) = it.next() {
                     out.fund_store = PathBuf::from(v);
@@ -218,7 +229,9 @@ async fn main() {
     let fund_fetch = fund_fetch::FundFetch::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.fund_store.clone());
     let search = Arc::new(search::SearchCache::new(bars.warehouse.clone()));
     let pyind = pyind::PyInd::new(args.fund_python.as_deref().unwrap_or(&args.python), &args.indicator_runner, &args.indicators_dir);
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists, search, fund_fetch, pyind };
+    let derivs = derivs::DerivsStore::new();
+    tokio::spawn(derivs::run_loader(derivs.clone(), reqwest::Client::new(), args.derivs_master.clone(), args.derivs_offline, shutdown.clone()));
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists, search, fund_fetch, pyind, derivs };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))

@@ -12,12 +12,12 @@
 
 - Spec `docs/superpowers/specs/2026-10-19-derivatives-design.md`.
 - Strike = the list's number / 100; time to expiry to 15:30 IST; Black-76; default rate 7%.
-- Everything is "built, awaiting live check" until a market session confirms the stream; synthetic prices are labelled as such.
+- Live derivative prices are not built (they need a market session to check); the page uses synthetic prices, labelled as such.
 - No margin estimate, no order entry.
 
 ---
 
-### Task A: derivative contract table and API (Rust)
+### Task A: derivative contract table and API (Rust) — done
 
 **Files:** create `terminal/src/derivs.rs`; modify `terminal/src/main.rs`, `terminal/src/server.rs`, `terminal/src/angel/master.rs` (keep the full list, not only cash rows); fixtures `terminal/tests/derivs_rows.json` or inline.
 
@@ -28,8 +28,12 @@
 
 **Files:** modify `terminal/src/angel/decode.rs`, `terminal/src/angel/stream.rs`.
 
-- [ ] Tests first: a crafted 379-byte packet with open interest at offset 131 and its change at 139; the cash packet still decodes; the exchange type for each segment.
-- [ ] Implement `open_interest` and `oi_change_pct` on the tick and the segment-to-exchange-type table (NSE cash 1, NFO 2, BSE cash 3, BFO 4, MCX 5); subscribing derivative tokens is wired but only reachable with a login (awaiting live check); commit.
+- [x] Tests first: a crafted 379-byte packet with open interest at offset 131 and its change in percent at 139; the cash packet still decodes; neighbouring fields undisturbed; the exchange type for each segment.
+- [x] Implement `open_interest` and `oi_change_pct` on the tick and the segment-to-exchange-type table (NSE cash 1, NFO 2, BSE cash 3, BFO 4, MCX 5, NCDEX 7, currency 13).
+
+### Task B2 (needs a market session): live derivative quotes
+
+- [ ] Subscribe derivative tokens with the segment's exchange type from the contract table, carry open interest through the quote and the hub, add a route that returns quotes for a list of contract tokens (at most 100), an `OptionFeed` on the page that reads it, and compare the decoder's offsets with real packets; add the derivative stream and open interest to `scripts/terminal-market-check.py`. Not started: it cannot be checked without a session.
 
 ### Task C: Black-76, implied volatility and Greeks (pure)
 

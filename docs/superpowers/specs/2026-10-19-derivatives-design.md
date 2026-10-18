@@ -2,7 +2,7 @@
 
 Date 2026-10-19. Futures and options on NSE (NFO), BSE (BFO) and MCX: the instrument list, an option chain with implied volatility and Greeks, open interest, put-call ratio, max pain, a volatility curve, and a payoff builder. Per decisions D6 (MCX through Angel) and D10 (built against a fake feed first, verified live in a market session) in the master design.
 
-**Status line this spec commits to:** everything below is built and tested against a synthetic feed. The live market stream for derivative contracts (Angel exchange types 2, 4 and 5, with open interest from the snap-quote packet) can only be checked in a market session, so the work is marked **built, awaiting live check** until `scripts/terminal-market-check.py` has been run at an open session. Nothing here claims live behaviour.
+**Status line this spec commits to:** the page is built and tested against a synthetic feed only. What exists for live data is the part that can be tested without a market: the contract list, and the stream decoder's reading of open interest from the snap-quote packet. **Not built:** subscribing derivative tokens on the stream (exchange types 2, 4 and 5), carrying open interest through the quote hub, and a route that returns live contract quotes. That path touches the live feed, cannot be exercised outside a market session, and is left as its own step (Task B2 in the plan) to be done and checked with a session open. Until then the Options page shows synthetic prices, labelled as such, whatever the feed. Nothing here claims live behaviour.
 
 ## 1. The instrument list
 
@@ -37,9 +37,9 @@ Bad or unknown input is 400 or 404 with a reason, never a panic; bounds: at most
 
 Contract prices reach the page through one interface (`OptionFeed`): `quotes(tokens)` returns last price, bid, ask, volume, open interest and change in open interest per token. Two implementations:
 - **Synthetic** (used under `--fake-feed` and in tests): a closed-form Black-76 price from a synthetic spot and a smile, with open interest and volume shaped like a real chain (largest near the money, decaying away), seeded so a given contract always gets the same numbers on the same day. It exists to exercise every screen; it makes no claim about real markets and the page labels it "synthetic prices" whenever it is in use.
-- **Angel** (built, awaiting live check): the stream's snap-quote mode for derivative tokens (open interest at offset 131 and its change at 139 of the packet) with the segment's exchange type, within the stream's token limit (the chain subscribes to the strikes in view, at most 100 tokens).
+- **Angel** (decoder built; subscription and route not built, see the status line): the stream's snap-quote mode for derivative tokens (open interest at offset 131 and its change in percent at 139 of the packet) with the segment's exchange type, within the stream's token limit (the chain would subscribe to the strikes in view, at most 100 tokens).
 
-The snap-quote decoder gains open interest and its change; its tests use the packet layout in the Angel documentation and a crafted packet, as the cash decoder's do.
+The snap-quote decoder gains open interest and its change in percent (done); its tests use the packet layout in the Angel documentation and a crafted packet, as the cash decoder's do. The offsets are the documented ones and have not been compared with a real derivative packet.
 
 ## 4. Greeks and implied volatility
 
