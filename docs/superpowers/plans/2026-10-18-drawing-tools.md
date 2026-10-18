@@ -50,3 +50,8 @@ Tests: e2e `drawings.spec.ts` as in spec section 10; layout audit rerun.
 
 ## Task 8 — docs and close
 TRD §2.30, master design §19, memory update, `graphify update .`, full vitest, Playwright, cargo test, commit.
+
+## As built (2026-10-18)
+
+All eight tasks done. Differences from the plan: the 22 tools (the first count of 23 was a miscount); persistence reuses the lists `LayoutStore` under a `dr-` name instead of a new folder, so no new `AppState` field; the renderer hook is a `drawings: DrawingHost` object on `ChartRenderer` (optional, so the stand-in renderers of the existing tests are untouched); the rail grew a `Clear` button with a two-click confirmation; the Objects tab count shows in the tab label. Counts at the end: vitest 301, Playwright 66 (10 new for drawings), cargo 111.
+

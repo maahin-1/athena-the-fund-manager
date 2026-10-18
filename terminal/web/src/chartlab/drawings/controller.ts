@@ -90,6 +90,7 @@ export class DrawingController {
     this.cancelAll();
     this.setList([], false);
     this.history.reset([]);
+    this.o.log.drop('drawings');
     const list = await this.o.store.load(symbol);
     if (mine !== this.token) return;
     this.list = list;

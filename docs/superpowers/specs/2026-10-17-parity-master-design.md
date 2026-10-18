@@ -223,3 +223,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Next in this track:** drawing tools (5d), remaining chart types, peers (6f) and screens (6g), alerts (5g), F&O and MCX.
 
+## 19. Drawing tools, first slice (5d, 2026-10-18)
+
+**Done:** 22 tools (trend line, ray, extended line, info line, horizontal line and ray, vertical line, cross line, parallel channel, flat top/bottom, Fibonacci retracement and trend-based extension, rectangle, ellipse, triangle, text, price label, measure, price range, date range, long and short position) on the Chart Lab chart, with handles, drag, magnet, lock, hide, delete, duplicate, order, per-drawing colour, width, line style and extend flags, an Objects tab, undo and redo shared with the chart's own undo, and per-symbol persistence on the server with a browser copy. Spec `2026-10-18-drawing-tools-design.md`, plan `2026-10-18-drawing-tools.md`, TRD section 2.30.
+
+**Honest limits:** anchors are bar times, so on an intraday chart a drawing placed into the future uses whole bar steps and ignores overnight and weekend gaps (approximate); Renko, line-break and range charts take no drawings; the remaining tiers (pitchforks, Gann, patterns, Elliott, cycles, brushes, callouts, volume-profile drawings) and drawing alerts are not built; drawings are on the Chart Lab only (the Terminal chart panel has none).
+
+**Next in this track:** remaining chart types, peers (6f) and screens (6g), alerts (5g, which will add drawing alerts), F&O and MCX, then drawing tiers 2 and 3.
+

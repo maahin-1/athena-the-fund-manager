@@ -11,6 +11,11 @@ import { caption, REGISTRY } from './registry';
 import { build, SOURCE } from './resample';
 import { lightweightRenderer, type ChartRenderer, type RendererFactory } from './render';
 import { deserialize, History, serialize, StateError, Templates, type KeyValue } from './store';
+import { DrawingController } from './drawings/controller';
+import { buildObjects } from './drawings/objects';
+import { buildProps } from './drawings/props';
+import { buildRail, type Rail } from './drawings/rail';
+import { ActionLog, DrawingStore, serverDrawingIO, type DrawingIO } from './drawings/store';
 
 const LINK_GROUP = 'blue' as const;
 const STATE_KEY = 'athena.chartlab.state';
@@ -62,6 +67,7 @@ export interface LabOptions {
   renderer?: RendererFactory;
   fetchBars?: BarsFetcher;
   storage?: KeyValue | null;
+  drawingIO?: DrawingIO;
 }
 
 function browserStorage(): KeyValue | null {
@@ -92,6 +98,15 @@ export class ChartLabView {
   private host = el('div', 'lab-host');
   private legends = el('div', 'lab-legends');
   private windowBox = el('div', 'lab-window');
+  private main = el('div', 'lab-main');
+  private side = el('div', 'lab-side');
+  private tabs = el('div', 'lab-tabs');
+  private objectsBox = el('div', 'lab-objects-box');
+  private log = new ActionLog();
+  private drawingStore: DrawingStore;
+  private drawings: DrawingController | null = null;
+  private rail: Rail | null = null;
+  private onKey = (e: KeyboardEvent) => this.hotkey(e);
   private note = el('div', 'note lab-note');
   private badge = el('span', 'lab-badge');
   private headline = el('span', 'lab-head');
@@ -122,6 +137,7 @@ export class ChartLabView {
     this.element.hidden = true;
     this.storage = options.storage === undefined ? browserStorage() : options.storage;
     this.templates = new Templates(this.storage);
+    this.drawingStore = new DrawingStore(options.drawingIO ?? serverDrawingIO(), this.storage);
     this.fetcher = options.fetchBars ?? fetchBars;
     this.makeRenderer = options.renderer ?? lightweightRenderer;
     this.buildToolbar();
@@ -129,9 +145,12 @@ export class ChartLabView {
     this.wrap.append(this.host, this.legends);
     const sub = el('div', 'lab-sub');
     sub.append(this.rangeRow);
-    const main = el('div', 'lab-main');
-    main.append(this.wrap, this.windowBox);
-    this.element.append(this.toolbar, sub, this.popover, main, this.note);
+    this.tabs.hidden = true;
+    this.objectsBox.hidden = true;
+    this.side.append(this.tabs, this.windowBox, this.objectsBox);
+    this.main.append(this.wrap, this.side);
+    this.element.append(this.toolbar, sub, this.popover, this.main, this.note);
+    document.addEventListener('keydown', this.onKey);
     this.model.subscribe((kind) => this.modelChanged(kind));
     this.offQuotes = ctx.feed.onQuotes((qs) => this.onQuotes(qs));
     this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
@@ -158,6 +177,7 @@ export class ChartLabView {
         this.paintChart();
       });
       this.themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      this.mountDrawings();
     }
     const next = symbol || this.ctx.bus.symbolOf(LINK_GROUP) || this.symbol || this.ctx.watchlist.items[0] || '';
     if (next) this.follow(next, true);
@@ -172,6 +192,7 @@ export class ChartLabView {
   private follow(symbol: string, force = false): void {
     if (!this.visible || !symbol || (symbol === this.symbol && !force)) return;
     this.symbol = symbol;
+    void this.drawings?.setSymbol(symbol);
     this.symbolInput.value = symbol;
     this.ctx.feed.need('chartlab', [symbol]);
     void this.reload();
@@ -234,6 +255,7 @@ export class ChartLabView {
   private commit(change: () => void): void {
     change();
     this.history.push(this.model.state());
+    this.log.push('chart');
     this.persist();
     this.paintBar();
   }
@@ -266,20 +288,79 @@ export class ChartLabView {
     this.paintBar();
   }
 
+  /** Undo the last thing done, whether it was to the chart or to the drawings. */
   private undo(): void {
-    const s = this.history.undo();
-    if (s) {
-      this.apply(s);
-      this.persist();
+    const kind = this.log.undo();
+    if (kind === 'drawings') {
+      this.drawings?.undoStep();
+    } else if (kind === 'chart') {
+      const s = this.history.undo();
+      if (s) {
+        this.apply(s);
+        this.persist();
+      }
     }
+    this.paintBar();
   }
 
   private redo(): void {
-    const s = this.history.redo();
-    if (s) {
-      this.apply(s);
-      this.persist();
+    const kind = this.log.redo();
+    if (kind === 'drawings') {
+      this.drawings?.redoStep();
+    } else if (kind === 'chart') {
+      const s = this.history.redo();
+      if (s) {
+        this.apply(s);
+        this.persist();
+      }
     }
+    this.paintBar();
+  }
+
+  private hotkey(e: KeyboardEvent): void {
+    if (!this.visible || !(e.ctrlKey || e.metaKey)) return;
+    const t = e.target as HTMLElement | null;
+    if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      this.undo();
+    } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+      e.preventDefault();
+      this.redo();
+    }
+  }
+
+  // ---- drawings ------------------------------------------------------------------------------------------------------------------------------
+
+  /** The drawing tools, once the chart exists: the rail on the left, the properties bar over the chart and the Objects tab on the right. */
+  private mountDrawings(): void {
+    const host = this.renderer?.drawings;
+    if (!host || this.drawings) return;
+    const c = new DrawingController({ element: this.host, host, store: this.drawingStore, log: this.log, bars: () => this.model.displayBars(), enabled: () => this.visible && !isDerived(this.model.type) });
+    this.drawings = c;
+    this.rail = buildRail(c);
+    this.main.prepend(this.rail.element);
+    this.main.classList.add('has-rail');
+    this.wrap.append(buildProps(c));
+    this.objectsBox.append(buildObjects(c));
+    const dataTab = this.button('Data', 'Values under the crosshair', () => this.showTab('data'), 'lab-tab on');
+    const objectsTab = this.button('Objects', 'Drawings on this symbol', () => this.showTab('objects'), 'lab-tab');
+    dataTab.dataset.tab = 'data';
+    objectsTab.dataset.tab = 'objects';
+    this.tabs.append(dataTab, objectsTab);
+    this.tabs.hidden = false;
+    c.subscribe(() => {
+      objectsTab.textContent = c.list.length ? `Objects (${c.list.length})` : 'Objects';
+      this.paintBar();
+    });
+    this.rail.setEnabled(!isDerived(this.model.type), 'Drawings are not available on Renko, line-break or range charts');
+  }
+
+  private showTab(tab: 'data' | 'objects'): void {
+    this.windowBox.hidden = tab !== 'data';
+    this.objectsBox.hidden = tab !== 'objects';
+    this.tabs.querySelectorAll<HTMLElement>('.lab-tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   }
 
   // ---- toolbar -------------------------------------------------------------------------------------------------------------------------------
@@ -349,7 +430,7 @@ export class ChartLabView {
     });
     this.undoButton.addEventListener('click', () => this.undo());
     this.redoButton.addEventListener('click', () => this.redo());
-    this.undoButton.title = 'Undo the last change to the chart';
+    this.undoButton.title = 'Undo the last change to the chart or its drawings (Ctrl+Z)';
     this.redoButton.title = 'Redo';
     this.templateSelect.setAttribute('aria-label', 'templates');
     this.templateSelect.addEventListener('change', () => {
@@ -456,6 +537,7 @@ export class ChartLabView {
 
   private paintChart(): void {
     this.renderer?.paint(this.model);
+    this.rail?.setEnabled(!isDerived(this.model.type), 'Drawings are not available on Renko, line-break or range charts');
     if (isDerived(this.model.type) && (this.model.indicators.length || this.model.compare)) this.say('Indicators, compare and volume are not drawn on Renko, line-break or range charts; they come back with another chart type.');
     this.paintLegends();
     this.paintValues();
@@ -469,8 +551,8 @@ export class ChartLabView {
     this.adjButton.classList.toggle('on', this.model.adjusted);
     this.typeSelect.value = this.model.type;
     this.compareInput.value = this.model.compare?.symbol ?? '';
-    this.undoButton.disabled = !this.history.canUndo;
-    this.redoButton.disabled = !this.history.canRedo;
+    this.undoButton.disabled = !this.log.canUndo;
+    this.redoButton.disabled = !this.log.canRedo;
     this.rangeRow.replaceChildren();
     for (const r of RANGES[this.tf]) {
       const b = el('button', `rbtn${r.label === this.range().label ? ' on' : ''}`, r.label);
@@ -596,6 +678,8 @@ export class ChartLabView {
     this.offLink?.();
     this.resize?.disconnect();
     this.themeWatch?.disconnect();
+    document.removeEventListener('keydown', this.onKey);
+    this.drawings?.dispose();
     this.renderer?.dispose();
     this.ctx.feed.release('chartlab');
   }
