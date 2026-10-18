@@ -6,7 +6,7 @@ Owner decision 2026-10-18: run the full fetch in the background; check it every 
 
 | Stage | Command | Status | Expected time |
 |---|---|---|---|
-| 1. Statements | `.venv/Scripts/python.exe -u -m athena.fundamentals.ingest --universe all --resume` (log `logs/fund-ingest-all.log`) | **running** since 2026-10-18; 3,103 companies in scope (2,605 listed stocks plus old symbols of renamed ones); ~54 were done before | rest of Nifty 500 about 3 to 4 h; everything about 8 to 12 h |
+| 1. Statements | `.venv/Scripts/python.exe -u -m athena.fundamentals.ingest --universe all --resume` (log `logs/fund-ingest-all.log`) | **running** since 2026-10-18; 3,103 companies in scope (2,605 listed stocks plus old symbols of renamed ones); ~54 were done before | measured after 21 minutes: 24 s a company, so the rest of the Nifty 500 about 3 to 4 h and everything about 20 h (my earlier 8 to 12 h came from a first sample that held many companies with nothing to fetch) |
 | 2. Shareholding | `.venv/Scripts/python.exe -u -m athena.fundamentals.holdings --universe nifty500 --resume` then `--universe all --resume` | not started; run after stage 1 ends (one writer on the store) | about 20 quarterly files per company (0.3 to 1.3 MB each, 1.5 s apart): roughly 40 to 60 s a company, so Nifty 500 about 6 to 8 h, all about 35 h or more; Nifty 500 first, `all` only if wanted |
 | 3. Filing documents | `.venv/Scripts/python.exe -u -m athena.fundamentals.documents --universe all --resume` | not started; run after stage 2 | two requests per company, about 4 s: about 3 h for all |
 
