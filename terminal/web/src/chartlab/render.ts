@@ -33,6 +33,12 @@ export interface ChartRenderer {
   snapshot(): HTMLCanvasElement | null;
   /** Where drawings are painted and measured (absent in test stand-ins, which have no canvas). */
   drawings?: DrawingHost;
+  /** The crosshair of the bar at this index, or none: the same crosshair the pointer makes, for a chart another chart's pointer is over. */
+  showCrosshair?(index: number | null): void;
+  /** Told when the visible bars change, as bar numbers (fractions at the edges), by scrolling, zooming or a program. */
+  onRangeChanged?(cb: (from: number, to: number) => void): void;
+  /** Show the bars from index `from` to index `to`. */
+  showRange?(from: number, to: number): void;
   /** Told when the volume profile of the bars in view changes (null: none to show). Absent in test stand-ins. */
   onProfile?(cb: (profile: Profile | null) => void): void;
   /** Re-read the page's theme colours for the chart frame (the view then repaints the series). */
@@ -65,6 +71,7 @@ export const lightweightRenderer: RendererFactory = (host) => {
   let times: number[] = [];
   let crosshair: (i: number | null) => void = () => {};
   const panes = new Map<string, number>();
+  let shownModel: ChartModel | null = null;
   const primitive = new DrawingPrimitive();
   const profilePrimitive = new DrawingPrimitive();
   let profileHeard: (profile: Profile | null) => void = () => {};
@@ -129,6 +136,7 @@ export const lightweightRenderer: RendererFactory = (host) => {
 
   return {
     paint(model) {
+      shownModel = model;
       for (const s of series) chart.removeSeries(s);
       series = [];
       panes.clear();
@@ -252,6 +260,14 @@ export const lightweightRenderer: RendererFactory = (host) => {
       else chart.timeScale().setVisibleLogicalRange({ from: n - count, to: n + 2 } as never); // the same few bars of room on the right as the chart keeps
     },
     onCrosshair: (cb) => (crosshair = cb),
+    showCrosshair: (index) => {
+      if (!main || !shownModel) return;
+      const bars = shownModel.displayBars();
+      if (index === null || !bars[index] || times[index] === undefined) return chart.clearCrosshairPosition();
+      chart.setCrosshairPosition(bars[index].c, times[index] as UTCTimestamp, main);
+    },
+    onRangeChanged: (cb) => chart.timeScale().subscribeVisibleLogicalRangeChange((r) => r && cb(r.from, r.to)),
+    showRange: (from, to) => chart.timeScale().setVisibleLogicalRange({ from: from as Logical, to: (to + 2) as Logical }),
     onProfile: (cb) => (profileHeard = cb),
     paneElement: (index) => chart.panes()[index]?.getHTMLElement() ?? null,
     paneOf: (uid) => panes.get(uid) ?? 0,

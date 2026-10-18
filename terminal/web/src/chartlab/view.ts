@@ -9,6 +9,7 @@ import { barLimit, isIntraday, type Interval, type Range, type Timeframe } from 
 import { settingsDialog } from './dialog';
 import { CHART_TYPES, ChartModel, isDerived, type ChartType, type LabState, type ScaleMode } from './model';
 import { rowMid, type Profile } from './profile';
+import { indexAtMoment, momentOf, periodIndexes } from './grid';
 import { caption, isCustom, REGISTRY } from './registry';
 import { formulaDialog } from './formuladialog';
 import { switchOnDialog } from './pydialog';
@@ -72,7 +73,29 @@ export const fetchBars: BarsFetcher = async (symbol, tf, limit, adjusted) => {
   }
 };
 
+/** What a chart in a grid cell tells the grid about what its person did there (the grid tells the other cells). */
+export interface CellSend {
+  symbol(symbol: string): void;
+  interval(interval: string): void;
+  crosshair(moment: number | null): void;
+  period(from: number, to: number): void;
+}
+
+/** A Chart Lab chart that is one cell of the chart grid: compact, with its own saved state and feed name, not following the shared link group or the page's
+ *  keyboard shortcuts, and sharing the formula and Python indicator lists of the Chart Lab page. */
+export interface CellOptions {
+  id: string;
+  send: CellSend;
+  shared: SharedIndicators;
+}
+
+export interface SharedIndicators {
+  formulas: FormulaStore;
+  py: PyIndicators;
+}
+
 export interface LabOptions {
+  cell?: CellOptions;
   renderer?: RendererFactory;
   fetchBars?: BarsFetcher;
   storage?: KeyValue | null;
@@ -149,16 +172,26 @@ export class ChartLabView {
   private hover: number | null = null;
   private offQuotes: (() => void) | null = null;
   private offLink: (() => void) | null = null;
+  private cell: CellOptions | null;
+  private stateKey: string;
+  private feedKey: string;
+  /** The pointer is over this chart: only then does it send what the pointer does to a grid. */
+  private pointerIn = false;
   private resize: ResizeObserver | null = null;
   private themeWatch: MutationObserver | null = null;
 
   constructor(private ctx: AppContext, options: LabOptions = {}) {
     this.element.hidden = true;
+    this.cell = options.cell ?? null;
+    this.stateKey = this.cell ? `${STATE_KEY}.${this.cell.id}` : STATE_KEY;
+    this.feedKey = this.cell ? `chartlab:${this.cell.id}` : 'chartlab';
+    if (this.cell) this.element.classList.add('lab-cell');
     this.storage = options.storage === undefined ? browserStorage() : options.storage;
     this.templates = new Templates(this.storage);
     this.drawingStore = new DrawingStore(options.drawingIO ?? serverDrawingIO(), this.storage);
-    this.py = new PyIndicators(options.pyIO ?? serverPyIO(), this.storage); // registered from the browser copy at once, as the formulas are
-    this.formulas = new FormulaStore(options.formulaIO ?? serverFormulaIO(), this.storage); // registered from the browser copy at once, so a saved chart can use them
+    // a grid cell uses the lists of the Chart Lab page, so there is one of each and the cells fetch nothing of their own
+    this.py = this.cell?.shared.py ?? new PyIndicators(options.pyIO ?? serverPyIO(), this.storage); // registered from the browser copy at once, as the formulas are
+    this.formulas = this.cell?.shared.formulas ?? new FormulaStore(options.formulaIO ?? serverFormulaIO(), this.storage); // registered from the browser copy at once, so a saved chart can use them
     this.fetcher = options.fetchBars ?? fetchBars;
     this.makeRenderer = options.renderer ?? lightweightRenderer;
     this.buildToolbar();
@@ -169,19 +202,32 @@ export class ChartLabView {
     this.tabs.hidden = true;
     this.objectsBox.hidden = true;
     this.side.append(this.tabs, this.windowBox, this.objectsBox);
-    this.main.append(this.wrap, this.side);
+    if (this.cell) this.main.append(this.wrap);
+    else this.main.append(this.wrap, this.side);
     this.element.append(this.toolbar, sub, this.popover, this.main, this.note);
-    document.addEventListener('keydown', this.onKey);
+    if (!this.cell) document.addEventListener('keydown', this.onKey);
+    this.wrap.addEventListener('mouseenter', () => (this.pointerIn = true));
+    this.wrap.addEventListener('mouseleave', () => {
+      this.pointerIn = false;
+      this.cell?.send.crosshair(null); // the other cells lose the crosshair when the pointer leaves this one
+    });
     this.model.subscribe((kind) => this.modelChanged(kind));
     this.offQuotes = ctx.feed.onQuotes((qs) => this.onQuotes(qs));
-    this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
+    this.offLink = this.cell ? null : ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
     this.loadRecent();
     this.restoreSaved();
     this.formulas.subscribe(() => this.formulasChanged());
     this.py.subscribe(() => this.formulasChanged());
     this.py.onError((file, message) => this.say(`${file}: ${message}`));
-    void this.formulas.load();
-    void this.py.load();
+    if (!this.cell) {
+      void this.formulas.load();
+      void this.py.load();
+    }
+  }
+
+  /** The formula and Python indicator lists, for grid cells to share. */
+  shared(): SharedIndicators {
+    return { formulas: this.formulas, py: this.py };
   }
 
   /** The formulas changed (loaded, saved, deleted): charts that use one that is gone lose it, and every formula line is computed again. */
@@ -221,6 +267,13 @@ export class ChartLabView {
       this.renderer.onCrosshair((i) => {
         this.hover = i;
         this.paintValues();
+        if (this.cell && this.pointerIn && !this.model.derived) this.cell.send.crosshair(i === null ? null : this.momentAt(i));
+      });
+      this.renderer.onRangeChanged?.((from, to) => {
+        if (!this.cell || !this.pointerIn || this.model.derived || !this.model.bars.length) return;
+        const last = this.model.bars.length - 1;
+        const at = (i: number): number => momentOf(this.model.bars[Math.min(last, Math.max(0, Math.round(i)))].t, this.tf);
+        this.cell.send.period(at(from), at(to));
       });
       if (typeof ResizeObserver !== 'undefined') {
         this.resize = new ResizeObserver(() => this.placeLegends());
@@ -231,7 +284,7 @@ export class ChartLabView {
         this.paintChart();
       });
       this.themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-      this.mountDrawings();
+      if (!this.cell) this.mountDrawings();
     }
     const next = symbol || this.ctx.bus.symbolOf(LINK_GROUP) || this.symbol || this.ctx.watchlist.items[0] || '';
     if (next) this.follow(next, true);
@@ -240,7 +293,7 @@ export class ChartLabView {
   hide(): void {
     this.visible = false;
     this.element.hidden = true;
-    this.ctx.feed.release('chartlab');
+    this.ctx.feed.release(this.feedKey);
   }
 
   private follow(symbol: string, force = false): void {
@@ -248,7 +301,7 @@ export class ChartLabView {
     this.symbol = symbol;
     void this.drawings?.setSymbol(symbol);
     this.symbolInput.value = symbol;
-    this.ctx.feed.need('chartlab', [symbol]);
+    this.ctx.feed.need(this.feedKey, [symbol]);
     void this.reload();
   }
 
@@ -256,7 +309,8 @@ export class ChartLabView {
     const s = symbol.trim().toUpperCase();
     if (!s) return;
     this.follow(s);
-    this.ctx.bus.setSymbol(LINK_GROUP, s);
+    if (this.cell) this.cell.send.symbol(s);
+    else this.ctx.bus.setSymbol(LINK_GROUP, s);
   }
 
   /** An interval typed in the box: refused with the reason, or chosen (a built-in one selects its button; another is kept among the last few). */
@@ -272,10 +326,56 @@ export class ChartLabView {
       }
     }
     this.intervalInput.value = '';
-    this.tf = p.id;
-    this.rangeLabel = this.defaultRangeFor(p.id);
+    this.selectInterval(p.id);
+  }
+
+  /** Show an interval. A person's choice in a grid cell is told to the grid; one the grid made is not (`applyInterval`). */
+  private selectInterval(id: Interval, fromPerson = true): void {
+    this.tf = id;
+    this.rangeLabel = this.defaultRangeFor(id);
     void this.reload();
     this.paintBar();
+    if (fromPerson) this.cell?.send.interval(id);
+  }
+
+  // ---- being a cell of the chart grid: what the grid tells this chart ----------------------------------------------------------------------
+
+  get interval(): Interval {
+    return this.tf;
+  }
+
+  get currentSymbol(): string {
+    return this.symbol;
+  }
+
+  applySymbol(symbol: string): void {
+    this.follow(symbol.trim().toUpperCase());
+  }
+
+  applyInterval(interval: string): void {
+    const p = parseInterval(interval);
+    if (p.ok && p.id !== this.tf) this.selectInterval(p.id, false);
+  }
+
+  private momentAt(index: number): number | null {
+    const bar = this.model.bars[index];
+    return bar ? momentOf(bar.t, this.tf) : null;
+  }
+
+  /** Put the crosshair where another chart's pointer is (a moment), or take it away. A price-move chart has no times and does not take part. */
+  showMoment(moment: number | null): void {
+    if (!this.renderer || this.model.derived || this.pointerIn) return;
+    const index = moment === null ? null : indexAtMoment(this.model.bars, moment, this.tf);
+    this.renderer.showCrosshair?.(index);
+    this.hover = index;
+    this.paintValues();
+  }
+
+  /** Show the same period as another chart. A chart with no bar in it is left as it is. */
+  showPeriod(from: number, to: number): void {
+    if (!this.renderer || this.model.derived || this.pointerIn) return;
+    const r = periodIndexes(this.model.bars, from, to, this.tf);
+    if (r) this.renderer.showRange?.(r.from, r.to);
   }
 
   private loadRecent(): void {
@@ -380,7 +480,7 @@ export class ChartLabView {
 
   private persist(): void {
     try {
-      this.storage?.setItem(STATE_KEY, serialize(this.model.state()));
+      this.storage?.setItem(this.stateKey, serialize(this.model.state()));
     } catch {
       /* the chart works without it */
     }
@@ -388,7 +488,7 @@ export class ChartLabView {
 
   private restoreSaved(): void {
     try {
-      const text = this.storage?.getItem(STATE_KEY);
+      const text = this.storage?.getItem(this.stateKey);
       if (text) this.apply(deserialize(text), false);
     } catch {
       /* nothing saved, or not usable: start plain */
@@ -505,12 +605,7 @@ export class ChartLabView {
       const b = el('button', 'rbtn', tf);
       b.dataset.interval = tf;
       b.title = `${tf} bars`;
-      b.addEventListener('click', () => {
-        this.tf = tf;
-        this.rangeLabel = this.defaultRangeFor(tf);
-        void this.reload();
-        this.paintBar();
-      });
+      b.addEventListener('click', () => this.selectInterval(tf));
       this.intervalRow.append(b);
     }
     this.intervalInput.placeholder = 'e.g. 7m, 2h, 3D';
@@ -576,10 +671,13 @@ export class ChartLabView {
     });
     const snapshot = this.button('Snapshot', 'Download the chart as a PNG picture', () => this.snapshot());
     this.badge.title = 'Market status';
-    this.toolbar.append(
-      this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, this.profileButton, this.profileRows, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
-      this.templateSelect, snapshot, this.badge,
-    );
+    if (this.cell) this.toolbar.append(this.symbolInput, this.intervalRow, this.intervalInput, this.typeSelect, indicators);
+    else {
+      this.toolbar.append(
+        this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, this.profileButton, this.profileRows, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
+        this.templateSelect, snapshot, this.badge,
+      );
+    }
     this.paintTemplates();
   }
 
@@ -949,7 +1047,7 @@ export class ChartLabView {
     document.removeEventListener('keydown', this.onKey);
     this.drawings?.dispose();
     this.renderer?.dispose();
-    this.ctx.feed.release('chartlab');
+    this.ctx.feed.release(this.feedKey);
   }
 
   /** The state of the chart (for tests and templates). */
