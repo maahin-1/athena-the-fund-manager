@@ -11,6 +11,7 @@ import {
 import { LinkBus } from './links';
 import { marketState } from './market';
 import { ChartLabView } from './chartlab/view';
+import { GridView } from './chartlab/gridview';
 import { FundamentalsView } from './fundamentals/view';
 import { ResearchView } from './research';
 import { ScreenView } from './screen';
@@ -34,7 +35,7 @@ const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
 const VIEW_KEY = 'athena.terminal.view';
 const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'details', 'analysis', 'verdict', 'tape'];
-type View = 'terminal' | 'lab' | 'fund' | 'research' | 'screen';
+type View = 'terminal' | 'lab' | 'grid' | 'fund' | 'research' | 'screen';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
   watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel, details: DetailsPanel,
 };
@@ -70,6 +71,8 @@ class App implements AppContext {
   private research!: ResearchView;
   private fund!: FundamentalsView;
   private lab!: ChartLabView;
+  /** Made the first time the Grid tab is opened, so a person who never opens it has none of its charts. */
+  private grid: GridView | null = null;
   private screen!: ScreenView;
   private view: View = 'terminal';
   private lastPreset: PresetName = 'A';
@@ -145,7 +148,7 @@ class App implements AppContext {
     } catch {
       /* storage can be blocked */
     }
-    this.setView(view === 'lab' || view === 'fund' || view === 'research' || view === 'screen' ? view : 'terminal');
+    this.setView(view === 'lab' || view === 'grid' || view === 'fund' || view === 'research' || view === 'screen' ? view : 'terminal');
   }
 
   showSymbol(symbol: string): void {
@@ -187,6 +190,13 @@ class App implements AppContext {
     this.viewTabs.forEach((b, v) => b.classList.toggle('on', v === view));
     if (view === 'lab') this.lab.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
     else this.lab.hide();
+    if (view === 'grid') {
+      if (!this.grid) {
+        this.grid = new GridView(this, this.lab.shared());
+        document.getElementById('app')?.append(this.grid.element);
+      }
+      this.grid.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
+    } else this.grid?.hide();
     if (view === 'fund') this.fund.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol(), section);
     else this.fund.hide();
     if (view === 'research') this.research.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
@@ -447,9 +457,9 @@ class App implements AppContext {
       this.setView('terminal');
       this.addPanel(t);
     });
-    for (const [v, label] of [['terminal', 'Terminal'], ['lab', 'Chart Lab'], ['fund', 'Fundamentals'], ['research', 'Research'], ['screen', 'Screen']] as [View, string][]) {
+    for (const [v, label] of [['terminal', 'Terminal'], ['lab', 'Chart Lab'], ['grid', 'Grid'], ['fund', 'Fundamentals'], ['research', 'Research'], ['screen', 'Screen']] as [View, string][]) {
       const b = el('button', 'vtab', label);
-      b.title = v === 'lab' ? 'One big chart with indicators, compare, log and percent scales, templates and a data window (F6 cycles the views)' : v === 'fund' ? 'Statements, ratios and growth for one company, from its filings (F6 cycles the views)' : v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F6 cycles the views)' : v === 'screen' ? 'Screen every stock and ETF with presets and filters (F6 cycles the views)' : 'Charts, depth and the dockable panels (F6 cycles the views)';
+      b.title = v === 'grid' ? 'Up to four charts side by side, with the symbol, interval, crosshair and time range kept in step as you choose (F6 cycles the views)' : v === 'lab' ? 'One big chart with indicators, compare, log and percent scales, templates and a data window (F6 cycles the views)' : v === 'fund' ? 'Statements, ratios and growth for one company, from its filings (F6 cycles the views)' : v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F6 cycles the views)' : v === 'screen' ? 'Screen every stock and ETF with presets and filters (F6 cycles the views)' : 'Charts, depth and the dockable panels (F6 cycles the views)';
       b.addEventListener('click', () => this.setView(v));
       this.viewTabs.set(v, b);
     }
@@ -604,6 +614,8 @@ class App implements AppContext {
         return this.setView('terminal');
       case 'screen':
         return this.setView('screen');
+      case 'grid':
+        return this.setView('grid');
       case 'layout':
         if (PRESET_NAMES.includes(cmd.name as PresetName)) this.loadPreset(cmd.name as PresetName);
         else void this.openSaved(cmd.name);
@@ -672,7 +684,7 @@ class App implements AppContext {
     }
     if (e.key === 'F6') {
       e.preventDefault();
-      this.setView(this.view === 'terminal' ? 'lab' : this.view === 'lab' ? 'fund' : this.view === 'fund' ? 'research' : this.view === 'research' ? 'screen' : 'terminal');
+      this.setView(this.view === 'terminal' ? 'lab' : this.view === 'lab' ? 'fund' : this.view === 'fund' ? 'research' : this.view === 'research' ? 'screen' : this.view === 'screen' ? 'grid' : 'terminal');
       return;
     }
     const groups: Record<string, PanelType[]> = { F1: ['watchlist'], F2: ['chart'], F3: ['depth', 'quote'], F4: ['tape'] };

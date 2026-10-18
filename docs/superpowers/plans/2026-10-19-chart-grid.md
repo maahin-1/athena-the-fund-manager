@@ -42,3 +42,7 @@
 ### Task D: docs and suites
 
 - [ ] TRD 2.44, master design section 26, roadmap row, `graphify update .`, full vitest and Playwright, commit.
+
+## As built (2026-10-19)
+
+Tasks A to D done. Two additions to the plan: `sharedFetcher` (one request for the bars several cells ask for together, kept 15 seconds) after the first end-to-end run showed a symbol change fetching the same daily bars four times against a busy server, and cells share the Chart Lab page's formula and Python indicator lists (`ChartLabView.shared()`) instead of each fetching them. The grid is its own tab rather than a mode of the Chart Lab; it joins F6 after Screen so the existing order (terminal, Chart Lab, Fundamentals) is unchanged. Moments for daily-based bars are 15:29 IST so a day's moment falls inside the last bar of every intraday interval. A Playwright locator that matched 'Volume' by substring now matches exactly (the profile button's label contains the word). Suites: vitest 589; the full Playwright run passes except the Fundamentals and search specs that read the fundamentals store, which time out while the full fetch is using the machine and pass alone (checked).

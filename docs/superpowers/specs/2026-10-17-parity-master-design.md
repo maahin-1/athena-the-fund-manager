@@ -278,3 +278,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 **Honest limits:** custom groups of weeks and months start at fixed points since 1970; the profile spreads a bar's volume evenly over its range because the price of each trade is not known; tick recording and order flow wait for a market session; no intervals under a minute.
 
 **Next in this track:** 5k chart grid, 5j replay, 5f F&O and MCX.
+
+## 26. Chart grid (5k, 2026-10-19)
+
+**Done:** a Grid tab of up to four Chart Lab charts in five layouts with switchable symbol, interval, crosshair and time-range sync, kept between visits. Spec `2026-10-19-chart-grid-design.md`, plan `2026-10-19-chart-grid.md`, TRD section 2.44.
+
+**Honest limits:** no drawings, compare or data window inside a cell (use the Chart Lab); crosshair sync between a daily and an intraday chart matches to the day; the dockable terminal's own chart panels keep their own link-group behaviour and are not part of this grid.
+
+**Next in this track:** 5j replay, 5f F&O and MCX.

@@ -11,6 +11,7 @@ export type Command =
   | { kind: 'details'; symbol: string | null } // the Details panel of the Terminal, on a stock when one is given
   | { kind: 'terminal' }
   | { kind: 'screen' }
+  | { kind: 'grid' }
   | { kind: 'error'; message: string };
 
 export interface CommandContext {
@@ -68,6 +69,7 @@ export function parse(input: string, ctx: CommandContext): Command {
     if (head === 'DETAILS' || head === 'DET') return { kind: 'details', symbol: null };
     if (head === 'TERMINAL') return { kind: 'terminal' };
     if (head === 'SCREEN') return { kind: 'screen' };
+    if (head === 'GRID') return { kind: 'grid' };
     return SYMBOL.test(head) ? { kind: 'symbol', symbol: head } : fail(`"${words[0]}" is not a symbol`);
   }
   if (head === 'RESEARCH' && words.length === 2) {
