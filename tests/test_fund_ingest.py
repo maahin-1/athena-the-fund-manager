@@ -163,3 +163,58 @@ def test_a_company_with_one_unreadable_filing_is_partial_and_resume_tries_it_aga
     ingest.run([TCS], results, path, **kwargs)
     with FundamentalsStore(path) as store:
         assert store.run("TCS")["status"] == "ok"
+
+
+# ---- a run that stops by itself when the exchange has gone quiet
+
+def silent(symbol):
+    return Member(symbol, symbol, "", "")
+
+
+def test_five_companies_in_a_row_that_fail_outright_stop_the_run_and_a_new_run_waits(tmp_path):
+    from athena.fundamentals import runner
+
+    path = tmp_path / "f.duckdb"
+    members = [silent(f"S{i}") for i in range(8)]
+    seen = []
+
+    def fetch(member):
+        seen.append(member.symbol)
+        return ingest.Report(member.symbol, failed=1, notes=["NSE results unavailable: ReadTimeout"])
+
+    out = io.StringIO()
+    code = runner.run_each(members, fetch, path, key=lambda m: m.symbol, resume=False, max_age_days=7, limit=None, out=out)
+    assert code == 3 and seen == ["S0", "S1", "S2", "S3", "S4"]
+    assert "stopping" in out.getvalue() and "no reply" in out.getvalue()
+    with FundamentalsStore(path) as store:
+        assert store.run("S4")["status"] == "blocked" and store.run("S3")["status"] == "failed"
+    assert runner.run_each(members, fetch, path, key=lambda m: m.symbol, resume=False, max_age_days=7, limit=None, out=io.StringIO()) == 3
+    assert seen == ["S0", "S1", "S2", "S3", "S4"]  # nothing was asked for while the pause lasts
+
+
+def test_one_company_that_gets_through_resets_the_count(tmp_path):
+    from athena.fundamentals import runner
+
+    path = tmp_path / "f.duckdb"
+    members = [silent(f"S{i}") for i in range(9)]
+
+    def fetch(member):
+        if member.symbol == "S4":
+            return ingest.Report(member.symbol, fetched=12)
+        return ingest.Report(member.symbol, failed=1, notes=["x"])
+
+    assert runner.run_each(members, fetch, path, key=lambda m: m.symbol, resume=False, max_age_days=7, limit=None, out=io.StringIO()) == 0
+
+
+def test_a_company_with_nothing_to_fetch_is_not_a_failure(tmp_path):
+    from athena.fundamentals import runner
+
+    members = [silent(f"S{i}") for i in range(8)]  # delisted names list no filings: fetched 0, failed 0
+    assert runner.run_each(members, lambda m: ingest.Report(m.symbol), tmp_path / "f.duckdb", key=lambda m: m.symbol, resume=False, max_age_days=7, limit=None, out=io.StringIO()) == 0
+
+
+def test_the_statements_run_stops_the_same_way(tmp_path):
+    results = FakeResults(AthenaError("NSE results unavailable for X: ReadTimeout"), {})
+    out = io.StringIO()
+    code = ingest.run([silent(f"S{i}") for i in range(8)], results, tmp_path / "f.duckdb", resume=False, max_age_days=7, limit=None, quarters=13, standalone=False, out=out)
+    assert code == 3 and out.getvalue().count("failed   1") == 5

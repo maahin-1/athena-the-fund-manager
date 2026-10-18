@@ -8,7 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TextIO
 
-from athena.fundamentals.ingest import BLOCK_PAUSE, Blocked, Report
+from athena.fundamentals.ingest import BLOCK_PAUSE, Blocked, Report, Stall, stop_stalled
 from athena.fundamentals.store import FundamentalsStore, now
 from athena.fundamentals.universe import Member
 
@@ -25,6 +25,7 @@ def run_each(
         print(f"blocked by the exchange until {until:%H:%M} UTC; not starting", file=out)
         return 3
     done = 0
+    stall = Stall()
     for member in members:
         if limit is not None and done >= limit:
             break
@@ -48,5 +49,7 @@ def run_each(
         print(f"{member.symbol:<12} fetched {report.fetched:>3} skipped {report.skipped:>3} failed {report.failed:>3}  {(now() - started).total_seconds():5.0f}s", file=out)
         for note in report.notes[:3]:
             print(f"{'':<12} note: {note}", file=out)
+        if stall.saw(report):
+            return stop_stalled(store_path, name, member.symbol, out)
         done += 1
     return 0

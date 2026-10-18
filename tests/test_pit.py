@@ -300,3 +300,47 @@ def test_a_timeout_is_retried_after_the_waits_and_a_lasting_one_is_an_error_not_
     with pytest.raises(AthenaError, match="NSE results unavailable for ACME: ReadTimeout"):
         dead.filings("ACME")
     assert [s for s in waits if s in RETRY_WAITS] == list(RETRY_WAITS)
+
+
+class DeadSession:
+    """A pooled connection NSE dropped without a word: every request on it, the priming one included, times out."""
+
+    def __init__(self):
+        self.headers, self.closed = {}, False
+
+    def get(self, *args, **kwargs):
+        raise requests.ReadTimeout("Read timed out. (read timeout=20)")
+
+    def close(self):
+        self.closed = True
+
+
+def test_a_timeout_gets_a_fresh_session_because_a_stale_connection_would_time_out_for_ever():
+    dead, fresh, made = DeadSession(), FakeSession([FakeResponse(payload=ROWS), FakeResponse(payload=[])]), []
+
+    def factory():
+        made.append(1)
+        return fresh
+
+    results = NseResults(dead, sleep=lambda s: None, clock=iter(range(0, 10_000, 10)).__next__, session_factory=factory)
+    assert len(results.filings("ACME")) == 2
+    assert made == [1] and dead.closed  # one new session, the old one closed
+
+
+def test_a_session_that_stays_dead_gives_an_error_after_the_retries_each_with_a_new_session():
+    made = []
+
+    def factory():
+        made.append(DeadSession())
+        return made[-1]
+
+    results = NseResults(DeadSession(), sleep=lambda s: None, clock=iter(range(0, 10_000, 10)).__next__, session_factory=factory)
+    with pytest.raises(AthenaError, match="NSE results unavailable for ACME: ReadTimeout"):
+        results.filings("ACME")
+    assert len(made) == 3 and all(s.closed for s in made[:2])
+
+
+def test_a_session_handed_in_without_a_factory_is_kept_as_before():
+    results, session, _ = client([FakeResponse(payload=ROWS), FakeResponse(payload=[])])
+    results.filings("ACME")
+    assert results._session is session

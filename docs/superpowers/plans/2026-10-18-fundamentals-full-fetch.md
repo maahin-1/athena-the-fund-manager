@@ -22,7 +22,7 @@ All three are resumable (`--resume`), throttled, stop cleanly if the exchange bl
 
 ## Log of the run
 
-- 2026-10-18 evening: after about 50 companies every company began failing with "Read timed out" (41 s each, nothing stored) although fresh requests to NSE answered in 0.4 s: the long-running process's NSE session had gone stale. Killed and restarted with `--resume` (the first log is kept as `logs/fund-ingest-all.run1.log`); the same companies then fetched normally. **If a check finds many companies in a row with `failed 1 41s` and no filings, restart the process the same way.** A fix that rebuilds the session after repeated timeouts is on the roadmap.
+- 2026-10-18 evening: after about 50 companies every company began failing with "Read timed out" (41 s each, nothing stored) although fresh requests to NSE answered in 0.4 s: the long-running process's NSE session had gone stale. Killed and restarted with `--resume` (the first log is kept as `logs/fund-ingest-all.run1.log`); the same companies then fetched normally. **If a check finds many companies in a row with `failed 1 41s` and no filings, restart the process the same way.** Fixed the same evening: the client now replaces its session on any network error (`NseResults._fresh`), and every fetch command stops by itself, recording a five-minute pause, after five companies in a row fail outright (`ingest.Stall`); the run was restarted on the fixed code.
 
 ## Safe to build meanwhile
 

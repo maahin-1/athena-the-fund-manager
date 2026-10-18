@@ -28,6 +28,8 @@ from athena.fundamentals.universe import Member, universe
 from athena.pit.nse_results import CACHE_DIR, FilingRef
 
 BLOCK_PAUSE = timedelta(minutes=30)
+STALL_AFTER = 5  # companies in a row that fail outright (nothing fetched, nothing already held) before a run stops by itself
+STALL_PAUSE = timedelta(minutes=5)
 
 
 class Blocked(Exception):
@@ -44,6 +46,26 @@ class Report:
 
 
 _blocked = is_block
+
+
+class Stall:
+    """Counts the companies in a row that failed outright. A company with nothing to fetch (delisted, no filings) is not a failure; one that got any
+    filing through resets the count. After `STALL_AFTER` the exchange has gone quiet and carrying on only fills the log with failures."""
+
+    def __init__(self) -> None:
+        self.count = 0
+
+    def saw(self, report: Report) -> bool:
+        self.count = self.count + 1 if report.failed > 0 and report.fetched + report.skipped == 0 else 0
+        return self.count >= STALL_AFTER
+
+
+def stop_stalled(store_path: str | Path, name: str, symbol: str, out: TextIO) -> int:
+    """Record the pause against the company that tripped it and say so; returns the exit code of a stopped run."""
+    with FundamentalsStore(store_path) as store:
+        store.set_run(name, "blocked", error=f"no reply from the exchange for {STALL_AFTER} companies in a row", blocked_until=now() + STALL_PAUSE)
+    print(f"{symbol:<12} no reply from the exchange for {STALL_AFTER} companies in a row; stopping, try again after {STALL_PAUSE.seconds // 60} minutes", file=out)
+    return 3
 
 
 def with_predecessors(members: Sequence[Member], table: Mapping[str, tuple[Predecessor, ...]] = PREDECESSORS) -> list[Member]:
@@ -143,6 +165,7 @@ def run(
         print(f"blocked by the exchange until {until:%H:%M} UTC; not starting", file=out)
         return 3
     done = 0
+    stall = Stall()
     for member in members:
         if limit is not None and done >= limit:
             break
@@ -167,6 +190,8 @@ def run(
         print(f"{member.symbol:<12} fetched {report.fetched:>3} skipped {report.skipped:>3} failed {report.failed:>3}  {seconds:5.0f}s", file=out)
         for note in report.notes[:3]:
             print(f"{'':<12} note: {note}", file=out)
+        if stall.saw(report):
+            return stop_stalled(store_path, member.symbol, member.symbol, out)
         done += 1
     return 0
 

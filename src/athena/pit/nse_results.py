@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -48,16 +49,33 @@ class NseResults:
     is an `AthenaError`. Only filings that have both a filing time and an XBRL file are listed: the rest cannot be placed in
     time, and a figure whose publication date is unknown is never used."""
 
-    def __init__(self, session=None, sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
+    def __init__(
+        self, session=None, sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+        session_factory: Callable[[], Any] | None = None,
+    ):
         if session is None:
-            import requests
-
             session = requests.Session()
+            session_factory = session_factory or requests.Session
         self._session = session
+        self._factory = session_factory  # none for a session handed in (a test's): it is then kept, as it always was
         self._session.headers.update(HEADERS)
         self._sleep, self._clock = sleep, clock
         self._primed = False
         self._last = -MIN_GAP
+
+    def _fresh(self) -> None:
+        """Replace the session. A pooled connection the exchange dropped without a word times out on every request after, the priming one included,
+        for as long as the session lives (a long run once failed every company this way while a new request answered in half a second); a new session
+        does not carry it. Only when a factory is known."""
+        if self._factory is None:
+            return
+        try:
+            self._session.close()
+        except Exception:  # a session that cannot even close is the very one being dropped
+            pass
+        self._session = self._factory()
+        self._session.headers.update(HEADERS)
+        self._primed = False
 
     def _get(self, url: str, params: dict | None = None):
         """One request, spaced from the last, retried after a pause when the exchange refuses (503, 403, 429). A refusal that
@@ -70,14 +88,15 @@ class NseResults:
             gap = MIN_GAP - (self._clock() - self._last)
             if gap > 0:
                 self._sleep(gap)
-            if not self._primed:
-                self._session.get(HOME, timeout=TIMEOUT)  # cookies; its own status does not matter
-                self._primed = True
             self._last = self._clock()
             try:
+                if not self._primed:
+                    self._session.get(HOME, timeout=TIMEOUT)  # cookies; its own status does not matter
+                    self._primed = True
                 response = self._session.get(url, params=params, timeout=TIMEOUT)
-            except requests.RequestException as exc:  # a timeout or a dropped connection: wait, then try again
+            except requests.RequestException as exc:  # a timeout or a dropped connection: a new session, wait, then try again
                 problem = f"{type(exc).__name__}"
+                self._fresh()
                 continue
             if response.status_code == 200:
                 return response
