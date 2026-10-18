@@ -242,6 +242,7 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 .lab-symbol { width: 110px; text-transform: uppercase; }
 .lab-compare { width: 130px; }
 .lab-interval { width: 92px; }
+.lab-rows { width: 78px; }
 .lab-badge.good { color: var(--up); } .lab-badge.warn { color: var(--label); }
 .lab-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 230px; }
 .lab-chart { position: relative; min-width: 0; min-height: 0; background: var(--bg-panel); }

@@ -10,6 +10,8 @@ import { DrawingPrimitive } from './drawings/primitive';
 import { Projection } from './drawings/projection';
 import { isIntraday } from '../ranges';
 import type { Series } from './maths';
+import { volumeProfile, type Profile } from './profile';
+import { paintProfile } from './profilepaint';
 
 const IST_OFFSET = 19_800;
 
@@ -31,6 +33,8 @@ export interface ChartRenderer {
   snapshot(): HTMLCanvasElement | null;
   /** Where drawings are painted and measured (absent in test stand-ins, which have no canvas). */
   drawings?: DrawingHost;
+  /** Told when the volume profile of the bars in view changes (null: none to show). Absent in test stand-ins. */
+  onProfile?(cb: (profile: Profile | null) => void): void;
   /** Re-read the page's theme colours for the chart frame (the view then repaints the series). */
   applyTheme(): void;
   dispose(): void;
@@ -62,6 +66,9 @@ export const lightweightRenderer: RendererFactory = (host) => {
   let crosshair: (i: number | null) => void = () => {};
   const panes = new Map<string, number>();
   const primitive = new DrawingPrimitive();
+  const profilePrimitive = new DrawingPrimitive();
+  let profileHeard: (profile: Profile | null) => void = () => {};
+  let profileKey = '';
   let rawTimes: number[] = []; // the bars' own times (no display offset), index = the chart's logical index
   let step = 86_400;
   let paintHook: ((ctx: CanvasRenderingContext2D, projection: Projection, size: { w: number; h: number }) => void) | null = null;
@@ -149,6 +156,31 @@ export const lightweightRenderer: RendererFactory = (host) => {
       else main = chart.addSeries(CandlestickSeries, { upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn });
       main.setData(mainData(model) as never);
       main.attachPrimitive(primitive);
+      main.attachPrimitive(profilePrimitive);
+      const shown = main;
+      const colours = { up: css('--up'), down: css('--dn'), poc: css('--accent') };
+      profilePrimitive.setPainter(
+        model.profile.on && !model.derived
+          ? (ctx, size) => {
+              // the bars in view: the profile follows scrolling and zooming
+              const range = chart.timeScale().getVisibleLogicalRange();
+              const last = model.bars.length - 1;
+              const from = range ? Math.max(0, Math.floor(range.from)) : 0;
+              const to = range ? Math.min(last, Math.ceil(range.to)) : last;
+              const profile = to >= from ? volumeProfile(model.bars.slice(from, to + 1), model.profile.rows) : null;
+              const key = profile ? `${profile.poc}|${profile.areaLow}|${profile.areaHigh}|${profile.low}|${profile.high}|${profile.totalVolume}` : 'none';
+              if (key !== profileKey) {
+                profileKey = key;
+                queueMicrotask(() => profileHeard(profile)); // after this paint: the page may redraw its own panel
+              }
+              if (profile) paintProfile(ctx, size, profile, (price) => shown.priceToCoordinate(price), colours);
+            }
+          : null,
+      );
+      if (!model.profile.on || model.derived) {
+        profileKey = '';
+        queueMicrotask(() => profileHeard(null));
+      }
       main.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: model.derived ? 0.06 : 0.3 } }); // the lower part is the volume's, and a price-move chart has none
       series.push(main);
       volume = null;
@@ -220,6 +252,7 @@ export const lightweightRenderer: RendererFactory = (host) => {
       else chart.timeScale().setVisibleLogicalRange({ from: n - count, to: n + 2 } as never); // the same few bars of room on the right as the chart keeps
     },
     onCrosshair: (cb) => (crosshair = cb),
+    onProfile: (cb) => (profileHeard = cb),
     paneElement: (index) => chart.panes()[index]?.getHTMLElement() ?? null,
     paneOf: (uid) => panes.get(uid) ?? 0,
     snapshot: () => {

@@ -8,6 +8,7 @@ import { defaultRangeOf, parseInterval, rangesOf } from '../interval';
 import { barLimit, isIntraday, type Interval, type Range, type Timeframe } from '../ranges';
 import { settingsDialog } from './dialog';
 import { CHART_TYPES, ChartModel, isDerived, type ChartType, type LabState, type ScaleMode } from './model';
+import { rowMid, type Profile } from './profile';
 import { caption, isCustom, REGISTRY } from './registry';
 import { formulaDialog } from './formuladialog';
 import { switchOnDialog } from './pydialog';
@@ -125,6 +126,9 @@ export class ChartLabView {
   private symbolInput = el('input', 'cmd lab-symbol');
   private compareInput = el('input', 'cmd lab-compare');
   private typeSelect = el('select', 'lab-select lab-type');
+  private profileButton = el('button', 'rbtn', 'VP');
+  private profileRows = el('select', 'lab-select lab-rows');
+  private profile: Profile | null = null;
   private rangeRow = el('span', 'ranges');
   private intervalRow = el('span', 'ranges');
   private recentRow = el('span', 'ranges');
@@ -210,6 +214,10 @@ export class ChartLabView {
     this.element.hidden = false;
     if (!this.renderer) {
       this.renderer = this.makeRenderer(this.host);
+      this.renderer.onProfile?.((profile) => {
+        this.profile = profile;
+        this.paintValues();
+      });
       this.renderer.onCrosshair((i) => {
         this.hover = i;
         this.paintValues();
@@ -509,6 +517,14 @@ export class ChartLabView {
     this.intervalInput.title = 'Type any interval: 7m, 90m, 2h, 3D, 2W, 3M. Press Enter.';
     this.intervalInput.setAttribute('aria-label', 'custom interval');
     this.intervalInput.addEventListener('keydown', (e) => e.key === 'Enter' && this.chooseInterval(this.intervalInput.value));
+    this.profileButton.type = 'button';
+    this.profileButton.title = 'Volume profile: the volume traded at each price, for the bars in view';
+    this.profileButton.setAttribute('aria-label', 'volume profile');
+    this.profileButton.addEventListener('click', () => this.commit(() => this.model.setProfile({ ...this.model.profile, on: !this.model.profile.on })));
+    this.profileRows.setAttribute('aria-label', 'profile rows');
+    this.profileRows.title = 'Price rows in the volume profile';
+    for (const n of [12, 24, 48, 96]) this.profileRows.append(new Option(`${n} rows`, String(n)));
+    this.profileRows.addEventListener('change', () => this.commit(() => this.model.setProfile({ ...this.model.profile, rows: Number(this.profileRows.value) })));
     this.typeSelect.setAttribute('aria-label', 'chart type');
     for (const t of CHART_TYPES) this.typeSelect.append(new Option(t.label, t.id));
     this.typeSelect.addEventListener('change', () => this.commit(() => this.model.setType(this.typeSelect.value as ChartType)));
@@ -537,6 +553,7 @@ export class ChartLabView {
       b.addEventListener('click', () => this.commit(() => this.model.setScale(s.id)));
       this.scaleRow.append(b);
     }
+    this.adjButton.dataset.action = 'adjust';
     this.adjButton.title = 'Prices adjusted for splits and bonuses (on) or as printed (off)';
     this.adjButton.addEventListener('click', () => {
       this.commit(() => this.model.setAdjusted(!this.model.adjusted));
@@ -560,7 +577,7 @@ export class ChartLabView {
     const snapshot = this.button('Snapshot', 'Download the chart as a PNG picture', () => this.snapshot());
     this.badge.title = 'Market status';
     this.toolbar.append(
-      this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
+      this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, this.profileButton, this.profileRows, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
       this.templateSelect, snapshot, this.badge,
     );
     this.paintTemplates();
@@ -774,6 +791,10 @@ export class ChartLabView {
     this.scaleRow.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.scale === this.model.scale));
     this.adjButton.classList.toggle('on', this.model.adjusted);
     this.typeSelect.value = this.model.type;
+    this.profileButton.classList.toggle('on', this.model.profile.on);
+    this.profileRows.hidden = !this.model.profile.on;
+    if (![...this.profileRows.options].some((o) => o.value === String(this.model.profile.rows))) this.profileRows.append(new Option(`${this.model.profile.rows} rows`, String(this.model.profile.rows)));
+    this.profileRows.value = String(this.model.profile.rows);
     this.compareInput.value = this.model.compare?.symbol ?? '';
     this.undoButton.disabled = !this.log.canUndo;
     this.redoButton.disabled = !this.log.canRedo;
@@ -851,8 +872,27 @@ export class ChartLabView {
     });
   }
 
+  /** The volume profile's numbers in the data window, or why there is none. */
+  private profileLines(): void {
+    if (!this.model.profile.on) return;
+    this.windowBox.append(el('div', 'lab-wh', 'Volume profile'));
+    const add = (k: string, v: string): void => {
+      const row = el('div', 'lab-wrow');
+      row.append(el('span', '', k), el('span', '', v));
+      this.windowBox.append(row);
+    };
+    if (this.model.derived) return void this.windowBox.append(el('div', 'note', 'Not drawn for this chart type: its bars are price moves, not times.'));
+    const p = this.profile;
+    if (!p) return void this.windowBox.append(el('div', 'note', 'No volume in view (an index has none).'));
+    add('Point of control', price(rowMid(p.rows[p.poc])));
+    add('Value area high', price(p.rows[p.areaHigh].hi));
+    add('Value area low', price(p.rows[p.areaLow].lo));
+    add('Volume in view', compact(p.totalVolume));
+    this.windowBox.append(el('div', 'note', `${p.rows.length} rows. A bar's volume is spread evenly over its range (its price of trade is not known).`));
+  }
+
   private paintValues(): void {
-    const index = this.hover ?? this.model.bars.length - 1;
+    const index = this.hover ?? this.model.displayBars().length - 1; // a price-move chart has its own bars, not the loaded ones
     const w = this.model.window(index);
     this.windowBox.replaceChildren();
     if (!w) {
@@ -873,6 +913,7 @@ export class ChartLabView {
       row.append(el('span', '', k), el('span', k === 'Change' ? dir : '', v));
       this.windowBox.append(row);
     }
+    this.profileLines();
     for (const inst of this.model.indicators) {
       const def = this.model.def(inst);
       const got = w.values[inst.uid];

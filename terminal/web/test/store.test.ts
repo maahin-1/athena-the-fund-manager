@@ -3,7 +3,7 @@ import type { LabState } from '../src/chartlab/model';
 import { deserialize, History, serialize, StateError, Templates, type KeyValue } from '../src/chartlab/store';
 
 const state: LabState = {
-  type: 'heikin', scale: 'log', adjusted: false, compare: 'NIFTY 50',
+  type: 'heikin', scale: 'log', adjusted: false, compare: 'NIFTY 50', profile: { on: true, rows: 48 },
   indicators: [{ id: 'rsi', params: { length: 9 }, hidden: false, colors: {} }, { id: 'bb', params: { length: 20, mult: 2 }, hidden: true, colors: { upper: '#ff0000' } }],
 };
 

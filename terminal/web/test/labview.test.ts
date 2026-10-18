@@ -149,7 +149,7 @@ describe('chart lab page', () => {
     type.value = 'heikin';
     type.dispatchEvent(new Event('change'));
     expect(h.view.model.type).toBe('heikin');
-    click(h.view.element, '.rbtn:not([data-scale]):not([data-interval]):not([data-range])');
+    click(h.view.element, '[data-action="adjust"]');
     await flush();
     expect(h.view.model.adjusted).toBe(false);
     expect(h.fetched[h.fetched.length - 1]).toEqual(['SBIN', '1D', null, false]);

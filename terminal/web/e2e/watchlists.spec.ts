@@ -83,7 +83,7 @@ test('a new list, a heading, a flag and a command that adds to a named list all 
 
 test('columns can be added and the list sorts by a heading, ascending then descending then back', async ({ page }) => {
   await menu(page, 'Columns');
-  await page.getByLabel('Volume').check();
+  await page.getByLabel('Volume', { exact: true }).check();
   await expect(page.locator('.wl-th', { hasText: 'Volume' })).toBeVisible();
   await expect(row(page, 'SBIN').locator('td[data-col="volume"]')).toBeVisible();
   await page.locator('.wl-th', { hasText: 'Symbol' }).click();

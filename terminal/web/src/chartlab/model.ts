@@ -1,5 +1,6 @@
 import { applyTick, tickFitsChart, type Bar } from '../bars';
 import { parseInterval, stepOf } from '../interval';
+import { clampRows, ROWS } from './profile';
 import type { Interval, Timeframe } from '../ranges';
 import { atr, type Series } from './maths';
 import { kagi, lineBreak, pointAndFigure, rangeBars, renko, sequence } from './derived';
@@ -56,7 +57,14 @@ export interface IndicatorInstance {
 }
 
 /** Everything about the chart a template or the undo history needs to restore. */
+export interface ProfileSetting {
+  on: boolean;
+  rows: number;
+}
+
 export interface LabState {
+  /** The volume profile beside the price: off or on, and its number of price rows. */
+  profile: ProfileSetting;
   type: ChartType;
   scale: ScaleMode;
   adjusted: boolean;
@@ -95,6 +103,7 @@ export function heikinAshi(bars: Bar[]): Bar[] {
 export class ChartModel {
   bars: Bar[] = [];
   tf: Interval = '1D';
+  profile: ProfileSetting = { on: false, rows: ROWS.default };
   type: ChartType = 'candles';
   scale: ScaleMode = 'auto';
   adjusted = true;
@@ -181,6 +190,11 @@ export class ChartModel {
 
   removeIndicator(uid: string): void {
     this.indicators = this.indicators.filter((i) => i.uid !== uid);
+    this.changed();
+  }
+
+  setProfile(setting: ProfileSetting): void {
+    this.profile = { on: setting.on, rows: clampRows(setting.rows) };
     this.changed();
   }
 
@@ -273,6 +287,7 @@ export class ChartModel {
       type: this.type, scale: this.scale, adjusted: this.adjusted,
       indicators: this.indicators.map((i) => ({ id: i.id, params: { ...i.params }, hidden: i.hidden, colors: { ...i.colors } })),
       compare: this.compare?.symbol ?? null,
+      profile: { ...this.profile },
     };
   }
 
@@ -281,6 +296,7 @@ export class ChartModel {
     this.type = state.type;
     this.scale = state.scale;
     this.adjusted = state.adjusted;
+    this.profile = { on: state.profile.on, rows: clampRows(state.profile.rows) };
     this.indicators = state.indicators.map((i) => ({ uid: `i${++this.counter}`, id: i.id, params: { ...i.params }, hidden: i.hidden, colors: { ...i.colors } }));
     if (!state.compare) this.compare = null;
     else if (this.compare?.symbol !== state.compare) this.compare = { symbol: state.compare, bars: [] }; // no line until `setCompare` gets its bars

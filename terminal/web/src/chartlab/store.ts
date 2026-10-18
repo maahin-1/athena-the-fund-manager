@@ -1,4 +1,5 @@
 import type { ChartType, LabState, ScaleMode } from './model';
+import { clampRows, ROWS } from './profile';
 import { find, isCustom } from './registry';
 
 const TYPES: ChartType[] = ['candles', 'hollow', 'bars', 'line', 'area', 'baseline', 'columns', 'step', 'heikin', 'renko', 'linebreak', 'range', 'highlow', 'volcandles', 'kagi', 'pnf'];
@@ -38,7 +39,11 @@ export function deserialize(text: string): LabState {
     if (!Object.values(colors).every((c) => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c))) throw new StateError('colours must be #rrggbb');
     return { id: entry.id, params: entry.params as Record<string, number | string>, hidden: entry.hidden === true, colors: colors as Record<string, string> };
   });
-  return { type: raw.type as ChartType, scale: raw.scale as ScaleMode, adjusted: raw.adjusted, indicators, compare: raw.compare as string | null };
+  // a state saved before the profile existed has none: it is off
+  const saved = raw.profile;
+  if (saved !== undefined && !(isObject(saved) && typeof saved.on === 'boolean' && typeof saved.rows === 'number' && Number.isFinite(saved.rows))) throw new StateError('bad profile setting');
+  const profile = saved === undefined ? { on: false, rows: ROWS.default } : { on: (saved as { on: boolean }).on, rows: clampRows((saved as { rows: number }).rows) };
+  return { type: raw.type as ChartType, scale: raw.scale as ScaleMode, adjusted: raw.adjusted, indicators, compare: raw.compare as string | null, profile };
 }
 
 /** Undo and redo over whole states, newest last, at most 50 deep. A new push after an undo drops what could have been redone. */
