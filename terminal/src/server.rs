@@ -41,6 +41,8 @@ pub struct AppState {
     pub fund_fetch: Arc<crate::fund_fetch::FundFetch>,
     /// Documents the page keeps on the server beside the layouts (the watchlists), one fixed name each.
     pub lists: Arc<LayoutStore>,
+    /// The Python indicator files the user placed in a folder, switched on one by one.
+    pub pyind: Arc<crate::pyind::PyInd>,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -461,6 +463,63 @@ async fn strategies_put(State(state): State<AppState>, body: Bytes) -> Response 
     }
 }
 
+#[derive(serde::Deserialize)]
+struct PyIndEnable {
+    file: String,
+    sha256: String,
+}
+
+#[derive(serde::Deserialize)]
+struct PyIndDisable {
+    file: String,
+}
+
+#[derive(serde::Deserialize)]
+struct PyIndRun {
+    file: String,
+    bars: serde_json::Value,
+}
+
+fn pyind_status(e: crate::pyind::PyIndError) -> Response {
+    use crate::pyind::PyIndError::*;
+    match e {
+        Bad(m) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": m}))).into_response(),
+        NotEnabled => (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "this indicator is not switched on, or the file changed after it was"}))).into_response(),
+        Failed(m) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": m}))).into_response(),
+        TimedOut => (StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({"error": "the indicator took too long and was stopped"}))).into_response(),
+        Unavailable => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "the indicator runner could not be started"}))).into_response(),
+    }
+}
+
+/// The Python indicator files in the folder and whether each is switched on (a file is read, never run, to be listed).
+async fn pyind_list(State(state): State<AppState>) -> Response {
+    match state.pyind.list().await {
+        Ok(body) => Json(body).into_response(),
+        Err(e) => pyind_status(e),
+    }
+}
+
+async fn pyind_enable(State(state): State<AppState>, Json(body): Json<PyIndEnable>) -> Response {
+    match state.pyind.enable(&body.file, &body.sha256).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => pyind_status(e),
+    }
+}
+
+async fn pyind_disable(State(state): State<AppState>, Json(body): Json<PyIndDisable>) -> Response {
+    match state.pyind.disable(&body.file).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => pyind_status(e),
+    }
+}
+
+async fn pyind_run(State(state): State<AppState>, Json(body): Json<PyIndRun>) -> Response {
+    match state.pyind.run(&body.file, &body.bars).await {
+        Ok(lines) => Json(lines).into_response(),
+        Err(e) => pyind_status(e),
+    }
+}
+
 async fn layouts_list(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({"names": state.layouts.list()}))
 }
@@ -553,6 +612,10 @@ pub fn router(state: AppState) -> Router {
         .route("/api/screens", get(screens_get).put(screens_put))
         .route("/api/formulas", get(formulas_get).put(formulas_put))
         .route("/api/strategies", get(strategies_get).put(strategies_put))
+        .route("/api/pyind", get(pyind_list))
+        .route("/api/pyind/enable", axum::routing::put(pyind_enable))
+        .route("/api/pyind/disable", axum::routing::put(pyind_disable))
+        .route("/api/pyind/run", axum::routing::post(pyind_run))
         .route("/api/drawings/:symbol", get(drawings_get).put(drawings_put))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
@@ -603,7 +666,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))) };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))) };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -740,6 +803,27 @@ mod tests {
         assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().text().await.unwrap(), body);
         assert_eq!(client.get(format!("http://127.0.0.1:{port}/api/formulas")).header("Origin", &origin).send().await.unwrap().status(), 204);
         assert_eq!(client.put(&url).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_indicator_routes_refuse_a_foreign_page_a_file_not_switched_on_and_a_bad_name() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let base = format!("http://127.0.0.1:{port}/api/pyind");
+        let sha = "a".repeat(64);
+        let enable = serde_json::json!({"file": "x.py", "sha256": sha}).to_string();
+        // a page from anywhere else can neither switch a file on nor run one
+        assert_eq!(client.put(format!("{base}/enable")).header("Origin", "http://evil.test").header("content-type", "application/json").body(enable.clone()).send().await.unwrap().status(), 403);
+        assert_eq!(client.post(format!("{base}/run")).header("Origin", "http://evil.test").header("content-type", "application/json").body(r#"{"file":"x.py","bars":[]}"#).send().await.unwrap().status(), 403);
+        // a name that is not a file name, and a hash that is not a hash
+        let bad = serde_json::json!({"file": "../x.py", "sha256": sha}).to_string();
+        assert_eq!(client.put(format!("{base}/enable")).header("Origin", &origin).header("content-type", "application/json").body(bad).send().await.unwrap().status(), 400);
+        assert_eq!(client.put(format!("{base}/enable")).header("Origin", &origin).header("content-type", "application/json").body(r#"{"file":"x.py","sha256":"short"}"#).send().await.unwrap().status(), 400);
+        // a file that was never switched on does not run
+        assert_eq!(client.post(format!("{base}/run")).header("Origin", &origin).header("content-type", "application/json").body(r#"{"file":"x.py","bars":[]}"#).send().await.unwrap().status(), 403);
+        assert_eq!(client.post(format!("{base}/run")).header("Origin", &origin).header("content-type", "application/json").body(r#"{"file":"a/b.py","bars":[]}"#).send().await.unwrap().status(), 400);
         stop.cancel();
     }
 

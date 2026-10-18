@@ -12,6 +12,7 @@ mod hub;
 mod layouts;
 mod search;
 mod poll;
+mod pyind;
 mod quote;
 mod server;
 mod totp;
@@ -39,6 +40,8 @@ struct Args {
     fund_store: PathBuf,
     fund_python: Option<String>,
     python: String,
+    indicators_dir: PathBuf,
+    indicator_runner: PathBuf,
 }
 
 fn args() -> Args {
@@ -53,6 +56,8 @@ fn args() -> Args {
         fund_store: PathBuf::from(".athena/fundamentals.duckdb"),
         fund_python: None,
         python: ".venv/Scripts/python.exe".to_string(),
+        indicators_dir: PathBuf::from(".athena/indicators"),
+        indicator_runner: PathBuf::from("src/athena/indicators_user/runner.py"),
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -85,6 +90,16 @@ fn args() -> Args {
                 }
             }
             "--fund-python" => out.fund_python = it.next(),
+            "--indicators-dir" => {
+                if let Some(v) = it.next() {
+                    out.indicators_dir = PathBuf::from(v);
+                }
+            }
+            "--indicator-runner" => {
+                if let Some(v) = it.next() {
+                    out.indicator_runner = PathBuf::from(v);
+                }
+            }
             "--fund-store" => {
                 if let Some(v) = it.next() {
                     out.fund_store = PathBuf::from(v);
@@ -202,7 +217,8 @@ async fn main() {
     let fundamentals = Arc::new(fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone()));
     let fund_fetch = fund_fetch::FundFetch::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.fund_store.clone());
     let search = Arc::new(search::SearchCache::new(bars.warehouse.clone()));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists, search, fund_fetch };
+    let pyind = pyind::PyInd::new(args.fund_python.as_deref().unwrap_or(&args.python), &args.indicator_runner, &args.indicators_dir);
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists, search, fund_fetch, pyind };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))
