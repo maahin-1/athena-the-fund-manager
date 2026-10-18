@@ -157,8 +157,8 @@ export class ChartPanel extends Panel {
     const token = ++this.loadToken;
     if (attempt === 0) this.tfOverride = null;
     this.setTitle(`Chart · ${symbol} · ${this.range.label}`);
-    const today = new Date();
-    const limit = this.tf === '1D' ? (barLimit(this.range, today) ?? 5000) : 0;
+    // every stored daily bar is loaded whatever the range; the range only sets what is in view, and the rest can be scrolled back to
+    const limit = this.tf === '1D' ? 5000 : 0;
     const url = `/api/bars?symbol=${encodeURIComponent(symbol)}&tf=${this.tf}${limit ? `&limit=${limit}` : ''}`;
     let body: { bars: Bar[]; note: string };
     try {
@@ -168,8 +168,7 @@ export class ChartPanel extends Panel {
       return;
     }
     if (token !== this.loadToken || this.disposed) return; // a newer request replaced this one, or the panel is gone
-    let bars = body.bars;
-    if (this.tf !== '1D' && typeof this.range.bars === 'number') bars = bars.slice(-this.range.bars);
+    const bars = body.bars;
     this.bars = bars;
     const wanted = typeof this.range.bars === 'number' ? this.range.bars : 0;
     const stored = this.tf === '1D' && wanted >= 252 && bars.length > 0 && bars.length < wanted * 0.9
@@ -197,8 +196,18 @@ export class ChartPanel extends Panel {
     this.paintVolume();
     this.drawIndicators();
     this.chart?.timeScale().applyOptions({ timeVisible: this.tf !== '1D' });
-    this.chart?.timeScale().fitContent();
+    this.showRange();
     this.showLegend(this.bars[this.bars.length - 1]);
+  }
+
+  /** Put the range in view: the last N bars, or all of them. Earlier bars stay loaded and can be scrolled to. */
+  private showRange(): void {
+    const scale = this.chart?.timeScale();
+    if (!scale) return;
+    const count = barLimit(this.range, new Date());
+    const n = this.bars.length;
+    if (!count || count >= n) scale.fitContent();
+    else scale.setVisibleLogicalRange({ from: n - count, to: n + 2 } as never);
   }
 
   private paintVolume(): void {

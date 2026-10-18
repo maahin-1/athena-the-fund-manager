@@ -29,14 +29,16 @@ interface Harness {
   fetched: [string, string, number | null, boolean][];
   quotes: (qs: Quote[]) => void;
   storage: Memory;
+  shown: (number | null)[]; // what each range put in view
 }
 
 function harness(storage = new Memory()): Harness {
-  const h = { paints: 0, ticks: 0, fetched: [] as Harness['fetched'], quotes: (() => {}) as (qs: Quote[]) => void, storage } as Harness;
+  const h = { paints: 0, ticks: 0, fetched: [] as Harness['fetched'], quotes: (() => {}) as (qs: Quote[]) => void, storage, shown: [] as (number | null)[] } as Harness;
   const renderer = (): ChartRenderer => ({
     paint: () => void h.paints++,
     tick: () => void h.ticks++,
     fit: () => {},
+    showLast: (c) => void h.shown.push(c),
     onCrosshair: () => {},
     paneElement: () => null,
     paneOf: (uid) => REGISTRY.length + Number(uid.slice(1)), // any number: each indicator has its own pane in this stand-in
@@ -74,7 +76,7 @@ beforeEach(() => {
 describe('chart lab page', () => {
   it('loads daily bars for the symbol, paints them and shows the market badge and data window', async () => {
     const h = await shown();
-    expect(h.fetched[0]).toEqual(['SBIN', '1D', 252, true]);
+    expect(h.fetched[0]).toEqual(['SBIN', '1D', null, true]);
     expect(h.view.model.bars).toHaveLength(80);
     expect(h.paints).toBeGreaterThan(0);
     expect(h.view.element.querySelector('.lab-head')?.textContent).toContain('SBIN · 1D');
@@ -150,15 +152,20 @@ describe('chart lab page', () => {
     click(h.view.element, '.rbtn:not([data-scale]):not([data-interval]):not([data-range])');
     await flush();
     expect(h.view.model.adjusted).toBe(false);
-    expect(h.fetched[h.fetched.length - 1]).toEqual(['SBIN', '1D', 252, false]);
+    expect(h.fetched[h.fetched.length - 1]).toEqual(['SBIN', '1D', null, false]);
   });
 
-  it('an interval implies its own ranges and a range button refetches', async () => {
+  it('an interval implies its own ranges and a range button only moves the window over the bars already loaded', async () => {
     const h = await shown();
     expect([...h.view.element.querySelectorAll('[data-range]')].map((b) => b.textContent)).toEqual(['1M', '3M', '6M', 'YTD', '1Y', '5Y', '8Y', 'All']);
+    expect(h.shown[h.shown.length - 1]).toBe(252); // the default range, 1Y, is in view, with every stored bar loaded
+    const loads = h.fetched.length;
     click(h.view.element, '[data-range="1M"]');
     await flush();
-    expect(h.fetched[h.fetched.length - 1][2]).toBe(22);
+    expect(h.fetched.length).toBe(loads); // no new request: the earlier bars are already there to scroll back to
+    expect(h.shown[h.shown.length - 1]).toBe(22);
+    click(h.view.element, '[data-range="All"]');
+    expect(h.shown[h.shown.length - 1]).toBeNull();
     click(h.view.element, '[data-interval="5m"]');
     await flush();
     expect(h.fetched[h.fetched.length - 1].slice(0, 2)).toEqual(['SBIN', '5m']);

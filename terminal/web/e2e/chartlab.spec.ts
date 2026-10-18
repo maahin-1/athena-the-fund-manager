@@ -115,3 +115,71 @@ test('a snapshot downloads a PNG picture', async ({ page }) => {
   for await (const chunk of stream) chunks.push(chunk as Buffer);
   expect([...Buffer.concat(chunks).subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
 });
+
+/** Drag the chart to the right twice, which scrolls back in time: with only the shown window loaded, the left of the chart would be empty. */
+async function panBack(page: Page, box: { x: number; y: number; width: number; height: number }): Promise<void> {
+  for (let i = 0; i < 2; i++) {
+    await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.5, { steps: 12 });
+    await page.mouse.up();
+  }
+}
+
+/** Candle-coloured pixels (up green or down red) in the left quarter of the chart canvases under `scope`: bars to the left of the shown window, if any were loaded. */
+async function candlesLeft(page: Page, scope: string): Promise<number> {
+  return page.evaluate((sel) => {
+    let n = 0;
+    // the price pane is the widest canvas (the axes beside and below it are narrow, and the last-price label on the axis is green)
+    const canvases = [...document.querySelectorAll<HTMLCanvasElement>(`${sel} canvas`)].sort((a, b) => b.width * b.height - a.width * a.height).slice(0, 1);
+    for (const c of canvases) {
+      const ctx = c.getContext('2d');
+      if (!ctx || !c.width || !c.height) continue;
+      const w = Math.floor(c.width / 4);
+      const data = ctx.getImageData(0, 0, w, Math.floor(c.height * 0.8)).data;
+      for (let i = 0; i < data.length; i += 4) {
+        const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
+        const up = Math.abs(r - 38) < 12 && Math.abs(g - 194) < 12 && Math.abs(b - 129) < 12;
+        const dn = Math.abs(r - 239) < 12 && Math.abs(g - 83) < 12 && Math.abs(b - 80) < 12;
+        if (up || dn) n++;
+      }
+    }
+    return n;
+  }, scope);
+}
+
+test('with a short range chosen, scrolling back shows the earlier bars that are stored', async ({ page }) => {
+  await openLab(page);
+  await page.locator('.lab [data-range="1M"]').click();
+  await page.waitForTimeout(500);
+  const box = (await page.locator('.lab-host').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await panBack(page, box);
+  await page.waitForTimeout(500);
+  expect(await candlesLeft(page, '.lab-host')).toBeGreaterThan(200);
+});
+
+/** A number that changes when the picture on the widest canvas changes. */
+async function signature(page: Page, scope: string): Promise<number> {
+  return page.evaluate((sel) => {
+    const c = [...document.querySelectorAll<HTMLCanvasElement>(`${sel} canvas`)].sort((x, y) => y.width * y.height - x.width * x.height)[0];
+    const ctx = c?.getContext('2d');
+    if (!ctx) return 0;
+    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) sum = (sum * 31 + data[i] + data[i + 1] * 3 + data[i + 2] * 7) % 1_000_000_007;
+    return sum;
+  }, scope);
+}
+
+test('the Terminal chart panel also keeps the earlier bars loaded behind a short range, so it can be scrolled back', async ({ page }) => {
+  await page.locator('.panel:has(.chart-body) [data-range="1M"]').first().click();
+  await page.waitForTimeout(600);
+  const area = page.locator('.panel:has(.chart-body) .chart-body').first();
+  const box = (await area.boundingBox())!;
+  const before = await signature(page, '.panel:has(.chart-body)');
+  await panBack(page, box);
+  await page.waitForTimeout(500);
+  expect(await signature(page, '.panel:has(.chart-body)')).not.toBe(before); // with only 22 bars loaded there is nothing to scroll to and the picture stays put
+  expect(await candlesLeft(page, '.panel:has(.chart-body)')).toBeGreaterThan(200);
+});

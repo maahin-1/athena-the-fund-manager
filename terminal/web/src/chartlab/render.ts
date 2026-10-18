@@ -19,6 +19,8 @@ export interface ChartRenderer {
   /** Only the last bar moved: update it and the indicators without rebuilding. */
   tick(model: ChartModel): void;
   fit(): void;
+  /** Show the last `count` bars (null: all of them) while every earlier bar stays loaded and can be scrolled to. */
+  showLast(count: number | null): void;
   /** The bar index under the crosshair, or null when it leaves the chart. */
   onCrosshair(cb: (index: number | null) => void): void;
   /** The element of an indicator pane (0 is the price pane), for placing legends. */
@@ -204,6 +206,11 @@ export const lightweightRenderer: RendererFactory = (host) => {
 
     drawings,
     fit: () => chart.timeScale().fitContent(),
+    showLast: (count) => {
+      const n = times.length;
+      if (!count || count >= n) chart.timeScale().fitContent();
+      else chart.timeScale().setVisibleLogicalRange({ from: n - count, to: n + 2 } as never); // the same few bars of room on the right as the chart keeps
+    },
     onCrosshair: (cb) => (crosshair = cb),
     paneElement: (index) => chart.panes()[index]?.getHTMLElement() ?? null,
     paneOf: (uid) => panes.get(uid) ?? 0,

@@ -212,10 +212,9 @@ export class ChartLabView {
   private async reload(): Promise<void> {
     if (!this.symbol) return;
     const mine = ++this.token;
-    const range = this.range();
     const source = SOURCE[this.tf];
-    // daily bars are asked for by count; weekly and monthly bars are built from every daily bar held, so their ranges slice after the build
-    const limit = this.tf === '1D' ? (range.bars === 'ytd' ? barLimit(range, new Date()) : range.bars) : null;
+    // every bar held for the interval is loaded, whatever the range: the range only decides how much is in view, and the rest can be scrolled back to
+    const limit = null;
     this.say('loading…');
     let fetched: Fetched;
     try {
@@ -225,14 +224,23 @@ export class ChartLabView {
       return;
     }
     if (mine !== this.token) return;
-    let bars = build(this.tf, fetched.bars);
-    if (this.tf !== '1D' && typeof range.bars === 'number') bars = bars.slice(-range.bars);
+    const bars = build(this.tf, fetched.bars);
     this.hover = null;
     this.model.setBars(bars, this.tf);
-    this.renderer?.fit();
+    this.applyRange();
     this.say(bars.length ? fetched.note : `no ${this.tf} bars for ${this.symbol}`);
     if (this.model.compare) void this.loadCompare(this.model.compare.symbol);
     this.paintBar();
+  }
+
+  /** How many bars the chosen range puts in view: null means all. */
+  private rangeBars(): number | null {
+    return barLimit(this.range(), new Date());
+  }
+
+  /** Put the range in view (the last N bars) without touching what is loaded. */
+  private applyRange(): void {
+    this.renderer?.showLast(this.rangeBars());
   }
 
   private async loadCompare(symbol: string): Promise<void> {
@@ -559,7 +567,7 @@ export class ChartLabView {
       b.dataset.range = r.label;
       b.addEventListener('click', () => {
         this.rangeLabel = r.label;
-        void this.reload();
+        this.applyRange(); // the bars are already loaded; only the window moves
         this.paintBar();
       });
       this.rangeRow.append(b);
