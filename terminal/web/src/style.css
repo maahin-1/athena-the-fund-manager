@@ -300,6 +300,20 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 /* the market screen */
 .screen { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: 10px 12px; background: var(--bg); }
 .screen > .note { padding: 2px 0; }
+/* heatmap */
+.smodes { display: flex; gap: 6px; margin: 6px 0; }
+.smodes .btn.on { border-color: var(--label); color: var(--label); }
+.heatmap { margin: 6px 0; }
+.hm-controls { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 4px; }
+.hm-key { display: inline-flex; align-items: center; gap: 4px; }
+.hm-bar { display: inline-block; width: 120px; height: 8px; border-radius: 4px; }
+.hm-canvas { position: relative; width: 100%; background: var(--bg-panel); border: 1px solid var(--border); overflow: hidden; }
+.hm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--bg); background: var(--bg); }
+.hm-glabel { position: absolute; left: 4px; top: 1px; font-size: 11px; font-weight: 600; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 8px); pointer-events: none; }
+.hm-tile { position: absolute; box-sizing: border-box; border: 1px solid var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; cursor: pointer; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.5); line-height: 1.15; }
+.hm-tile:hover { outline: 2px solid var(--accent); outline-offset: -2px; z-index: 2; }
+.hm-sym { font-weight: 600; font-size: 12px; }
+.hm-val { font-size: 11px; opacity: .9; }
 /* peers on the company page */
 .fpeers .fwhere { margin-bottom: 6px; }
 .fcrumbs { font-weight: 600; margin-right: 10px; }

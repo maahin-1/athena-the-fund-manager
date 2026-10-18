@@ -1,6 +1,7 @@
 import { el, type AppContext } from './panels/base';
 import { ColumnsMenu, QueryBar, SavedBar } from './screens/controls';
 import { toCsv } from './screens/csv';
+import { HeatmapView } from './screens/heatmap';
 import { formatCell } from './screens/format';
 import { SavedScreens, serverScreensIO, type SavedScreen } from './screens/store';
 import { evaluate, limitsToQuery } from './screenquery';
@@ -43,12 +44,16 @@ export class ScreenView {
   private savedBar = new SavedBar(this.saved, (name) => this.snapshot(name), (screen) => this.applyScreen(screen));
   private colsMenu = new ColumnsMenu(() => this.columns, (columns) => this.setColumns(columns));
   private tools = el('div', 'stools');
+  private heat = new HeatmapView((symbol, row) => this.select(symbol, row));
+  private mode: 'table' | 'heatmap' = 'table';
+  private modeRow = el('div', 'smodes');
   private cleanBox = el('input');
 
   constructor(private ctx: AppContext) {
     this.element.hidden = true;
     this.buildControls();
-    this.element.append(this.note, this.query.element, this.savedBar.element, this.presetRow, this.presetNote, this.filterBox, this.actions, this.tools, this.count, this.tableHost);
+    this.element.append(this.note, this.modeRow, this.query.element, this.savedBar.element, this.presetRow, this.presetNote, this.filterBox, this.actions, this.tools, this.count, this.tableHost, this.heat.element);
+    this.heat.element.hidden = true;
   }
 
   /** Show the page; the table is fetched once and kept for five minutes. */
@@ -79,6 +84,15 @@ export class ScreenView {
   }
 
   private buildControls(): void {
+    for (const [mode, label] of [['table', 'Table'], ['heatmap', 'Heatmap']] as const) {
+      const b = el('button', 'btn', label);
+      b.dataset.mode = mode;
+      b.addEventListener('click', () => {
+        this.mode = mode;
+        this.paintTable();
+      });
+      this.modeRow.append(b);
+    }
     for (const p of PRESETS) {
       const b = el('button', 'btn', p.label);
       b.dataset.preset = p.label;
@@ -253,8 +267,13 @@ export class ScreenView {
     const preset = PRESETS.find((p) => p.label === this.presetLabel);
     this.presetNote.textContent = preset ? `${preset.note} As a query: ${limitsToQuery(preset.ranges)}` : '';
     const found = this.found();
+    this.modeRow.querySelectorAll<HTMLButtonElement>('button[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === this.mode));
+    this.tableHost.hidden = this.mode !== 'table';
+    this.tools.hidden = this.mode !== 'table';
+    this.heat.element.hidden = this.mode !== 'heatmap';
+    if (this.mode === 'heatmap') this.heat.render(found);
     const shown = found.slice(0, MAX_SHOWN);
-    this.count.textContent = `${found.length.toLocaleString('en-IN')} match${found.length === 1 ? '' : 'es'}${found.length > shown.length ? `; showing the first ${shown.length}, sorted by ${COLUMNS[this.sortBy]?.[0] ?? this.sortBy}` : ''}.`;
+    this.count.textContent = `${found.length.toLocaleString('en-IN')} match${found.length === 1 ? '' : 'es'}${this.mode === 'table' && found.length > shown.length ? `; showing the first ${shown.length}, sorted by ${COLUMNS[this.sortBy]?.[0] ?? this.sortBy}` : ''}.`;
 
     const table = el('table', 'stable');
     const head = el('tr');
