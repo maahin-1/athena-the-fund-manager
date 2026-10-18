@@ -31,6 +31,9 @@ struct Live {
     out: Lines<BufReader<ChildStdout>>,
 }
 
+/// The most a strategy tree may weigh as JSON (the strategy model's own limits keep a valid one far below this).
+pub const MAX_STRATEGY_BYTES: usize = 20_000;
+
 pub struct AnalyseWorker {
     command: Vec<String>,
     live: Mutex<Option<Live>>,
@@ -79,12 +82,20 @@ impl AnalyseWorker {
         self.call(json!({"op": "view", "query": query.trim(), "relatives": relatives})).await
     }
 
-    /// The built-in rules replayed over the symbol's history, each against buy and hold, with the numbers of each curve.
-    pub async fn backtest(&self, symbol: &str) -> Result<Value, AnalyseError> {
+    /// The built-in rules replayed over the symbol's history, each against buy and hold, with the numbers of each curve; or, with a `strategy` (the tree
+    /// the formula language writes), that strategy alone. The worker validates the tree again, so what is checked here is only its size and that it is an object.
+    pub async fn backtest(&self, symbol: &str, strategy: Option<Value>) -> Result<Value, AnalyseError> {
         if !query_ok(symbol) {
             return Err(AnalyseError::BadQuery);
         }
-        self.call(json!({"op": "backtest", "symbol": symbol.trim()})).await
+        let mut payload = json!({"op": "backtest", "symbol": symbol.trim()});
+        if let Some(tree) = strategy {
+            if !tree.is_object() || tree.to_string().len() > MAX_STRATEGY_BYTES {
+                return Err(AnalyseError::BadQuery);
+            }
+            payload["strategy"] = tree;
+        }
+        self.call(payload).await
     }
 
     async fn call(&self, mut payload: Value) -> Result<Value, AnalyseError> {
@@ -180,9 +191,27 @@ for line in sys.stdin:
     print(json.dumps({"id": r["id"], "ok": True, "result": {"op": r["op"], "symbol": r.get("symbol")}}), flush=True)
 "#;
         let Some(w) = fake(script) else { return };
-        assert_eq!(w.backtest("SBIN").await.unwrap(), json!({"op": "backtest", "symbol": "SBIN"}));
+        assert_eq!(w.backtest("SBIN", None).await.unwrap(), json!({"op": "backtest", "symbol": "SBIN"}));
         assert_eq!(w.view("TCS", false).await.unwrap()["op"], "view");
-        assert_eq!(w.backtest("a;b").await, Err(AnalyseError::BadQuery));
+        assert_eq!(w.backtest("a;b", None).await, Err(AnalyseError::BadQuery));
+    }
+
+    #[tokio::test]
+    async fn a_strategy_is_passed_on_whole_and_a_bad_or_huge_one_is_refused_before_the_worker_hears_of_it() {
+        let script = r#"
+import json, sys
+print(json.dumps({"ready": True}), flush=True)
+for line in sys.stdin:
+    r = json.loads(line)
+    print(json.dumps({"id": r["id"], "ok": True, "result": {"strategy": r.get("strategy")}}), flush=True)
+"#;
+        let Some(w) = fake(script) else { return };
+        let tree = json!({"version": 1, "name": "x", "entry": {"op": "gt", "left": {"price": "close"}, "right": {"const": 1}}});
+        assert_eq!(w.backtest("SBIN", Some(tree.clone())).await.unwrap(), json!({"strategy": tree}));
+        assert_eq!(w.backtest("SBIN", Some(json!("close > 1"))).await, Err(AnalyseError::BadQuery)); // text is not a tree
+        assert_eq!(w.backtest("SBIN", Some(json!([1]))).await, Err(AnalyseError::BadQuery));
+        let huge = json!({"name": "x".repeat(MAX_STRATEGY_BYTES)});
+        assert_eq!(w.backtest("SBIN", Some(huge)).await, Err(AnalyseError::BadQuery));
     }
 
     #[tokio::test]

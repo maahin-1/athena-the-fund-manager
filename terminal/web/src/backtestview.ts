@@ -1,4 +1,5 @@
 import { ColorType, createChart, createSeriesMarkers, LineSeries, type IChartApi, type SeriesMarker, type Time } from 'lightweight-charts';
+import type { StrategyTree } from './formula/strategy';
 import { el } from './panels/base';
 
 export interface BacktestCurve {
@@ -27,10 +28,11 @@ export interface BacktestData {
 
 export type BacktestResult = { ok: true; data: BacktestData } | { ok: false; error: string };
 
-/** Replay the built-in rules over the symbol's history (up to eight years) against buy and hold. Takes seconds to a minute. */
-export async function runBacktest(symbol: string): Promise<BacktestResult> {
+/** Replay the built-in rules, or the user's own strategy when one is given, over the symbol's history (up to eight years) against buy and hold. Takes seconds
+ *  to a minute. */
+export async function runBacktest(symbol: string, strategy?: StrategyTree): Promise<BacktestResult> {
   try {
-    const r = await fetch('/api/backtest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol }) });
+    const r = await fetch('/api/backtest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(strategy ? { symbol, strategy } : { symbol }) });
     if (r.status === 400) return { ok: false, error: 'That is not a symbol.' };
     if (!r.ok) {
       const body = (await r.json().catch(() => ({}))) as { error?: string };

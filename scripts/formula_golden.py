@@ -140,6 +140,23 @@ CONDS = [
 ]
 
 
+# The built-in strategies as formulas: the page offers these as starting points, and the page's tests require that they compile to exactly the trees the
+# Python presets hold (`athena.strategies.presets`), so what a user starts from is what the engine already runs.
+PRESET_TEXTS = {
+    "breakout_52w": ("close >= highest(close, 252)[1]", "close <= lowest(close, 252)[1]"),
+    "golden_cross": ("sma(50) crosses above sma(200)", "sma(50) crosses below sma(200)"),
+    "rsi_reversion": ("rsi(14) < 30", "rsi(14) > 55"),
+    "bollinger_rebound": ("close crosses above bbands(20, 2).lower", "close crosses above sma(20)"),
+}
+
+
+def presets() -> list[dict]:
+    from athena.strategies.parse import to_dict
+    from athena.strategies.presets import PRESETS
+
+    return [{"key": key, "entry": PRESET_TEXTS[key][0], "exit": PRESET_TEXTS[key][1], "tree": to_dict(strategy)} for key, strategy in PRESETS.items()]
+
+
 def number(x: float) -> float | None:
     return None if not math.isfinite(x) else round(float(x), 9)
 
@@ -163,7 +180,7 @@ def build() -> dict:
         }
         for spec in REGISTRY.values()
     ]
-    return {"bars": data, "catalogue": catalogue, "cases": cases}
+    return {"bars": data, "catalogue": catalogue, "cases": cases, "presets": presets()}
 
 
 def main() -> int:

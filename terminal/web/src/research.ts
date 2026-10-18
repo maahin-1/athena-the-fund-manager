@@ -1,6 +1,9 @@
 import type { Quote } from './feed';
 import { pct, price, signed } from './format';
 import { renderBacktest, runBacktest } from './backtestview';
+import { serverStrategiesIO } from './formula/strategies';
+import type { StrategyTree } from './formula/strategy';
+import { StrategyBuilder } from './strategybuilder';
 import { analyseLive, renderLive, type LiveView } from './live';
 import { loadAnalysis, overviewView, packetView, type AnalysisData } from './panels/analysis';
 import { el, type AppContext } from './panels/base';
@@ -30,6 +33,7 @@ export class ResearchView {
   private btButton = el('button', 'btn', 'Backtest');
   private btSlot = el('div', 'liveslot');
   private btDispose: (() => void) | null = null;
+  private builder = new StrategyBuilder(serverStrategiesIO(), (tree) => void this.runBt(tree));
   private symbol = '';
   private token = 0;
   private stopJob: (() => void) | null = null;
@@ -59,7 +63,7 @@ export class ResearchView {
     this.btButton.title = 'Replays the built-in rules day by day over up to eight years and compares each with buy and hold. Takes a few seconds to a minute.';
     this.btButton.addEventListener('click', () => void this.runBt());
     this.liveBox.append(this.liveInput, this.liveButton, this.btButton, this.liveStatus);
-    this.main.append(this.title, this.nav, this.liveBox, this.liveSlot, this.btSlot, this.body);
+    this.main.append(this.title, this.nav, this.liveBox, this.builder.element, this.liveSlot, this.btSlot, this.body);
     this.element.append(this.list, this.main);
     this.offQuotes = ctx.feed.onQuotes((qs) => this.onQuotes(qs));
     this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
@@ -94,6 +98,7 @@ export class ResearchView {
   private follow(symbol: string, force = false): void {
     if (!this.visible || !symbol || (symbol === this.symbol && !force)) return;
     this.symbol = symbol;
+    this.builder.setSymbol(symbol);
     this.paintList();
     this.ctx.feed.need('research', [symbol]);
     void this.load();
@@ -144,14 +149,16 @@ export class ResearchView {
     this.showLive(view);
   }
 
-  private async runBt(): Promise<void> {
+  private async runBt(strategy?: StrategyTree): Promise<void> {
     const symbol = this.symbol;
     if (!symbol || this.liveBusy) return;
     this.liveBusy = true;
     this.btButton.disabled = this.liveButton.disabled = true;
     this.liveStatus.className = 'note';
-    this.liveStatus.textContent = `Replaying ${symbol} day by day… (a few seconds to a minute; the first run also starts the analysis service)`;
-    const result = await runBacktest(symbol);
+    this.liveStatus.textContent = strategy
+      ? `Replaying "${strategy.name}" on ${symbol} day by day… (a few seconds to a minute; the first run also starts the analysis service)`
+      : `Replaying ${symbol} day by day… (a few seconds to a minute; the first run also starts the analysis service)`;
+    const result = await runBacktest(symbol, strategy);
     this.liveBusy = false;
     this.btButton.disabled = this.liveButton.disabled = false;
     if (!result.ok) {

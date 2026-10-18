@@ -5,6 +5,7 @@ one JSON request per line on stdin with one JSON line on stdout.
 
     in:   {"id": 1, "op": "view", "query": "TCS", "relatives": false}
           {"id": 2, "op": "backtest", "symbol": "TCS"}      (the built-in rules over up to eight years, each against buy and hold)
+          {"id": 3, "op": "backtest", "symbol": "TCS", "strategy": {...}}   (the user's own strategy tree instead of the built-in rules)
     out:  {"ready": true}                                         (once, when the service is built)
           {"id": 1, "ok": true, "result": {...the DashboardView...}}
           {"id": 1, "ok": false, "error": "..."}   (only the project's own messages; any other failure says "the analysis failed (ClassName)")
@@ -55,7 +56,13 @@ def handle(service: Any, request: dict[str, Any]) -> dict[str, Any]:
             symbol = str(request.get("symbol", "")).strip()
             if not symbol or len(symbol) > MAX_QUERY:
                 raise ValueError(f"the symbol must be 1 to {MAX_QUERY} characters")
-            reply.update(ok=True, result=backtest_json(service.backtest(symbol)))
+            rules = None
+            if request.get("strategy") is not None:  # the user's own strategy, as the tree the formula language writes; validated here, whatever the page checked
+                from athena.strategies.compile import strategy_rule
+                from athena.strategies.parse import parse_strategy
+
+                rules = [strategy_rule(parse_strategy(request["strategy"]))]
+            reply.update(ok=True, result=backtest_json(service.backtest(symbol, rules)))
         else:
             raise ValueError(f"unknown operation {op!r}")
     except (AthenaError, ValueError) as exc:  # the project's own messages are written to be shown
