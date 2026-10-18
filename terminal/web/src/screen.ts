@@ -280,7 +280,7 @@ export class ScreenView {
     this.heat.element.hidden = this.mode !== 'heatmap';
     this.cal.element.hidden = this.mode !== 'calendar';
     this.count.hidden = this.mode === 'calendar';
-    if (this.mode === 'heatmap') this.heat.render(found);
+    if (this.mode === 'heatmap') this.heat.render(found, {}, this.rows);
     if (this.mode === 'calendar') void this.cal.show().then(() => this.cal.refresh());
     const shown = found.slice(0, MAX_SHOWN);
     this.count.textContent = `${found.length.toLocaleString('en-IN')} match${found.length === 1 ? '' : 'es'}${this.mode === 'table' && found.length > shown.length ? `; showing the first ${shown.length}, sorted by ${COLUMNS[this.sortBy]?.[0] ?? this.sortBy}` : ''}.`;

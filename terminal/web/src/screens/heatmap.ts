@@ -30,6 +30,9 @@ export class HeatmapView {
   private readonly groupBox = el('select', 'picker');
   private readonly sizeBox = el('select', 'picker');
   private readonly colourBox = el('select', 'picker');
+  private readonly indexBox = el('select', 'picker');
+  /** The index the tiles are limited to ('' for every stock in the result). */
+  private index = '';
 
   /** `size` gives the pixel size to draw in (measured from the page by default, fixed in tests). */
   constructor(
@@ -45,41 +48,65 @@ export class HeatmapView {
     this.sizeBox.append(new Option('Size by market cap', 'market_cap_cr'), new Option('Size by traded value', 'traded_value_cr'));
     this.colourBox.setAttribute('aria-label', 'colour by');
     this.colourBox.append(...SCALES.map((s) => new Option(`Colour by ${s.label}`, s.id)));
+    this.indexBox.setAttribute('aria-label', 'heatmap index');
+    this.indexBox.append(new Option('All stocks in the result', ''));
     for (const box of [this.groupBox, this.sizeBox, this.colourBox]) {
       box.addEventListener('change', () => {
         this.options = { ...this.options, group: this.groupBox.value as HeatOptions['group'], size: this.sizeBox.value as HeatOptions['size'], colour: this.colourBox.value };
         this.paint();
       });
     }
+    this.indexBox.addEventListener('change', () => {
+      this.index = this.indexBox.value;
+      this.paint();
+    });
     const controls = el('div', 'hm-controls');
-    controls.append(this.groupBox, this.sizeBox, this.colourBox);
+    controls.append(this.groupBox, this.sizeBox, this.colourBox, this.indexBox);
     this.element.append(controls, this.legend, this.note, this.canvas);
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.element.isConnected && !this.element.hidden && this.paint()).observe(this.element);
   }
 
-  /** Draw `rows`, changing any of the options named. */
-  render(rows: Row[], options: Partial<HeatOptions> = {}): void {
+  /** Draw `rows`, changing any of the options named. `universe` is every stock the index list is made from (the whole screen, so a filter does not make an index
+   *  vanish); it defaults to `rows`. */
+  render(rows: Row[], options: Partial<HeatOptions> = {}, universe: Row[] = rows): void {
     this.rows = rows;
     this.options = { ...this.options, ...options };
     this.groupBox.value = this.options.group;
     this.sizeBox.value = this.options.size;
     this.colourBox.value = scaleOf(this.options.colour).id;
+    this.fillIndexes(universe);
     this.paint();
+  }
+
+  /** The indices of the stocks in `universe`, biggest first (by how many stocks are in each), so the whole-market ones come before a small sector index and nothing
+   *  is hand-listed. The choice is kept when it is still there. */
+  private fillIndexes(universe: Row[]): void {
+    const count = new Map<string, number>();
+    for (const r of universe) {
+      if (typeof r.indices !== 'string') continue;
+      for (const name of r.indices.split('|')) if (name) count.set(name, (count.get(name) ?? 0) + 1);
+    }
+    const names = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+    if (this.index && !names.includes(this.index)) this.index = '';
+    this.indexBox.replaceChildren(new Option('All stocks in the result', ''), ...names.map((n) => new Option(`${n} (${count.get(n)})`, n)));
+    this.indexBox.value = this.index;
   }
 
   private paint(): void {
     const { group, size, limit } = this.options;
     const scale = scaleOf(this.options.colour);
-    const sized = this.rows.filter((r) => typeof r[size] === 'number' && (r[size] as number) > 0);
+    const inIndex = this.index ? this.rows.filter((r) => typeof r.indices === 'string' && r.indices.split('|').includes(this.index)) : this.rows;
+    const sized = inIndex.filter((r) => typeof r[size] === 'number' && (r[size] as number) > 0);
     const shown = [...sized].sort((a, b) => (b[size] as number) - (a[size] as number)).slice(0, limit);
     this.legend.replaceChildren(this.key(scale));
     this.canvas.replaceChildren();
     if (!shown.length) {
-      this.note.textContent = `No stock in this result has a ${SIZE_LABEL[size]} to size a tile by.`;
+      this.note.textContent = this.index && !inIndex.length ? `No stock in this result is in ${this.index}.` : `No stock in this result has a ${SIZE_LABEL[size]} to size a tile by.`;
       this.canvas.style.height = '0';
       return;
     }
-    this.note.textContent = sized.length > shown.length ? `Showing the largest ${shown.length} of ${sized.length.toLocaleString('en-IN')} by ${SIZE_LABEL[size]}.` : `${shown.length.toLocaleString('en-IN')} stocks, sized by ${SIZE_LABEL[size]}.`;
+    const of = this.index ? ` in ${this.index}` : '';
+    this.note.textContent = sized.length > shown.length ? `Showing the largest ${shown.length} of ${sized.length.toLocaleString('en-IN')}${of} by ${SIZE_LABEL[size]}.` : `${shown.length.toLocaleString('en-IN')} stocks${of}, sized by ${SIZE_LABEL[size]}.`;
     const box = this.size();
     this.canvas.style.height = `${box.h}px`;
     const byId = new Map(shown.map((r) => [String(r.symbol), r]));

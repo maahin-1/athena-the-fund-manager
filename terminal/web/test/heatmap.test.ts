@@ -67,6 +67,31 @@ describe('the heatmap view', () => {
     expect(w('BBB')).toBeGreaterThan(w('EEE'));
   });
 
+  it('lists the indices of the whole screen, biggest first, and limits the tiles to the one chosen', () => {
+    const members = [
+      stock('AAA', { indices: 'NIFTY 50|NIFTY 500|NIFTY BANK' }), stock('BBB', { indices: 'NIFTY 500|NIFTY BANK' }), stock('CCC', { indices: 'NIFTY 500' }),
+      stock('DDD', { indices: 'NIFTY AUTO' }), stock('EEE', {}),
+    ];
+    const v = view();
+    v.render(members.slice(0, 2), {}, members);
+    const picker = v.element.querySelector<HTMLSelectElement>('[aria-label="heatmap index"]')!;
+    expect([...picker.options].map((o) => o.value)).toEqual(['', 'NIFTY 500', 'NIFTY BANK', 'NIFTY 50', 'NIFTY AUTO']);
+    expect(picker.options[1].textContent).toBe('NIFTY 500 (3)');
+    picker.value = 'NIFTY AUTO';
+    picker.dispatchEvent(new Event('change'));
+    expect(tiles(v).length).toBe(0); // AAA and BBB are not in it
+    expect(v.element.querySelector('.hm-note')!.textContent).toContain('No stock in this result is in NIFTY AUTO');
+    picker.value = 'NIFTY BANK';
+    picker.dispatchEvent(new Event('change'));
+    expect(tiles(v).map((t) => t.dataset.symbol).sort()).toEqual(['AAA', 'BBB']);
+    expect(v.element.querySelector('.hm-note')!.textContent).toContain('in NIFTY BANK');
+    v.render(members.slice(0, 2), {}, members); // the choice is kept while it is in the screen
+    expect(picker.value).toBe('NIFTY BANK');
+    v.render(members.slice(2), {}, members.slice(2)); // the screen no longer has the index: back to every stock in the result
+    expect(picker.value).toBe('');
+    expect(tiles(v).map((t) => t.dataset.symbol).sort()).toEqual(['CCC', 'DDD', 'EEE']);
+  });
+
   it('groups by sector or industry, or not at all', () => {
     const v = view();
     v.render(rows, { group: 'sector' });

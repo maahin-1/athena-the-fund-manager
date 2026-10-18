@@ -74,3 +74,20 @@ test('the table is one click away and keeps its filters', async ({ page }) => {
   const pes = await page.locator('.stable td:nth-child(7)').allTextContents();
   for (const t of pes.slice(0, 30)) expect(Number(t)).toBeLessThan(12);
 });
+
+test('the heatmap can be limited to one index of the screen, and the note says which', async ({ page }) => {
+  await openHeatmap(page);
+  const all = await page.locator('.hm-tile').count();
+  const picker = page.getByLabel('heatmap index');
+  const options = await picker.locator('option').allTextContents();
+  expect(options[0]).toBe('All stocks in the result');
+  expect(options.length).toBeGreaterThan(5); // the screen's indices, biggest first
+  const value = await picker.locator('option').nth(1).getAttribute('value');
+  await picker.selectOption(value!);
+  await expect(page.locator('.hm-note')).toContainText(`in ${value}`);
+  const some = await page.locator('.hm-tile').count();
+  expect(some).toBeGreaterThan(0);
+  expect(some).toBeLessThan(all);
+  await picker.selectOption('');
+  await expect(page.locator('.hm-tile')).toHaveCount(all);
+});
