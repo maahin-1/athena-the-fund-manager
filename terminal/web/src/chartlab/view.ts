@@ -4,7 +4,8 @@ import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import { marketState } from '../market';
 import { el, type AppContext } from '../panels/base';
-import { barLimit, type Range, type Timeframe } from '../ranges';
+import { defaultRangeOf, parseInterval, rangesOf } from '../interval';
+import { barLimit, isIntraday, type Interval, type Range, type Timeframe } from '../ranges';
 import { settingsDialog } from './dialog';
 import { CHART_TYPES, ChartModel, isDerived, type ChartType, type LabState, type ScaleMode } from './model';
 import { caption, isCustom, REGISTRY } from './registry';
@@ -13,7 +14,7 @@ import { switchOnDialog } from './pydialog';
 import { PyIndicators, serverPyIO, type PyIO } from '../formula/pyind';
 import { formulaId } from '../formula/defs';
 import { FormulaStore, serverFormulaIO, type FormulaIO } from '../formula/store';
-import { build, SOURCE } from './resample';
+import { build, sourceOf } from './resample';
 import { lightweightRenderer, type ChartRenderer, type RendererFactory } from './render';
 import { deserialize, History, serialize, StateError, Templates, type KeyValue } from './store';
 import { DrawingController } from './drawings/controller';
@@ -24,6 +25,8 @@ import { ActionLog, DrawingStore, serverDrawingIO, type DrawingIO } from './draw
 
 const LINK_GROUP = 'blue' as const;
 const STATE_KEY = 'athena.chartlab.state';
+const RECENT_KEY = 'athena.chartlab.intervals';
+const RECENT_MAX = 3;
 const INTERVALS: Timeframe[] = ['1m', '2m', '3m', '5m', '10m', '15m', '30m', '1h', '1D', '1W', '1M'];
 const SCALES: { id: ScaleMode; label: string; title: string }[] = [
   { id: 'auto', label: 'Auto', title: 'Linear price scale' },
@@ -124,6 +127,9 @@ export class ChartLabView {
   private typeSelect = el('select', 'lab-select lab-type');
   private rangeRow = el('span', 'ranges');
   private intervalRow = el('span', 'ranges');
+  private recentRow = el('span', 'ranges');
+  private intervalInput = el('input', 'cmd lab-interval');
+  private recent: string[] = [];
   private scaleRow = el('span', 'ranges');
   private adjButton = el('button', 'rbtn', 'ADJ');
   private undoButton = el('button', 'btn', 'Undo');
@@ -132,7 +138,7 @@ export class ChartLabView {
   private popover = el('div', 'lab-pop');
   private legendValues = new Map<string, HTMLElement>();
   private symbol = '';
-  private tf: Timeframe = '1D';
+  private tf: Interval = '1D';
   private rangeLabel = '1Y';
   private token = 0;
   private visible = false;
@@ -165,6 +171,7 @@ export class ChartLabView {
     this.model.subscribe((kind) => this.modelChanged(kind));
     this.offQuotes = ctx.feed.onQuotes((qs) => this.onQuotes(qs));
     this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
+    this.loadRecent();
     this.restoreSaved();
     this.formulas.subscribe(() => this.formulasChanged());
     this.py.subscribe(() => this.formulasChanged());
@@ -244,14 +251,69 @@ export class ChartLabView {
     this.ctx.bus.setSymbol(LINK_GROUP, s);
   }
 
+  /** An interval typed in the box: refused with the reason, or chosen (a built-in one selects its button; another is kept among the last few). */
+  private chooseInterval(text: string): void {
+    const p = parseInterval(text);
+    if (!p.ok) return this.say(`"${text.trim()}": ${p.error}`);
+    if (!p.builtin) {
+      this.recent = [p.id, ...this.recent.filter((id) => id !== p.id)].slice(0, RECENT_MAX);
+      try {
+        this.storage?.setItem(RECENT_KEY, JSON.stringify(this.recent));
+      } catch {
+        /* the buttons are a convenience */
+      }
+    }
+    this.intervalInput.value = '';
+    this.tf = p.id;
+    this.rangeLabel = this.defaultRangeFor(p.id);
+    void this.reload();
+    this.paintBar();
+  }
+
+  private loadRecent(): void {
+    try {
+      const list = JSON.parse(this.storage?.getItem(RECENT_KEY) ?? '[]') as unknown;
+      if (Array.isArray(list)) this.recent = list.filter((id): id is string => typeof id === 'string').filter((id) => { const p = parseInterval(id); return p.ok && !p.builtin && p.id === id; }).slice(0, RECENT_MAX);
+    } catch {
+      /* none kept, or not readable */
+    }
+  }
+
+  private paintRecent(): void {
+    const shown = this.tf in RANGES || this.recent.includes(this.tf) ? this.recent : [this.tf, ...this.recent];
+    this.recentRow.replaceChildren(
+      ...shown.map((id) => {
+        const b = el('button', `rbtn${id === this.tf ? ' on' : ''}`, id);
+        b.dataset.interval = id;
+        b.title = `${id} bars`;
+        b.addEventListener('click', () => this.chooseInterval(id));
+        return b;
+      }),
+    );
+  }
+
   private range(): Range {
-    return RANGES[this.tf].find((r) => r.label === this.rangeLabel) ?? RANGES[this.tf][0];
+    const list = this.rangesFor(this.tf);
+    return list.find((r) => r.label === this.rangeLabel) ?? list[0];
+  }
+
+  /** The ranges of an interval: the table for a built-in one, worked out from the text for one the person typed. */
+  private rangesFor(tf: Interval): Range[] {
+    if (tf in RANGES) return RANGES[tf as Timeframe];
+    const p = parseInterval(tf);
+    return p.ok ? rangesOf(p) : RANGES['1D'];
+  }
+
+  private defaultRangeFor(tf: Interval): string {
+    if (tf in DEFAULT_RANGE) return DEFAULT_RANGE[tf as Timeframe];
+    const p = parseInterval(tf);
+    return p.ok ? defaultRangeOf(p) : '1Y';
   }
 
   private async reload(): Promise<void> {
     if (!this.symbol) return;
     const mine = ++this.token;
-    const source = SOURCE[this.tf];
+    const source = sourceOf(this.tf);
     // every bar held for the interval is loaded, whatever the range: the range only decides how much is in view, and the rest can be scrolled back to
     const limit = null;
     this.say('loading…');
@@ -267,7 +329,8 @@ export class ChartLabView {
     this.hover = null;
     this.model.setBars(bars, this.tf);
     this.applyRange();
-    this.say(bars.length ? fetched.note : `no ${this.tf} bars for ${this.symbol}`);
+    const custom = !(this.tf in RANGES);
+    this.say(bars.length ? fetched.note || (custom ? `${this.tf} bars are built from ${source.fetch} bars` : '') : `no ${this.tf} bars for ${this.symbol}`);
     if (this.model.compare) void this.loadCompare(this.model.compare.symbol);
     this.paintBar();
   }
@@ -285,7 +348,7 @@ export class ChartLabView {
   private async loadCompare(symbol: string): Promise<void> {
     const mine = this.token;
     try {
-      const got = await this.fetcher(symbol, SOURCE[this.tf].fetch, null, true);
+      const got = await this.fetcher(symbol, sourceOf(this.tf).fetch, null, true);
       if (mine === this.token && this.model.compare?.symbol === symbol) this.model.setCompare(symbol, build(this.tf, got.bars));
     } catch {
       this.say(`could not load ${symbol} to compare`);
@@ -436,12 +499,16 @@ export class ChartLabView {
       b.title = `${tf} bars`;
       b.addEventListener('click', () => {
         this.tf = tf;
-        this.rangeLabel = DEFAULT_RANGE[tf];
+        this.rangeLabel = this.defaultRangeFor(tf);
         void this.reload();
         this.paintBar();
       });
       this.intervalRow.append(b);
     }
+    this.intervalInput.placeholder = 'e.g. 7m, 2h, 3D';
+    this.intervalInput.title = 'Type any interval: 7m, 90m, 2h, 3D, 2W, 3M. Press Enter.';
+    this.intervalInput.setAttribute('aria-label', 'custom interval');
+    this.intervalInput.addEventListener('keydown', (e) => e.key === 'Enter' && this.chooseInterval(this.intervalInput.value));
     this.typeSelect.setAttribute('aria-label', 'chart type');
     for (const t of CHART_TYPES) this.typeSelect.append(new Option(t.label, t.id));
     this.typeSelect.addEventListener('change', () => this.commit(() => this.model.setType(this.typeSelect.value as ChartType)));
@@ -493,7 +560,7 @@ export class ChartLabView {
     const snapshot = this.button('Snapshot', 'Download the chart as a PNG picture', () => this.snapshot());
     this.badge.title = 'Market status';
     this.toolbar.append(
-      this.symbolInput, this.intervalRow, this.typeSelect, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
+      this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
       this.templateSelect, snapshot, this.badge,
     );
     this.paintTemplates();
@@ -703,6 +770,7 @@ export class ChartLabView {
   private paintBar(): void {
     this.symbolInput.value = this.symbol;
     this.intervalRow.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.interval === this.tf));
+    this.paintRecent();
     this.scaleRow.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.scale === this.model.scale));
     this.adjButton.classList.toggle('on', this.model.adjusted);
     this.typeSelect.value = this.model.type;
@@ -710,7 +778,7 @@ export class ChartLabView {
     this.undoButton.disabled = !this.log.canUndo;
     this.redoButton.disabled = !this.log.canRedo;
     this.rangeRow.replaceChildren();
-    for (const r of RANGES[this.tf]) {
+    for (const r of this.rangesFor(this.tf)) {
       const b = el('button', `rbtn${r.label === this.range().label ? ' on' : ''}`, r.label);
       b.dataset.range = r.label;
       b.addEventListener('click', () => {
@@ -797,7 +865,8 @@ export class ChartLabView {
       el('b', '', `${this.symbol} · ${this.tf}`), ...[['O', w.o], ['H', w.h], ['L', w.l], ['C', w.c]].flatMap(([k, v]) => [el('span', 'lk', String(k)), el('span', `lv ${dir}`, price(Number(v)))]),
       el('span', `lv ${dir}`, `${signed(w.change)} (${pct(w.changePct)})`),
     );
-    const when = new Date((w.t + (this.tf === '1D' ? 0 : 19_800)) * 1000).toISOString().replace('T', ' ').slice(0, this.tf === '1D' ? 10 : 16);
+    const intraday = isIntraday(this.tf);
+    const when = new Date((w.t + (intraday ? 19_800 : 0)) * 1000).toISOString().replace('T', ' ').slice(0, intraday ? 16 : 10);
     this.windowBox.append(el('div', 'lab-wh', 'Data window'), el('div', 'note', when));
     for (const [k, v] of [['Open', price(w.o)], ['High', price(w.h)], ['Low', price(w.l)], ['Close', price(w.c)], ['Change', `${signed(w.change)} (${pct(w.changePct)})`], ['Volume', compact(w.v)]]) {
       const row = el('div', 'lab-wrow');
