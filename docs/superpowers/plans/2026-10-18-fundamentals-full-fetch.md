@@ -20,6 +20,10 @@ All three are resumable (`--resume`), throttled, stop cleanly if the exchange bl
 4. When stage 1's log ends with its summary line, start stage 2 (Nifty 500), then stage 3. Report each start and each finish with counts.
 5. When stage 3 ends: spot-check the Fundamentals tab for three companies that were not stored before (a bank, a manufacturer, a renamed company), record the counts (companies, periods, shareholding quarters, documents) in the TRD and the master design, `graphify update .`, commit.
 
+## Log of the run
+
+- 2026-10-18 evening: after about 50 companies every company began failing with "Read timed out" (41 s each, nothing stored) although fresh requests to NSE answered in 0.4 s: the long-running process's NSE session had gone stale. Killed and restarted with `--resume` (the first log is kept as `logs/fund-ingest-all.run1.log`); the same companies then fetched normally. **If a check finds many companies in a row with `failed 1 41s` and no filings, restart the process the same way.** A fix that rebuilds the session after repeated timeouts is on the roadmap.
+
 ## Safe to build meanwhile
 
 Anything that does not write `.athena/fundamentals.duckdb`: web and Rust work (chart types, screens and peers that read the warehouse's `screen` table, alerts), tests, docs. Rebuilding the terminal server does not disturb the fetch.
