@@ -176,7 +176,7 @@ class App implements AppContext {
     this.setView('research', symbol);
   }
 
-  private setView(view: View, symbol?: string): void {
+  private setView(view: View, symbol?: string, section?: string): void {
     this.view = view;
     try {
       localStorage.setItem(VIEW_KEY, view);
@@ -187,7 +187,7 @@ class App implements AppContext {
     this.viewTabs.forEach((b, v) => b.classList.toggle('on', v === view));
     if (view === 'lab') this.lab.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
     else this.lab.hide();
-    if (view === 'fund') this.fund.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
+    if (view === 'fund') this.fund.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol(), section);
     else this.fund.hide();
     if (view === 'research') this.research.show(symbol ?? this.bus.symbolOf('blue') ?? this.shownSymbol());
     else this.research.hide();
@@ -591,9 +591,9 @@ class App implements AppContext {
         if (cmd.symbol) this.bus.setSymbol('blue', cmd.symbol);
         return this.setView('lab', cmd.symbol ?? undefined);
       case 'fund':
-        this.say(cmd.symbol ? `fundamentals ${cmd.symbol}` : 'fundamentals');
+        this.say(cmd.section ? `${cmd.section.toLowerCase()}${cmd.symbol ? ` ${cmd.symbol}` : ''}` : cmd.symbol ? `fundamentals ${cmd.symbol}` : 'fundamentals');
         if (cmd.symbol) this.bus.setSymbol('blue', cmd.symbol);
-        return this.setView('fund', cmd.symbol ?? undefined);
+        return this.setView('fund', cmd.symbol ?? undefined, cmd.section);
       case 'research':
         this.say(cmd.symbol ? `research ${cmd.symbol}` : 'research');
         if (cmd.symbol) this.bus.setSymbol('blue', cmd.symbol);

@@ -71,3 +71,8 @@
 ### Task 8: docs and suites
 
 - [ ] TRD (2.36), master design, `graphify update .`, full suites, commit.
+
+## As built (2026-10-18)
+
+All eight tasks done. Differences from the plan: percentage fields take percent with or without the sign; the industry is spelled one way per industry and read from the largest index (a second pass over the first refresh, which showed `FINANCIAL SERVICES` and `Financial Services` as two industries); `/api/screens` is the plain document route as watchlists have, with validation on the page; the shared cell formatter moved to `screens/format.ts`. Counts: pytest 1,556 + 7, cargo 119, vitest 380, Playwright 12 new (5 Screen, 7 Peers).
+

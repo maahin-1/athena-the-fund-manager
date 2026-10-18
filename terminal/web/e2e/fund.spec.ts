@@ -28,7 +28,7 @@ test('the Fundamentals tab shows a stored company with its statements', async ({
 test('a company with nothing stored offers to fetch it', async ({ page }) => {
   await page.getByLabel('command line').fill('FUND RELIANCE');
   await page.getByLabel('command line').press('Enter');
-  await expect(page.locator('.fund .note')).toContainText('No statements are stored for RELIANCE yet');
+  await expect(page.getByText('No statements are stored for RELIANCE yet')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Fetch now' })).toBeVisible();
 });
 

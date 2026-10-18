@@ -245,3 +245,13 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Next in this track:** peers (6f) and screens (6g), alerts (5g, with drawing alerts), F&O and MCX, drawing tiers 2 and 3.
 
+## 22. Peers and screens (6f, 6g, 2026-10-18)
+
+**Done:** index membership and the exchange's industry for 641 stocks from the exchange's own files; peers on the Fundamentals page; a typed query language over 28 fields; saved screens on the server; industry and index filters, column choice and CSV export on the Screen tab. Spec `2026-10-18-peers-screens-design.md`, plan `2026-10-18-peers-screens.md`, TRD section 2.36.
+
+**Changed from the spec while building:** a bare number for a percentage field means percent (`roe > 15` equals `roe > 15%`), matching how the filters show them; the spec had said `15%` alone.
+
+**Honest limits:** the figures come from the stored screen (Yahoo-based fundamentals, with its quirks), not yet from the filing store; industry is known only for stocks in the indices above, the rest fall back to coarse sector; no natural-language queries (6i), no screen alerts (5g).
+
+**Next in this track:** `fund_metrics` from the ratio engine into the screen as the full fetch finishes; then 5i heatmaps and calendars.
+

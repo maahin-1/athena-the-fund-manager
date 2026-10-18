@@ -38,18 +38,24 @@ const page: FundPage = {
   history: [{ symbol: 'OLDTCS', note: 'OLDTCS was renamed TCS in 2020.', first: '2019-03-31', last: '2020-03-31' }],
 };
 
-function context(): AppContext {
+/** A stand-in for the stored market screen holding these rows (loaded when there are any). */
+function market(rows: Record<string, unknown>[] = []) {
+  return { subscribe: () => () => {}, loaded: rows.length > 0, rows: () => rows, get: (s: string) => rows.find((r) => r.symbol === s) };
+}
+
+function context(rows: Record<string, unknown>[] = [], openFundamentals = vi.fn()): AppContext {
   return {
+    market: market(rows),
     feed: { onQuotes: () => () => {}, need: vi.fn(), release: vi.fn(), quotes: new Map() },
     bus: { subscribe: () => () => {}, setSymbol: vi.fn(), symbolOf: () => undefined },
     watchlist: { items: ['TCS', 'SBIN'], subscribe: () => () => {} },
-    showSymbol: vi.fn(), openResearch: vi.fn(), openFundamentals: vi.fn(),
+    showSymbol: vi.fn(), openResearch: vi.fn(), openFundamentals,
   } as unknown as AppContext;
 }
 
-function view(): FundamentalsView {
+function view(rows: Record<string, unknown>[] = [], openFundamentals = vi.fn()): FundamentalsView {
   const chart: PriceChart = { element: document.createElement('div'), load: vi.fn(), dispose: vi.fn() };
-  return new FundamentalsView(context(), { makeChart: () => chart });
+  return new FundamentalsView(context(rows, openFundamentals), { makeChart: () => chart });
 }
 
 describe('fundamentals page', () => {
@@ -61,7 +67,7 @@ describe('fundamentals page', () => {
     expect(text).toContain('Tata Consultancy Services');
     expect(text).toContain('₹ 11,58,400 Cr');
     const sections = [...v.element.querySelectorAll('[data-section]')].map((s) => (s as HTMLElement).dataset.section);
-    expect(sections).toEqual(['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents']);
+    expect(sections).toEqual(['Peers', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents']);
     const pl = v.element.querySelector('[data-section="Profit & Loss"]')!;
     expect(pl.textContent).toContain('2,67,021');
     expect(pl.textContent).toContain('2,83,248'); // the TTM column
@@ -144,5 +150,95 @@ describe('fundamentals commands', () => {
     expect(parse('FUND sbin', ctx)).toEqual({ kind: 'fund', symbol: 'SBIN' });
     expect(parse('tcs fund', ctx)).toEqual({ kind: 'fund', symbol: 'TCS' });
     expect(parse('fund a;b', ctx).kind).toBe('error');
+  });
+});
+
+describe('the peers section', () => {
+  const stock = (symbol: string, extra: Record<string, unknown> = {}) => ({
+    symbol, name: `${symbol} Ltd`, kind: 'stock', sector: 'Technology', industry: 'Information Technology', indices: null, close: 100, market_cap_cr: 1000, pe: 20, pb: 3, roe: 0.2,
+    net_margin: 0.1, debt_to_equity: 0.5, dividend_yield: 0.02, revenue_growth: 0.1, ret_1y: 0.1, ...extra,
+  });
+  const rows = [
+    stock('TCS', { market_cap_cr: 890000, pe: 18, indices: 'NIFTY 50|NIFTY IT' }),
+    ...[900000, 600000, 500000, 300000, 200000, 100000, 50000, 20000].map((c, i) => stock(`PEER${i + 1}`, { market_cap_cr: c, pe: 20 + i * 5 })),
+    stock('BANK1', { sector: 'Financial Services', industry: 'Banks' }),
+  ];
+
+  it('shows where the company sits, itself first, its nearest peers, and the median of them', () => {
+    const v = view(rows);
+    v.render(page);
+    const box = v.element.querySelector('.fpeers')!;
+    expect(box.getAttribute('data-section')).toBe('Peers');
+    expect(box.querySelector('.fcrumbs')?.textContent).toBe('Technology › Information Technology');
+    expect([...box.querySelectorAll('.fchip')].map((c) => c.textContent)).toEqual(['NIFTY 50', 'NIFTY IT']);
+    expect(box.textContent).toContain('the other stocks in the exchange\'s industry "Information Technology"');
+    const lines = [...box.querySelectorAll('.fpeer-table tbody tr')];
+    expect(lines[0].className).toBe('subject');
+    expect(lines[0].textContent).toContain('TCS');
+    expect(lines.slice(1, 3).map((l) => l.querySelector('button')?.textContent)).toEqual(['PEER1', 'PEER2']); // nearest in market cap first
+    expect(lines[lines.length - 1].className).toBe('median');
+    expect(lines[lines.length - 1].textContent).toContain('Median of peers');
+    expect(lines).toHaveLength(1 + 8 + 1);
+  });
+
+  it('writes the sector once when the industry has the same name, and leaves the median price blank', () => {
+    const same = rows.map((r) => (r.symbol === 'BANK1' ? r : { ...r, sector: 'Information Technology' }));
+    const v = view(same);
+    v.render(page);
+    expect(v.element.querySelector('.fcrumbs')?.textContent).toBe('Information Technology');
+    const median = v.element.querySelector('.fpeer-table tbody tr.median')!;
+    expect(median.querySelectorAll('td')[1].textContent).toBe('—'); // the Close column
+  });
+
+  it('ranks the company on each figure against its peers and says which end is better', () => {
+    const v = view(rows);
+    v.render(page);
+    const pe = [...v.element.querySelectorAll('.fagainst-table tbody tr')].find((r) => r.textContent?.startsWith('P/E'))!;
+    expect(pe.textContent).toContain('1 of 9'); // the lowest P/E of the nine
+    expect(pe.textContent).toContain('lower');
+    const size = [...v.element.querySelectorAll('.fagainst-table tbody tr')].find((r) => r.textContent?.startsWith('Mkt cap'))!;
+    expect(size.textContent).toContain('no better end');
+  });
+
+  it('opens a peer\'s page when its name is clicked', () => {
+    const open = vi.fn();
+    const v = view(rows, open);
+    v.render(page);
+    (v.element.querySelector('.fpeer-table tbody tr:nth-child(2) button') as HTMLButtonElement).click();
+    expect(open).toHaveBeenCalledWith('PEER1');
+  });
+
+  it('shows more or fewer peers on request', () => {
+    const v = view(rows);
+    v.render(page);
+    const count = v.element.querySelector('select[aria-label="number of peers"]') as HTMLSelectElement;
+    count.value = '6';
+    count.dispatchEvent(new Event('change'));
+    expect(v.element.querySelectorAll('.fpeer-table tbody tr')).toHaveLength(1 + 6 + 1);
+  });
+
+  it('says so while the market screen has not arrived, and when the stock is not in it', () => {
+    const waiting = view();
+    waiting.render(page);
+    expect(waiting.element.querySelector('.fpeers')?.textContent).toContain('loading the market screen');
+    const missing = view([stock('OTHER')]);
+    missing.render(page);
+    expect(missing.element.querySelector('.fpeers')?.textContent).toContain('TCS is not a stock in the stored market screen');
+  });
+
+  it('is in the section buttons, first', () => {
+    const v = view(rows);
+    v.render(page);
+    expect([...v.element.querySelectorAll('.fnavbtn')].map((b) => b.textContent)[0]).toBe('Peers');
+  });
+});
+
+describe('the peers command', () => {
+  const ctx = { layouts: [] };
+  it('opens the Fundamentals page at the peers, in either word order', () => {
+    expect(parse('peers', ctx)).toEqual({ kind: 'fund', symbol: null, section: 'Peers' });
+    expect(parse('PEERS sbin', ctx)).toEqual({ kind: 'fund', symbol: 'SBIN', section: 'Peers' });
+    expect(parse('tcs peers', ctx)).toEqual({ kind: 'fund', symbol: 'TCS', section: 'Peers' });
+    expect(parse('peers a;b', ctx).kind).toBe('error');
   });
 });

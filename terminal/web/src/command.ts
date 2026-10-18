@@ -6,7 +6,7 @@ export type Command =
   | { kind: 'list'; name: string } // switch watchlist
   | { kind: 'remove'; symbol: string }
   | { kind: 'research'; symbol: string | null } // the Research page, on a stock when one is given
-  | { kind: 'fund'; symbol: string | null } // the Fundamentals page, on a stock when one is given
+  | { kind: 'fund'; symbol: string | null; section?: string } // the Fundamentals page, on a stock when one is given, scrolled to a section when named
   | { kind: 'lab'; symbol: string | null } // the Chart Lab page, on a stock when one is given
   | { kind: 'details'; symbol: string | null } // the Details panel of the Terminal, on a stock when one is given
   | { kind: 'terminal' }
@@ -63,6 +63,7 @@ export function parse(input: string, ctx: CommandContext): Command {
     if (saved) return { kind: 'layout', name: saved };
     if (head === 'RESEARCH') return { kind: 'research', symbol: null };
     if (head === 'FUND') return { kind: 'fund', symbol: null };
+    if (head === 'PEERS') return { kind: 'fund', symbol: null, section: 'Peers' };
     if (head === 'LAB') return { kind: 'lab', symbol: null };
     if (head === 'DETAILS' || head === 'DET') return { kind: 'details', symbol: null };
     if (head === 'TERMINAL') return { kind: 'terminal' };
@@ -86,6 +87,13 @@ export function parse(input: string, ctx: CommandContext): Command {
   }
   if (words.length === 2 && words[1].toUpperCase() === 'LAB') {
     return SYMBOL.test(head) ? { kind: 'lab', symbol: head } : fail(`"${words[0]}" is not a symbol`);
+  }
+  if (head === 'PEERS' && words.length === 2) {
+    const symbol = words[1].toUpperCase();
+    return SYMBOL.test(symbol) ? { kind: 'fund', symbol, section: 'Peers' } : fail(`"${words[1]}" is not a symbol`);
+  }
+  if (words.length === 2 && words[1].toUpperCase() === 'PEERS') {
+    return SYMBOL.test(head) ? { kind: 'fund', symbol: head, section: 'Peers' } : fail(`"${words[0]}" is not a symbol`);
   }
   if (head === 'FUND' && words.length === 2) {
     const symbol = words[1].toUpperCase();

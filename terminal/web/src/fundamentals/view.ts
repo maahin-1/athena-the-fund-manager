@@ -5,10 +5,11 @@ import { el, type AppContext } from '../panels/base';
 import { makePriceChart, type PriceChart } from './chartbox';
 import { periodLabel } from './format';
 import type { DocLink, FundPage } from './model';
+import { PeerBox } from './peerbox';
 import { growthBlocks, keyBlocks, tableFrom, type Table } from './tables';
 
 const LINK_GROUP = 'blue' as const; // the page follows the blue link group, like the Research page
-const SECTIONS = ['Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents'] as const;
+const SECTIONS = ['Peers', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents'] as const;
 type Basis = 'consolidated' | 'standalone';
 
 export interface ViewOptions {
@@ -86,6 +87,8 @@ export class FundamentalsView {
   private livePrice = el('span', 'fprice');
   private liveChange = el('span', 'fchg');
   private chart: PriceChart;
+  private peerBox: PeerBox;
+  private pendingSection: string | null = null; // a section to scroll to once the page is drawn
   private symbol = '';
   private basis: Basis = 'consolidated';
   private token = 0;
@@ -98,6 +101,7 @@ export class FundamentalsView {
   constructor(private ctx: AppContext, options: ViewOptions = {}) {
     this.element.hidden = true;
     this.chart = (options.makeChart ?? makePriceChart)();
+    this.peerBox = new PeerBox(ctx);
     this.picker.setAttribute('aria-label', 'pick a stock');
     this.searchBox.placeholder = 'Search a company…';
     this.searchBox.setAttribute('aria-label', 'search company');
@@ -118,7 +122,8 @@ export class FundamentalsView {
     this.paintList();
   }
 
-  show(symbol?: string): void {
+  show(symbol?: string, section?: string): void {
+    this.pendingSection = section ?? null;
     this.visible = true;
     this.element.hidden = false;
     const next = symbol || this.ctx.bus.symbolOf(LINK_GROUP) || this.symbol || this.ctx.watchlist.items[0] || '';
@@ -195,7 +200,17 @@ export class FundamentalsView {
     const button = el('button', 'btn ffetch', 'Fetch now');
     button.title = 'Download the statements, shareholding and documents from the exchange (about a minute)';
     button.addEventListener('click', () => void this.startFetch(symbol));
-    this.body.replaceChildren(note, button);
+    this.peerBox.show(symbol);
+    this.body.replaceChildren(note, button, this.peerBox.element);
+    this.scrollPending();
+  }
+
+  /** Scroll to the section a command asked for, once there is something to scroll to. */
+  private scrollPending(): void {
+    const name = this.pendingSection;
+    if (!name) return;
+    this.pendingSection = null;
+    setTimeout(() => this.body.querySelector(`[data-section="${name}"]`)?.scrollIntoView({ block: 'start' }), 0);
   }
 
   private async startFetch(symbol: string): Promise<void> {
@@ -278,7 +293,8 @@ export class FundamentalsView {
     this.head.replaceChildren(this.headerRow(page), this.navRow());
     this.body.replaceChildren();
     if (note) this.body.append(el('div', 'note', note));
-    this.body.append(this.keyGrid(page), this.chartCard(page));
+    this.peerBox.show(page.symbol);
+    this.body.append(this.keyGrid(page), this.chartCard(page), this.peerBox.element);
     this.body.append(
       this.section('Quarterly Results', drawTable(tableFrom(page.quarters.ends, page.quarters.rows)), page.quarters.rows.length > 0),
       this.section('Profit & Loss', this.plBlock(page), page.annual.income.length > 0),
@@ -290,6 +306,7 @@ export class FundamentalsView {
     this.body.append(this.section('Documents', this.documents(page), docCount(page) > 0), this.footer(page));
     this.paintLive(this.ctx.feed.quotes.get(page.symbol));
     this.paintList();
+    this.scrollPending();
   }
 
   private headerRow(page: FundPage): HTMLElement {

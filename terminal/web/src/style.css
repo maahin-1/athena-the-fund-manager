@@ -300,6 +300,36 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 /* the market screen */
 .screen { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: 10px 12px; background: var(--bg); }
 .screen > .note { padding: 2px 0; }
+/* peers on the company page */
+.fpeers .fwhere { margin-bottom: 6px; }
+.fcrumbs { font-weight: 600; margin-right: 10px; }
+.fchips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.fchip { border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; font-size: 11px; color: var(--fg-dim); }
+.fpeer-tools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 12px; margin: 6px 0; }
+.fpeer-table tr.subject td { background: var(--grid); font-weight: 600; }
+.fpeer-table tr.median td { color: var(--fg-dim); font-style: italic; border-top: 1px solid var(--border); }
+.linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.linklike:hover { text-decoration: underline; }
+.fagainst { margin-top: 12px; }
+.fagainst-table { max-width: 640px; }
+/* query, saved screens, columns */
+.squerybar { margin: 6px 0; }
+.squery { width: 100%; box-sizing: border-box; font-family: var(--mono, ui-monospace, monospace); }
+.squery.bad { border-color: var(--dn); }
+.qerror { color: var(--dn); min-height: 0; }
+.qerror:empty { display: none; }
+.sfieldlist { margin: 4px 0; color: var(--fg-dim); }
+.sfieldlist summary { cursor: pointer; }
+.sfields { border-collapse: collapse; margin: 6px 0; }
+.sfields td { padding: 2px 10px 2px 0; vertical-align: middle; }
+.sfields .fname { font-family: var(--mono, ui-monospace, monospace); color: var(--label); white-space: nowrap; }
+.sfields .btn { padding: 0 6px; font-family: var(--mono, ui-monospace, monospace); font-size: 11px; }
+.ssaved { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 4px 0; }
+.sname { width: 180px; }
+.stools { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 12px; margin: 4px 0; }
+.scols { color: var(--fg-dim); }
+.scols summary { cursor: pointer; }
+.scolgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 12px; margin: 6px 0; max-width: 900px; }
 .presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
 .presets .btn.on { border-color: var(--label); color: var(--label); }
 .sfilters { margin: 8px 0; padding: 8px 10px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; }
