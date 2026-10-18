@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -46,7 +46,7 @@ class Report:
 _blocked = is_block
 
 
-def with_predecessors(members: Sequence[Member], table: dict[str, tuple[Predecessor, ...]] = PREDECESSORS) -> list[Member]:
+def with_predecessors(members: Sequence[Member], table: Mapping[str, tuple[Predecessor, ...]] = PREDECESSORS) -> list[Member]:
     """The members, each followed by the earlier symbols of its company (see `athena.fundamentals.history`), so a renamed company's old statements are
     fetched under their old symbol. A symbol already in the list is not added twice."""
     out: list[Member] = []
