@@ -54,14 +54,21 @@ pub fn daily_bars(path: &Path, symbol: &str, limit: usize) -> Result<Vec<Bar>, B
     Ok(bars)
 }
 
-/// Yahoo's symbol for a name the page uses.
-pub fn yahoo_symbol(symbol: &str) -> String {
-    match symbol.to_ascii_uppercase().as_str() {
-        "NIFTY 50" => "^NSEI".into(),
-        "NIFTY BANK" => "^NSEBANK".into(),
-        other => format!("{other}.NS"),
+/// Yahoo's symbol for a name the page uses. A stock is its symbol and `.NS`. Yahoo names an index by a code of its own that cannot be made
+/// from the index's name, and only two are known here; any other index has no intraday source (`None`), so it is not asked for under a
+/// stock's name (which only ever fails) and the page is told.
+pub fn yahoo_symbol(symbol: &str) -> Option<String> {
+    let upper = symbol.to_ascii_uppercase();
+    match upper.as_str() {
+        "NIFTY 50" => Some("^NSEI".into()),
+        "NIFTY BANK" => Some("^NSEBANK".into()),
+        _ if is_index_name(&upper) || upper == "INDIA VIX" => None,
+        other => Some(format!("{other}.NS")),
     }
 }
+
+/// How long a failed intraday fetch is remembered, so a page that polls does not start the same failing request again and again.
+pub const RETRY_AFTER: Duration = Duration::from_secs(300);
 
 /// `(interval, range)` Yahoo accepts for a page timeframe; `None` for a timeframe that is not intraday.
 pub fn yahoo_params(tf: &str) -> Option<(&'static str, &'static str)> {
@@ -99,7 +106,7 @@ pub fn yahoo_fetcher(client: reqwest::Client) -> Fetcher {
         let client = client.clone();
         Box::pin(async move {
             let (interval, range) = yahoo_params(&tf)?;
-            let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}", yahoo_symbol(&symbol));
+            let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}", yahoo_symbol(&symbol)?);
             let body: Value = client
                 .get(url)
                 .query(&[("interval", interval), ("range", range)])
@@ -121,6 +128,7 @@ pub fn yahoo_fetcher(client: reqwest::Client) -> Fetcher {
 struct YahooInner {
     cache: HashMap<(String, String), (Instant, Vec<Bar>)>,
     loading: HashSet<(String, String)>,
+    failed: HashMap<(String, String), Instant>,
 }
 
 /// Intraday bars: returns what is cached at once and starts a background fetch when the cache is missing or older than `CACHE_FOR`.
@@ -141,15 +149,22 @@ impl Intraday {
         let mut g = self.inner.lock().unwrap();
         let cached = g.cache.get(&key).cloned();
         let fresh = cached.as_ref().is_some_and(|(at, _)| at.elapsed() < CACHE_FOR);
-        if !fresh && !g.loading.contains(&key) {
+        let failed = g.failed.get(&key).is_some_and(|at| at.elapsed() < RETRY_AFTER);
+        if !fresh && !failed && !g.loading.contains(&key) {
             g.loading.insert(key.clone());
             let (inner, fetch, k) = (self.inner.clone(), self.fetch.clone(), key.clone());
             tokio::spawn(async move {
                 let result = fetch(k.0.clone(), k.1.clone()).await;
                 let mut g = inner.lock().unwrap();
                 g.loading.remove(&k);
-                if let Some(bars) = result {
-                    g.cache.insert(k, (Instant::now(), bars));
+                match result {
+                    Some(bars) => {
+                        g.failed.remove(&k);
+                        g.cache.insert(k, (Instant::now(), bars));
+                    }
+                    None => {
+                        g.failed.insert(k, Instant::now());
+                    }
                 }
             });
         }
@@ -366,14 +381,41 @@ mod tests {
 
     #[test]
     fn yahoo_names_and_intervals() {
-        assert_eq!(yahoo_symbol("SBIN"), "SBIN.NS");
-        assert_eq!(yahoo_symbol("NIFTY 50"), "^NSEI");
-        assert_eq!(yahoo_symbol("nifty bank"), "^NSEBANK");
+        assert_eq!(yahoo_symbol("SBIN").as_deref(), Some("SBIN.NS"));
+        assert_eq!(yahoo_symbol("NIFTY 50").as_deref(), Some("^NSEI"));
+        assert_eq!(yahoo_symbol("nifty bank").as_deref(), Some("^NSEBANK"));
+        assert_eq!(yahoo_symbol("NIFTY IT"), None); // an index with no known code is not sent to the stock endpoint
+        assert_eq!(yahoo_symbol("India VIX"), None);
         assert_eq!(yahoo_params("5m"), Some(("5m", "1mo")));
         assert_eq!(yahoo_params("1h"), Some(("60m", "1y")));
         assert_eq!(yahoo_params("30m"), Some(("30m", "1mo")));
         assert_eq!(yahoo_params("2m"), None); // built from 1-minute bars by the page
         assert_eq!(yahoo_params("1D"), None);
+    }
+
+    #[tokio::test]
+    async fn a_failed_fetch_is_remembered_so_polling_does_not_repeat_it_and_the_page_can_say_there_is_nothing() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let fetch: Fetcher = Arc::new(move |_s, _t| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { None })
+        });
+        let intraday = Intraday::new(fetch);
+        let (_, loading) = intraday.get("NIFTY IT", "5m");
+        assert!(loading);
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            if !intraday.get("NIFTY IT", "5m").1 {
+                break;
+            }
+        }
+        let (bars, loading) = intraday.get("NIFTY IT", "5m");
+        assert!(bars.is_empty() && !loading); // not loading any more: the page reads this as "no bars"
+        for _ in 0..5 {
+            let _ = intraday.get("NIFTY IT", "5m");
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

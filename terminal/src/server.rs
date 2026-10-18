@@ -137,7 +137,14 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
         }
     } else if yahoo_params(&tf).is_some() {
         let (bars, loading) = state.bars.intraday.get(&symbol, &tf);
-        (bars, "yahoo", if loading { "loading".to_string() } else { String::new() })
+        let note = if loading {
+            "loading".to_string()
+        } else if bars.is_empty() {
+            format!("No {tf} bars for {symbol}: the free intraday source has none for it. Daily bars only.")
+        } else {
+            String::new()
+        };
+        (bars, "yahoo", note)
     } else {
         return StatusCode::BAD_REQUEST.into_response();
     };
