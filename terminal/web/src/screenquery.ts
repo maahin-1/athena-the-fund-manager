@@ -1,3 +1,4 @@
+import { nearest as nearestName } from './similar';
 import { RANGE_FILTERS, type Limits, type Row } from './screenlogic';
 
 /** The screen's query language: `pe < 20 and roe > 15 and (sector = "Technology" or index = "NIFTY 50")`. Pure: parse once, evaluate over every row.
@@ -128,29 +129,6 @@ function tokenize(text: string): Tok[] {
 const KEYWORDS = new Set(['and', 'or', 'not', 'between', 'in', 'is', 'null', 'contains']);
 const isWord = (t: Tok, word: string): boolean => t.k === 'word' && t.v.toLowerCase() === word;
 
-function distance(a: string, b: string): number {
-  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    let prev = row[0];
-    row[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const keep = row[j];
-      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
-      prev = keep;
-    }
-  }
-  return row[b.length];
-}
-
-function nearest(name: string): string | null {
-  let best: [number, string] | null = null;
-  for (const known of BY_NAME.keys()) {
-    const d = distance(name.toLowerCase(), known);
-    if (d <= 2 && (!best || d < best[0])) best = [d, known];
-  }
-  return best ? best[1] : null;
-}
-
 class Parser {
   private i = 0;
   constructor(private tokens: Tok[]) {}
@@ -214,7 +192,7 @@ class Parser {
     if (t.k !== 'word' || KEYWORDS.has(t.v.toLowerCase())) return fail(`expected a condition, found "${t.v}"`, t.at, Math.max(1, t.len));
     const field = BY_NAME.get(t.v.toLowerCase());
     if (!field) {
-      const guess = nearest(t.v);
+      const guess = nearestName(t.v, BY_NAME.keys());
       return fail(`unknown field "${t.v}"${guess ? `; did you mean "${guess}"?` : ''}`, t.at, t.len);
     }
     this.next();
