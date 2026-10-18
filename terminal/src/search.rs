@@ -1,6 +1,7 @@
 //! Finding an instrument as you type: symbols, company names, ISINs and index names, ranked like a search box (exact, then starts-with, then
 //! every word matching, then a small typo allowance). Among equals the more traded stock comes first, so "tata" shows the big Tata names first.
 //! Built from the warehouse's `universe` and `screen` tables and kept in memory; typing never touches the database.
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -8,9 +9,8 @@ use std::time::{Duration, Instant};
 use duckdb::{AccessMode, Config, Connection};
 use serde::Serialize;
 
-/// A company's old symbol, so that "zomato" finds Eternal. The exchange's own rename list holds more; these are the ones the page's history knows.
-const ALIASES: &[(&str, &str)] =
-    &[("ETERNAL", "ZOMATO"), ("TMPV", "TATAMOTORS"), ("TATACONSUM", "TATAGLOBAL"), ("SHRIRAMFIN", "SRTRANSFIN"), ("BAJAJ-AUTO", "BAJAJAUTO")];
+/// How many renames back an old symbol is followed (the price join and the statements follow the same number).
+const MAX_HOPS: usize = 5;
 const REBUILD_AFTER: Duration = Duration::from_secs(600);
 pub const MAX_QUERY: usize = 60;
 
@@ -73,23 +73,30 @@ pub struct SearchIndex {
 }
 
 impl SearchIndex {
-    /// `rows` are (symbol, kind, name, isin, traded value); `indices` are index names.
-    pub fn new(rows: Vec<(String, String, String, String, f64)>, indices: Vec<String>) -> Self {
+    /// `rows` are (symbol, kind, name, isin, traded value); `indices` are index names; `renames` are (old symbol, new symbol) pairs from the
+    /// warehouse's rename table, so that an old symbol finds the company that has it now, through any number of renames.
+    pub fn new(rows: Vec<(String, String, String, String, f64)>, indices: Vec<String>, renames: &[(String, String)]) -> Self {
+        let mut earlier: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (old, new) in renames {
+            earlier.entry(new.as_str()).or_default().push(old.as_str());
+        }
         let mut entries: Vec<Entry> = rows
             .into_iter()
-            .map(|(symbol, kind, name, isin, traded)| Self::entry(symbol, kind, name, isin, traded))
+            .map(|(symbol, kind, name, isin, traded)| {
+                let aliases = old_symbols(&earlier, &symbol);
+                Self::entry(symbol, kind, name, isin, traded, aliases)
+            })
             .collect();
         for name in indices {
             let upper = name.to_uppercase();
             if !entries.iter().any(|e| e.hit.symbol == upper) {
-                entries.push(Self::entry(upper.clone(), "index".into(), upper, String::new(), 0.0));
+                entries.push(Self::entry(upper.clone(), "index".into(), upper, String::new(), 0.0, Vec::new()));
             }
         }
         SearchIndex { entries }
     }
 
-    fn entry(symbol: String, kind: String, name: String, isin: String, traded: f64) -> Entry {
-        let aliases: Vec<String> = ALIASES.iter().filter(|(now, _)| *now == symbol).map(|(_, old)| old.to_lowercase()).collect();
+    fn entry(symbol: String, kind: String, name: String, isin: String, traded: f64, aliases: Vec<String>) -> Entry {
         let norm = normalize(&name);
         let mut words: Vec<String> = norm.split(' ').filter(|w| !w.is_empty()).map(String::from).collect();
         words.push(symbol.to_lowercase());
@@ -198,6 +205,25 @@ impl SearchCache {
     }
 }
 
+/// Every earlier symbol of `symbol`, lower case, following renames back at most `MAX_HOPS` times and never through a symbol twice.
+fn old_symbols(earlier: &HashMap<&str, Vec<&str>>, symbol: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut frontier = vec![symbol];
+    for _ in 0..MAX_HOPS {
+        let mut next = Vec::new();
+        for name in frontier {
+            for old in earlier.get(name).into_iter().flatten() {
+                if *old != symbol && !out.iter().any(|o| o.eq_ignore_ascii_case(old)) {
+                    out.push(old.to_lowercase());
+                    next.push(*old);
+                }
+            }
+        }
+        frontier = next;
+    }
+    out
+}
+
 fn load(path: &Path, live_indices: &[String]) -> Option<SearchIndex> {
     let config = Config::default().access_mode(AccessMode::ReadOnly).ok()?;
     let conn = Connection::open_with_flags(path, config).ok()?;
@@ -215,7 +241,13 @@ fn load(path: &Path, live_indices: &[String]) -> Option<SearchIndex> {
         .and_then(|mut s| s.query_map([], |r| r.get::<_, String>(0)).ok().map(|it| it.filter_map(Result::ok).collect()))
         .unwrap_or_default();
     indices.extend(live_indices.iter().cloned());
-    Some(SearchIndex::new(rows, indices))
+    // the old symbols of companies that stopped trading under them; a warehouse built before the table existed has none
+    let renames: Vec<(String, String)> = conn
+        .prepare("SELECT old, new FROM symbol_renames WHERE retired")
+        .ok()
+        .and_then(|mut s| s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).ok().map(|it| it.filter_map(Result::ok).collect()))
+        .unwrap_or_default();
+    Some(SearchIndex::new(rows, indices, &renames))
 }
 
 #[cfg(test)]
@@ -240,6 +272,7 @@ mod tests {
                 row("XYZSME", "sme", "Some Small Company Limited", "", 1.0),
             ],
             vec!["NIFTY 50".into(), "Nifty Bank".into(), "NIFTY BANK".into(), "INDIA VIX".into()],
+            &[("ZOMATO".into(), "ETERNAL".into()), ("TATAMOTORS".into(), "TMPV".into()), ("OLDEST".into(), "ZOMATO".into()), ("RELIANCE".into(), "RELIANCE".into())],
         )
     }
 
@@ -276,6 +309,8 @@ mod tests {
     fn an_old_symbol_finds_the_renamed_company() {
         assert_eq!(symbols("zomato")[0], "ETERNAL");
         assert_eq!(symbols("tatamotors")[0], "TMPV");
+        assert_eq!(symbols("oldest")[0], "ETERNAL"); // through a chain: OLDEST became ZOMATO, which became ETERNAL
+        assert_eq!(symbols("reliance")[0], "RELIANCE"); // a symbol is never its own old symbol
     }
 
     #[test]

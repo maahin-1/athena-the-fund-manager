@@ -165,6 +165,9 @@ pub struct Adjusted {
     /// Large overnight price breaks no record explains (inside the last year).
     #[serde(default)]
     pub flags: Vec<String>,
+    /// The earlier symbols whose bars the history begins with (the helper joins them; see `athena.warehouse.renames`).
+    #[serde(default)]
+    pub joined: Vec<Joined>,
 }
 
 pub type AdjustFetcher = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Option<Adjusted>> + Send>> + Send + Sync>;
@@ -224,79 +227,78 @@ pub struct Bars {
     pub adjusted: AdjustedDaily,
 }
 
-/// Companies whose exchange symbol changed while the company, and so its price history, carried on (new symbol, old symbol). The warehouse
-/// keeps each symbol's bars under the name it traded as, so a chart of the new symbol would start on the rename day; the old bars are joined
-/// behind it. A demerger (Tata Motors into TMPV) is not here: its price steps down at the split and needs its own treatment.
-pub const PREDECESSORS: &[(&str, &str)] = &[("SHRIRAMFIN", "SRTRANSFIN"), ("ETERNAL", "ZOMATO"), ("TATACONSUM", "TATAGLOBAL")];
-
-/// A price step between the old symbol's last bar and the new one's first bar beyond this is worth telling the reader about.
-const JOIN_STEP_WARN: f64 = 0.25;
-
-pub fn predecessor(symbol: &str) -> Option<&'static str> {
-    PREDECESSORS.iter().find(|(new, _)| new.eq_ignore_ascii_case(symbol)).map(|(_, old)| *old)
+/// An earlier symbol of the same company whose prices run on into the symbol's own, as the warehouse's rename table records and has checked
+/// against the bars (`athena.warehouse.renames`). Nothing here names a company.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Joined {
+    pub symbol: String,
+    /// The rename's date, `YYYY-MM-DD`.
+    pub until: String,
+    /// A sentence for the page.
+    pub note: String,
 }
 
-/// What the adjustment did to the newer series on its first day: the adjusted close over the printed one. 1.0 when either is missing,
-/// they are on different days, or a close is not positive (then the older bars are joined as printed).
-pub fn join_scale(adjusted_first: Option<&Bar>, raw_first: Option<&Bar>) -> f64 {
-    match (adjusted_first, raw_first) {
-        (Some(a), Some(r)) if a.t == r.t && a.c > 0.0 && r.c > 0.0 => a.c / r.c,
-        _ => 1.0,
+fn joined_note(old: &str, until: &str, event: &str) -> String {
+    let note = format!("Earlier history is {old}'s, the symbol until {until}.");
+    if event.is_empty() {
+        note
+    } else {
+        format!("{note} Around then: {event}.")
     }
 }
 
-/// `older` in front of `newer`. The older prices are multiplied by `scale` and its volume divided by it, so a split or bonus that the newer
-/// symbol's adjustment has already taken out runs through the older bars as well. Older bars on or after the newer's first day are dropped.
-pub fn join_history(older: &[Bar], newer: &[Bar], scale: f64) -> Vec<Bar> {
-    let Some(first) = newer.first() else { return Vec::new() };
-    let mut out: Vec<Bar> = older
-        .iter()
-        .filter(|b| b.t < first.t)
-        .map(|b| Bar { t: b.t, o: b.o * scale, h: b.h * scale, l: b.l * scale, c: b.c * scale, v: if scale > 0.0 { b.v / scale } else { b.v } })
-        .collect();
-    out.extend_from_slice(newer);
+/// How many renames back a chain is followed (the Python side stops at the same number).
+const MAX_HOPS: usize = 5;
+
+/// The renames that lead to `symbol` whose prices join, nearest first, each with the unix second of the old symbol's last bar. Empty
+/// when the table is missing (a warehouse built before it existed) or holds nothing for the symbol.
+fn rename_chain(conn: &Connection, symbol: &str) -> Vec<(Joined, i64)> {
+    let mut out: Vec<(Joined, i64)> = Vec::new();
+    let mut here = symbol.to_string();
+    for _ in 0..MAX_HOPS {
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT old, CAST(change_day AS VARCHAR), COALESCE(event, ''), CAST(epoch(CAST(last_old_day AS TIMESTAMP)) AS BIGINT) \
+             FROM symbol_renames WHERE new = ? AND joinable ORDER BY change_day DESC",
+        ) else {
+            return out;
+        };
+        let Ok(rows) = stmt.query_map(duckdb::params![here], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))) else {
+            return out;
+        };
+        let next = rows.filter_map(Result::ok).find(|(old, ..)| old != symbol && !out.iter().any(|(j, _)| &j.symbol == old));
+        let Some((old, until, event, last)) = next else { break };
+        out.push((Joined { note: joined_note(&old, &until, &event), symbol: old.clone(), until }, last));
+        here = old;
+    }
     out
 }
 
-impl Bars {
-    /// `bars` (a stock's whole daily history, adjusted when `adjusted` is true) with its old symbol's history in front when it has one.
-    /// Returns the old symbol that was joined and, when the join is not smooth, a sentence saying so.
-    pub async fn with_predecessor(&self, symbol: &str, bars: Vec<Bar>, adjusted: bool) -> (Vec<Bar>, Option<(&'static str, String)>) {
-        let Some(old) = predecessor(symbol) else { return (bars, None) };
-        if bars.is_empty() {
-            return (bars, None);
-        }
-        let older = match if adjusted { self.adjusted.get(old).await } else { None } {
-            Some(a) => a.bars.clone(),
-            None => {
-                let (path, name) = (self.warehouse.clone(), old.to_string());
-                match tokio::task::spawn_blocking(move || daily_bars(&path, &name, 5000)).await {
-                    Ok(Ok(raw)) => raw,
-                    _ => return (bars, None),
-                }
-            }
-        };
-        let scale = if adjusted {
-            let (path, name) = (self.warehouse.clone(), symbol.to_ascii_uppercase());
-            let raw = tokio::task::spawn_blocking(move || daily_bars(&path, &name, 5000)).await.ok().and_then(Result::ok).unwrap_or_default();
-            join_scale(bars.first(), raw.first())
-        } else {
-            1.0
-        };
-        let joined = join_history(&older, &bars, scale);
-        let added = joined.len() - bars.len();
-        if added == 0 {
-            return (bars, None);
-        }
-        let (last_old, first_new) = (&joined[added - 1], &joined[added]);
-        let step = if last_old.c > 0.0 { first_new.c / last_old.c - 1.0 } else { 0.0 };
-        let note = if step.abs() > JOIN_STEP_WARN {
-            format!("{old} joins here with a {:+.0}% step that no record explains.", step * 100.0)
-        } else {
-            String::new()
-        };
-        (joined, Some((old, note)))
+/// Newest `limit` daily bars as the exchange printed them, oldest first, with the bars of the symbol's earlier symbols in front when the
+/// symbol's own do not fill `limit` (a company that changed its symbol keeps one history). A stock reads `bars`; an index reads `index_bars`.
+pub fn daily_bars_joined(path: &Path, symbol: &str, limit: usize) -> Result<(Vec<Bar>, Vec<Joined>), BarsError> {
+    let mut bars = daily_bars(path, symbol, limit)?;
+    if is_index_name(symbol) || bars.len() >= limit || bars.is_empty() {
+        return Ok((bars, Vec::new()));
     }
+    let config = Config::default().access_mode(AccessMode::ReadOnly).map_err(|_| BarsError::Busy)?;
+    let chain = Connection::open_with_flags(path, config).map(|conn| rename_chain(&conn, symbol)).unwrap_or_default();
+    let mut joined = Vec::new();
+    for (step, last) in chain {
+        let room = limit.saturating_sub(bars.len());
+        if room == 0 {
+            break;
+        }
+        let first = bars[0].t;
+        let mut before: Vec<Bar> = daily_bars(path, &step.symbol, room)?.into_iter().filter(|b| b.t <= last && b.t < first).collect();
+        if before.is_empty() {
+            continue;
+        }
+        before.append(&mut bars);
+        bars = before;
+        joined.push(step);
+    }
+    joined.reverse();
+    Ok((bars, joined))
 }
 
 #[cfg(test)]
@@ -405,7 +407,7 @@ mod adjusted_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn adjusted() -> Adjusted {
-        Adjusted { bars: vec![Bar { t: 1, o: 1.0, h: 1.0, l: 1.0, c: 1.0, v: 1.0 }], flags: vec![] }
+        Adjusted { bars: vec![Bar { t: 1, o: 1.0, h: 1.0, l: 1.0, c: 1.0, v: 1.0 }], flags: vec![], joined: vec![] }
     }
 
     #[tokio::test]
@@ -446,114 +448,97 @@ mod adjusted_tests {
 mod join_tests {
     use super::*;
 
-    fn bar(t: i64, c: f64, v: f64) -> Bar {
-        Bar { t, o: c, h: c, l: c, c, v }
-    }
+    const TABLE: &str = "CREATE TABLE symbol_renames (old VARCHAR NOT NULL, new VARCHAR NOT NULL, change_day DATE NOT NULL, company VARCHAR, last_old_day DATE, first_new_day DATE, gap_days INTEGER, step DOUBLE, joinable BOOLEAN NOT NULL, retired BOOLEAN NOT NULL, event VARCHAR, reason VARCHAR, checked_at TIMESTAMP NOT NULL);";
 
-    #[test]
-    fn older_bars_are_scaled_and_dropped_from_the_newer_first_day() {
-        let older = [bar(1, 100.0, 10.0), bar(2, 110.0, 20.0), bar(3, 999.0, 1.0)];
-        let newer = [bar(3, 24.0, 100.0), bar(4, 25.0, 100.0)];
-        let joined = join_history(&older, &newer, 0.2);
-        assert_eq!(joined.iter().map(|b| b.t).collect::<Vec<_>>(), vec![1, 2, 3, 4]);
-        assert_eq!(joined[0].c, 20.0);
-        assert_eq!(joined[0].v, 50.0); // fewer, dearer shares became more, cheaper ones
-        assert_eq!(joined[2].c, 24.0); // the newer bars are untouched
-        assert!(join_history(&older, &[], 0.2).is_empty());
-    }
-
-    #[test]
-    fn the_scale_is_the_adjustment_on_the_newer_first_day_or_one() {
-        let (a, r) = (bar(5, 277.85, 1.0), bar(5, 1389.25, 1.0));
-        assert!((join_scale(Some(&a), Some(&r)) - 0.2).abs() < 1e-9);
-        assert_eq!(join_scale(Some(&a), Some(&bar(6, 1389.25, 1.0))), 1.0); // not the same day
-        assert_eq!(join_scale(Some(&a), None), 1.0);
-        assert_eq!(join_scale(None, None), 1.0);
-    }
-
-    #[test]
-    fn only_the_listed_renames_have_a_predecessor() {
-        assert_eq!(predecessor("shriramfin"), Some("SRTRANSFIN"));
-        assert_eq!(predecessor("ETERNAL"), Some("ZOMATO"));
-        assert_eq!(predecessor("TATACONSUM"), Some("TATAGLOBAL"));
-        assert_eq!(predecessor("SBIN"), None);
-        assert_eq!(predecessor("TMPV"), None); // a demerger, not a rename
-    }
-
-    fn warehouse(name: &str, rows: &str) -> PathBuf {
+    fn warehouse(name: &str, bars: &[(&str, &str, f64)], renames: &[(&str, &str, &str, &str, bool, &str)]) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("athena-join-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("w.duckdb");
         let c = Connection::open(&path).unwrap();
-        c.execute_batch(&format!(
-            "CREATE TABLE bars (symbol VARCHAR, day DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume DOUBLE, series VARCHAR, source VARCHAR, loaded_at TIMESTAMP);
-             INSERT INTO bars VALUES {rows};"
-        ))
-        .unwrap();
+        c.execute_batch("CREATE TABLE bars (symbol VARCHAR, day DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume DOUBLE, series VARCHAR, source VARCHAR, loaded_at TIMESTAMP);").unwrap();
+        for (symbol, day, close) in bars {
+            c.execute_batch(&format!("INSERT INTO bars VALUES ('{symbol}', DATE '{day}', {close}, {close}, {close}, {close}, 10, 'EQ', 't', now());")).unwrap();
+        }
+        c.execute_batch(TABLE).unwrap();
+        c.execute_batch("CREATE TABLE index_bars (index_name VARCHAR, day DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, pe DOUBLE, pb DOUBLE, div_yield DOUBLE);").unwrap();
+        for (old, new, change, last_old, joinable, event) in renames {
+            c.execute_batch(&format!("INSERT INTO symbol_renames VALUES ('{old}', '{new}', DATE '{change}', 'Co', DATE '{last_old}', NULL, NULL, NULL, {joinable}, true, '{event}', '', now());")).unwrap();
+        }
         path
     }
 
-    fn row(symbol: &str, day: &str, close: f64, volume: f64) -> String {
-        format!("('{symbol}', DATE '{day}', {close}, {close}, {close}, {close}, {volume}, 'EQ', 't', now())")
+    fn closes(bars: &[Bar]) -> Vec<f64> {
+        bars.iter().map(|b| b.c).collect()
     }
 
-    /// An adjuster that takes `factor` out of one symbol's bars (as a later split would) and leaves the others as printed.
-    fn adjuster(path: PathBuf, symbol: &'static str, factor: f64) -> AdjustedDaily {
-        AdjustedDaily::new(Arc::new(move |s: String| {
-            let path = path.clone();
-            Box::pin(async move {
-                let mut bars = daily_bars(&path, &s, 5000).ok()?;
-                if s == symbol {
-                    for b in &mut bars {
-                        (b.o, b.h, b.l, b.c, b.v) = (b.o * factor, b.h * factor, b.l * factor, b.c * factor, b.v / factor);
-                    }
-                }
-                Some(Adjusted { bars, flags: vec![] })
-            })
-        }))
+    #[test]
+    fn a_renamed_symbol_gets_its_earlier_symbols_bars_in_front_as_printed() {
+        let path = warehouse(
+            "a",
+            &[("A", "2022-12-15", 1.0), ("A", "2022-12-16", 2.0), ("B", "2022-12-19", 3.0), ("B", "2022-12-20", 4.0)],
+            &[("A", "B", "2022-12-19", "2022-12-16", true, "")],
+        );
+        let (bars, joined) = daily_bars_joined(&path, "B", 100).unwrap();
+        assert_eq!(closes(&bars), vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(joined, vec![Joined { symbol: "A".into(), until: "2022-12-19".into(), note: "Earlier history is A's, the symbol until 2022-12-19.".into() }]);
     }
 
-    fn bars_over(path: &Path, adjusted: AdjustedDaily) -> Bars {
-        Bars { warehouse: path.to_path_buf(), intraday: Intraday::new(Arc::new(|_, _| Box::pin(async { None }))), adjusted }
+    #[test]
+    fn a_chain_is_followed_oldest_first_and_an_event_is_in_the_note() {
+        let path = warehouse(
+            "b",
+            &[("A", "2022-01-03", 1.0), ("B", "2022-06-01", 2.0), ("C", "2022-12-01", 3.0)],
+            &[("A", "B", "2022-06-01", "2022-01-03", true, ""), ("B", "C", "2022-12-01", "2022-06-01", true, "Demerger (2022-11-20)")],
+        );
+        let (bars, joined) = daily_bars_joined(&path, "C", 100).unwrap();
+        assert_eq!(closes(&bars), vec![1.0, 2.0, 3.0]);
+        assert_eq!(joined.iter().map(|j| j.symbol.as_str()).collect::<Vec<_>>(), vec!["A", "B"]);
+        assert!(joined[1].note.ends_with("Around then: Demerger (2022-11-20)."));
     }
 
-    #[tokio::test]
-    async fn a_renamed_stock_gets_its_old_symbols_history_scaled_to_match_the_split_that_followed() {
-        let rows = [
-            row("SRTRANSFIN", "2022-12-15", 1393.2, 100.0),
-            row("SRTRANSFIN", "2022-12-19", 1372.25, 100.0),
-            row("SHRIRAMFIN", "2022-12-20", 1389.25, 50.0),
-            row("SHRIRAMFIN", "2022-12-21", 1370.0, 60.0),
-        ]
-        .join(",");
-        let path = warehouse("a", &rows);
-        let bars = bars_over(&path, adjuster(path.clone(), "SHRIRAMFIN", 0.2));
-        let own = bars.adjusted.get("SHRIRAMFIN").await.unwrap().bars.clone();
-        let (joined, said) = bars.with_predecessor("SHRIRAMFIN", own, true).await;
-        assert_eq!(joined.len(), 4);
-        let closes: Vec<f64> = joined.iter().map(|b| (b.c * 100.0).round() / 100.0).collect();
-        assert_eq!(closes, vec![278.64, 274.45, 277.85, 274.0]); // the old bars now sit beside the new ones, no 5x cliff
-        assert_eq!(joined[0].v, 500.0);
-        let (old, note) = said.unwrap();
-        assert_eq!(old, "SRTRANSFIN");
-        assert_eq!(note, ""); // a 1.2% step is not worth a warning
+    #[test]
+    fn a_rename_whose_prices_do_not_join_a_missing_table_and_an_index_are_left_alone() {
+        let path = warehouse("c", &[("A", "2018-01-02", 1.0), ("B", "2022-12-20", 4.0)], &[("A", "B", "2022-12-20", "2018-01-02", false, "")]);
+        let (bars, joined) = daily_bars_joined(&path, "B", 100).unwrap();
+        assert_eq!((closes(&bars), joined), (vec![4.0], vec![]));
 
-        let raw_own = daily_bars(&path, "SHRIRAMFIN", 5000).unwrap();
-        let (raw, _) = bars.with_predecessor("SHRIRAMFIN", raw_own, false).await;
-        assert_eq!(raw.iter().map(|b| b.c).collect::<Vec<_>>(), vec![1393.2, 1372.25, 1389.25, 1370.0]); // as printed, they already join
+        let none = temp_plain("d");
+        assert_eq!(closes(&daily_bars_joined(&none, "B", 100).unwrap().0), vec![4.0]); // no table at all
+
+        let (index, joined) = daily_bars_joined(&path, "NIFTY 50", 100).unwrap();
+        assert!(index.is_empty() && joined.is_empty());
     }
 
-    #[tokio::test]
-    async fn a_join_that_steps_by_a_quarter_or_more_says_so_and_other_stocks_are_left_alone() {
-        let rows = [row("ZOMATO", "2025-04-08", 100.0, 1.0), row("ETERNAL", "2025-04-09", 150.0, 1.0)].join(",");
-        let path = warehouse("b", &rows);
-        let bars = bars_over(&path, adjuster(path.clone(), "NONE", 1.0));
-        let own = daily_bars(&path, "ETERNAL", 5000).unwrap();
-        let (joined, said) = bars.with_predecessor("ETERNAL", own.clone(), false).await;
-        assert_eq!(joined.len(), 2);
-        assert!(said.unwrap().1.contains("+50% step"));
-        let (same, none) = bars.with_predecessor("SBIN", own.clone(), false).await;
-        assert_eq!((same, none), (own, None));
+    fn temp_plain(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("athena-join-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("w.duckdb");
+        let c = Connection::open(&path).unwrap();
+        c.execute_batch("CREATE TABLE bars (symbol VARCHAR, day DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume DOUBLE, series VARCHAR, source VARCHAR, loaded_at TIMESTAMP); INSERT INTO bars VALUES ('B', DATE '2022-12-20', 4, 4, 4, 4, 1, 'EQ', 't', now());").unwrap();
+        path
+    }
+
+    #[test]
+    fn a_limit_the_own_bars_fill_does_not_read_the_earlier_symbol_and_a_rename_never_loops() {
+        let path = warehouse(
+            "e",
+            &[("A", "2022-12-15", 1.0), ("B", "2022-12-19", 3.0), ("B", "2022-12-20", 4.0)],
+            &[("A", "B", "2022-12-19", "2022-12-15", true, ""), ("B", "A", "2022-12-19", "2022-12-20", true, "")],
+        );
+        let (bars, joined) = daily_bars_joined(&path, "B", 2).unwrap();
+        assert_eq!((closes(&bars), joined.len()), (vec![3.0, 4.0], 0));
+        let (bars, joined) = daily_bars_joined(&path, "B", 5).unwrap();
+        assert_eq!((closes(&bars), joined.len()), (vec![1.0, 3.0, 4.0], 1)); // B back to A, and A's own rename to B is not followed again
+    }
+
+    #[test]
+    fn the_python_helpers_joined_list_is_read() {
+        let body = br#"{"bars":[{"t":1,"o":1.0,"h":1.0,"l":1.0,"c":1.0,"v":1.0}],"flags":[],"notes":[],"joined":[{"symbol":"OLD","until":"2022-12-20","note":"Earlier history is OLD's, the symbol until 2022-12-20."}]}"#;
+        let a: Adjusted = serde_json::from_slice(body).unwrap();
+        assert_eq!(a.joined[0].symbol, "OLD");
+        let old: Adjusted = serde_json::from_slice(br#"{"bars":[],"flags":[]}"#).unwrap();
+        assert!(old.joined.is_empty()); // a helper that does not say is read as joining nothing
     }
 }

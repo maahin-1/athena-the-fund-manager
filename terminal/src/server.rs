@@ -18,7 +18,7 @@ use tower_http::services::ServeDir;
 use crate::angel::stream::FeedStatus;
 use crate::analysis::analysis;
 use crate::verdict_job::{symbol_ok as verdict_symbol_ok, StartError, VerdictJobs};
-use crate::bars::{daily_bars, yahoo_params, Bars, DEFAULT_LIMIT};
+use crate::bars::{daily_bars_joined, yahoo_params, Bars, DEFAULT_LIMIT};
 use crate::fundamentals::{FundError, FundamentalsJobs};
 use crate::hub::Hub;
 use crate::layouts::{LayoutError, LayoutStore};
@@ -102,6 +102,11 @@ fn symbol_ok(symbol: &str) -> bool {
     !symbol.is_empty() && symbol.len() <= 24 && symbol.chars().all(|c| c.is_ascii_alphanumeric() || " &-^".contains(c))
 }
 
+/// `note` followed by the sentence for each joined earlier symbol.
+fn join_notes(note: String, joined: &[crate::bars::Joined]) -> String {
+    std::iter::once(note).chain(joined.iter().map(|j| j.note.clone())).filter(|n| !n.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
 async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> Response {
     if !symbol_ok(&q.symbol) {
         return StatusCode::BAD_REQUEST.into_response();
@@ -116,31 +121,16 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
         let adjusted = if raw_wanted || symbol.to_ascii_uppercase().starts_with("NIFTY ") { None } else { state.bars.adjusted.get(&symbol).await };
         match adjusted {
             Some(a) => {
-                // a renamed company's older symbol is joined in front, so the chart reaches back past the rename
-                let (full, joined) = state.bars.with_predecessor(&symbol, a.bars.clone(), true).await;
-                let from = full.len().saturating_sub(limit);
-                let mut note = if a.flags.is_empty() { String::new() } else { format!("Price breaks no record explains: {}.", a.flags.join(", ")) };
-                if let Some((old, step)) = joined {
-                    note = [note, format!("Earlier history is {old}'s, the company's old symbol."), step].into_iter().filter(|n| !n.is_empty()).collect::<Vec<_>>().join(" ");
-                }
-                return Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": &full[from..], "source": "warehouse, adjusted", "note": note})).into_response();
+                let from = a.bars.len().saturating_sub(limit);
+                // the helper has already joined a renamed company's earlier symbols; the page is told which
+                let note = join_notes(if a.flags.is_empty() { String::new() } else { format!("Price breaks no record explains: {}.", a.flags.join(", ")) }, &a.joined);
+                return Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": &a.bars[from..], "source": "warehouse, adjusted", "note": note})).into_response();
             }
-            None => match tokio::task::spawn_blocking(move || daily_bars(&path, &sym, limit)).await {
-                Ok(Ok(bars)) => {
+            None => match tokio::task::spawn_blocking(move || daily_bars_joined(&path, &sym, limit)).await {
+                Ok(Ok((bars, joined))) => {
                     let stock = !symbol.to_ascii_uppercase().starts_with("NIFTY ");
-                    let mut note = if raw_wanted && stock { "Prices are as printed, not adjusted for splits and bonuses.".to_string() } else if stock { "Split and bonus adjustment is unavailable; prices are as printed.".to_string() } else { String::new() };
-                    // fewer bars than asked for means the whole history is here, so an older symbol's can go in front
-                    let bars = if stock && bars.len() < limit {
-                        let (full, joined) = state.bars.with_predecessor(&symbol, bars, false).await;
-                        if let Some((old, step)) = joined {
-                            note = [note, format!("Earlier history is {old}'s, the company's old symbol."), step].into_iter().filter(|n| !n.is_empty()).collect::<Vec<_>>().join(" ");
-                        }
-                        let from = full.len().saturating_sub(limit);
-                        full[from..].to_vec()
-                    } else {
-                        bars
-                    };
-                    (bars, if raw_wanted { "warehouse, raw" } else { "warehouse" }, note)
+                    let note = if raw_wanted && stock { "Prices are as printed, not adjusted for splits and bonuses.".to_string() } else if stock { "Split and bonus adjustment is unavailable; prices are as printed.".to_string() } else { String::new() };
+                    (bars, if raw_wanted { "warehouse, raw" } else { "warehouse" }, join_notes(note, &joined))
                 }
                 _ => (Vec::new(), if raw_wanted { "warehouse, raw" } else { "warehouse" }, "warehouse busy".to_string()),
             },
