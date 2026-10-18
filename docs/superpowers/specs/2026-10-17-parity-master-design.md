@@ -270,3 +270,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 **Honest limits:** formulas have no loops, variables or functions (a Python file does); Python indicators are the user's own code and are not sandboxed, which the page says where the switch is; the engine's strategy tree is version 1 (no multi-symbol rules); a Python indicator is asked for once per set of bars, so a live tick moves the other indicators but not a Python line until a bar is added.
 
 **Next in this track:** 5b custom intervals and the bar volume profile, 5k chart grid, 5j replay, 5f F&O and MCX.
+
+## 25. Custom intervals and the bar volume profile (5b, 2026-10-18)
+
+**Done:** any interval a person types (7 minutes, 2 hours, 3 days, 2 weeks, 3 months) built in the page from the finer interval the server already serves, and a volume profile of the bars in view in the price pane. Spec `2026-10-18-intervals-profile-design.md`, plan `2026-10-18-intervals-profile.md`, TRD sections 2.42 and 2.43.
+
+**Honest limits:** custom groups of weeks and months start at fixed points since 1970; the profile spreads a bar's volume evenly over its range because the price of each trade is not known; tick recording and order flow wait for a market session; no intervals under a minute.
+
+**Next in this track:** 5k chart grid, 5j replay, 5f F&O and MCX.

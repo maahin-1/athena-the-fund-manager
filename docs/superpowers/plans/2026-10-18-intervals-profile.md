@@ -45,3 +45,7 @@
 ### Task D: docs and suites
 
 - [ ] TRD 2.42 (intervals) and 2.43 (profile), master design section 25, roadmap row, `graphify update .`, full vitest, Playwright, commit.
+
+## As built (2026-10-18)
+
+Tasks A, B, C and D done. The interval module lives in `src/interval.ts` (shared by `bars.ts`, `ranges.ts` and the Chart Lab) rather than under `chartlab/`; ranges are `rangesOf` and `defaultRangeOf`. The 90-minute example in the spec had a fifth bar at 15:15 (the 15 minutes left), now stated. While adding the profile toggle a price-move chart's data window was found to read 'No bars yet' (it indexed the loaded bars, not the chart's own) and was fixed; the ADJ button got a `data-action` so tests do not depend on button order. Suites: vitest 546, Playwright 104 (a fund e2e that failed once in the full run passes alone: timing, not this change).
