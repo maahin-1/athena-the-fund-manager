@@ -19,3 +19,4 @@ terminal/web/e2e-data/
 terminal/web/test-results/
 terminal/web/playwright-report/
 terminal/web/e2e-fund/
+terminal/web/e2e/indicators/.enabled.json

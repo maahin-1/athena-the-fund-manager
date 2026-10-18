@@ -153,21 +153,21 @@ export const REGISTRY: IndicatorDef[] = [
   { id: 'aroonosc', name: 'Aroon Oscillator', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('osc', 'Aroon osc', '--ind3')], levels: [0], compute: (b, p) => ({ osc: m2.aroonOsc(highs(b), lows(b), n(p, 'length')) }) },
 ];
 
-/** The indicators the user wrote as formulas (`formula/`), by id (`f:` and the name). They are registered when the page has them and replaced as a set. */
-const CUSTOM = new Map<string, IndicatorDef>();
+/** The indicators the user added: formulas they wrote (`formula/`) and Python files they placed in the indicators folder (`formula/pyind`), by id (`f:` and `py:`
+ *  and the name). Each source registers its own set and replaces it as a set. */
+const CUSTOM = new Map<string, Map<string, IndicatorDef>>();
 
-export function setCustom(defs: IndicatorDef[]): void {
-  CUSTOM.clear();
-  for (const d of defs) CUSTOM.set(d.id, d);
+export function setCustom(defs: IndicatorDef[], source = 'formula'): void {
+  CUSTOM.set(source, new Map(defs.map((d) => [d.id, d])));
 }
 
-export const customDefs = (): IndicatorDef[] => [...CUSTOM.values()];
+export const customDefs = (): IndicatorDef[] => [...CUSTOM.values()].flatMap((m) => [...m.values()]);
 
-/** Whether an id names a user's formula rather than a built-in indicator. */
-export const isCustom = (id: string): boolean => id.startsWith('f:');
+/** Whether an id names something the user added rather than a built-in indicator. */
+export const isCustom = (id: string): boolean => id.startsWith('f:') || id.startsWith('py:');
 
 export function find(id: string): IndicatorDef | undefined {
-  return REGISTRY.find((d) => d.id === id) ?? CUSTOM.get(id);
+  return REGISTRY.find((d) => d.id === id) ?? customDefs().find((d) => d.id === id);
 }
 
 /** An indicator's settings with every input at its default. */
@@ -195,7 +195,8 @@ export function validate(def: IndicatorDef, params: Params): { ok: true; params:
 
 /** The legend text of an indicator: `RSI 14` or `MACD 12 26 9`. */
 export function caption(def: IndicatorDef, params: Params): string {
-  const short = def.outputs[0].label.startsWith('%') || def.id === 'macd' || def.id === 'bb' ? def.name.split(' ').map((w) => w[0]).join('') : def.outputs[0].label;
+  if (!def.outputs.length) return def.name; // a Python file's lines are known only once it has run
+  const short =def.outputs[0].label.startsWith('%') || def.id === 'macd' || def.id === 'bb' ? def.name.split(' ').map((w) => w[0]).join('') : def.outputs[0].label;
   const label = def.id === 'macd' ? 'MACD' : def.id === 'bb' ? 'BB' : def.id === 'stoch' ? 'Stoch' : def.id === 'willr' ? '%R' : short;
   return [label, ...def.inputs.map((i) => String(params[i.key] ?? i.default))].join(' ');
 }

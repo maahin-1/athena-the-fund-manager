@@ -9,6 +9,8 @@ import { settingsDialog } from './dialog';
 import { CHART_TYPES, ChartModel, isDerived, type ChartType, type LabState, type ScaleMode } from './model';
 import { caption, isCustom, REGISTRY } from './registry';
 import { formulaDialog } from './formuladialog';
+import { switchOnDialog } from './pydialog';
+import { PyIndicators, serverPyIO, type PyIO } from '../formula/pyind';
 import { formulaId } from '../formula/defs';
 import { FormulaStore, serverFormulaIO, type FormulaIO } from '../formula/store';
 import { build, SOURCE } from './resample';
@@ -72,6 +74,7 @@ export interface LabOptions {
   storage?: KeyValue | null;
   drawingIO?: DrawingIO;
   formulaIO?: FormulaIO;
+  pyIO?: PyIO;
 }
 
 function browserStorage(): KeyValue | null {
@@ -94,6 +97,7 @@ export class ChartLabView {
   private history = new History<LabState>(this.model.state());
   private templates: Templates;
   private formulas: FormulaStore;
+  private py: PyIndicators;
   private renderer: ChartRenderer | null = null;
   private fetcher: BarsFetcher;
   private makeRenderer: RendererFactory;
@@ -143,6 +147,7 @@ export class ChartLabView {
     this.storage = options.storage === undefined ? browserStorage() : options.storage;
     this.templates = new Templates(this.storage);
     this.drawingStore = new DrawingStore(options.drawingIO ?? serverDrawingIO(), this.storage);
+    this.py = new PyIndicators(options.pyIO ?? serverPyIO(), this.storage); // registered from the browser copy at once, as the formulas are
     this.formulas = new FormulaStore(options.formulaIO ?? serverFormulaIO(), this.storage); // registered from the browser copy at once, so a saved chart can use them
     this.fetcher = options.fetchBars ?? fetchBars;
     this.makeRenderer = options.renderer ?? lightweightRenderer;
@@ -162,7 +167,10 @@ export class ChartLabView {
     this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
     this.restoreSaved();
     this.formulas.subscribe(() => this.formulasChanged());
+    this.py.subscribe(() => this.formulasChanged());
+    this.py.onError((file, message) => this.say(`${file}: ${message}`));
     void this.formulas.load();
+    void this.py.load();
   }
 
   /** The formulas changed (loaded, saved, deleted): charts that use one that is gone lose it, and every formula line is computed again. */
@@ -555,6 +563,7 @@ export class ChartLabView {
         list.append(row);
       }
       this.formulaSection(list, q);
+      this.pythonSection(list, q);
     };
     search.addEventListener('input', fill);
     search.addEventListener('keydown', (e) => e.key === 'Escape' && (this.popover.hidden = true));
@@ -622,6 +631,53 @@ export class ChartLabView {
       this.editFormula();
     });
     list.append(create);
+  }
+
+  /** The Python files in the indicators folder: add one that is switched on, switch one on (after a plain warning) or off. */
+  private pythonSection(list: HTMLElement, q: string): void {
+    list.append(el('div', 'lab-sep', 'My Python indicators'));
+    const files = this.py.files().filter((f) => !q || f.name.toLowerCase().includes(q) || f.file.toLowerCase().includes(q));
+    for (const f of files) {
+      const row = el('div', 'lab-item-row');
+      row.dataset.file = f.file;
+      if (f.error) {
+        row.append(el('span', 'note bad', `${f.file}: ${f.error}`));
+      } else if (f.enabled) {
+        const add = el('button', 'lab-item', f.name);
+        add.dataset.indicator = `py:${f.file}`;
+        add.append(el('span', 'note', f.pane === 'overlay' ? 'on price' : 'own pane'));
+        add.addEventListener('click', () => {
+          this.commit(() => this.model.addIndicator(`py:${f.file}`));
+          this.popover.hidden = true;
+        });
+        const off = el('button', 'btn lab-mini', 'Switch off');
+        off.type = 'button';
+        off.addEventListener('click', () => {
+          this.popover.hidden = true;
+          void this.py.disable(f.file).catch(() => this.say('The file could not be switched off on the server.'));
+        });
+        row.append(add, off);
+      } else {
+        row.append(el('span', 'lab-item off', `${f.name}`), el('span', 'note', f.changed ? 'changed since it was switched on: off' : 'off'));
+        const on = el('button', 'btn lab-mini', 'Switch on…');
+        on.type = 'button';
+        on.addEventListener('click', () => {
+          this.popover.hidden = true;
+          switchOnDialog(this.element, f, () => this.py.enable(f.file));
+        });
+        row.append(on);
+      }
+      list.append(row);
+    }
+    if (!files.length) list.append(el('div', 'note', q ? 'No Python file matches.' : `No Python indicators yet. Put a .py file with a compute(bars) function in ${this.py.dir || '.athena/indicators'}.`));
+    if (this.py.problem) list.append(el('div', 'note bad', this.py.problem));
+    const help = el('details', 'lab-formula-help');
+    help.append(el('summary', '', 'How to write one'));
+    help.append(
+      el('pre', 'lab-pre', 'NAME = "Two-bar average"   # optional\nPANE = "overlay"            # or "own" (default)\n\ndef compute(bars):\n    # bars: a list of {t, o, h, l, c, v}, oldest first\n    out = []\n    for i in range(len(bars)):\n        out.append(None if i < 1 else (bars[i]["c"] + bars[i - 1]["c"]) / 2)\n    return {"avg": out}    # one list per line, one value (or None) per bar'),
+      el('div', 'note', 'Up to 8 lines. The file is read, not run, to be listed; it runs only after you switch it on, in a separate process, for at most 20 seconds. It is not sandboxed.'),
+    );
+    list.append(help);
   }
 
   // ---- painting ------------------------------------------------------------------------------------------------------------------------------
@@ -718,6 +774,7 @@ export class ChartLabView {
   private openSettings(uid: string): void {
     const inst = this.model.indicators.find((i) => i.uid === uid);
     if (!inst) return;
+    if (inst.id.startsWith('py:')) return this.say(`${inst.id.slice(3)} is a Python file in ${this.py.dir || 'the indicators folder'}: edit it there (it is switched off when it changes).`);
     if (isCustom(inst.id)) return this.editFormula(inst.id.slice(2)); // a formula's settings are its text
     settingsDialog(this.element, this.model.def(inst), inst, (params, colors) => {
       let error: string | null = null;
