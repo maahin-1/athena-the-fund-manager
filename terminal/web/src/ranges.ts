@@ -1,11 +1,14 @@
 export type Timeframe = '1m' | '2m' | '3m' | '5m' | '10m' | '15m' | '30m' | '1h' | '1D' | '1W' | '1M';
 
+/** What a chart can show: a built-in `Timeframe` or an interval the person typed (`7m`, `2h`, `3D`; see interval.ts). The server is only ever asked for a `Timeframe`. */
+export type Interval = string;
+
 /** Whether bars of this interval are inside one trading day (the others are a day, a week or a month, stamped with a date). */
-export const isIntraday = (tf: Timeframe): boolean => tf !== '1D' && tf !== '1W' && tf !== '1M';
+export const isIntraday = (tf: Interval): boolean => /^\d+[mh]$/.test(tf);
 
 export interface Range {
   label: string;
-  tf: Timeframe;
+  tf: Interval;
   /** Bars to show; null shows every bar; 'ytd' is computed from today's date. */
   bars: number | null | 'ytd';
   note?: string;

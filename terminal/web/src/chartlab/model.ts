@@ -1,5 +1,6 @@
 import { applyTick, tickFitsChart, type Bar } from '../bars';
-import type { Timeframe } from '../ranges';
+import { parseInterval, stepOf } from '../interval';
+import type { Interval, Timeframe } from '../ranges';
 import { atr, type Series } from './maths';
 import { kagi, lineBreak, pointAndFigure, rangeBars, renko, sequence } from './derived';
 import { MINUTES } from './resample';
@@ -25,8 +26,12 @@ export const isShapeType = (type: ChartType): boolean => type === 'highlow' || t
 export const isValueType = (type: ChartType): boolean => ['line', 'area', 'baseline', 'columns', 'step'].includes(type);
 
 /** Seconds between the stamps given to derived bars, so a time axis shows them in order. */
-export function stepSeconds(tf: Timeframe): number {
-  const minutes = MINUTES[tf];
+export function stepSeconds(tf: Interval): number {
+  if (!(tf in MINUTES) && !['1D', '1W', '1M'].includes(tf)) {
+    const p = parseInterval(tf);
+    if (p.ok) return stepOf(p);
+  }
+  const minutes = MINUTES[tf as Timeframe];
   return minutes ? minutes * 60 : tf === '1W' ? 7 * 86_400 : tf === '1M' ? 30 * 86_400 : 86_400;
 }
 
@@ -89,7 +94,7 @@ export function heikinAshi(bars: Bar[]): Bar[] {
 /** The chart's state without any drawing: bars, live ticks, indicators, the compare series and the data window. The view binds to it. */
 export class ChartModel {
   bars: Bar[] = [];
-  tf: Timeframe = '1D';
+  tf: Interval = '1D';
   type: ChartType = 'candles';
   scale: ScaleMode = 'auto';
   adjusted = true;
@@ -119,7 +124,7 @@ export class ChartModel {
     return this.indicators.length !== before;
   }
 
-  setBars(bars: Bar[], tf: Timeframe): void {
+  setBars(bars: Bar[], tf: Interval): void {
     this.bars = bars;
     this.tf = tf;
     this.changed();

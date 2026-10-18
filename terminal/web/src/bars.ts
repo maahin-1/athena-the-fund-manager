@@ -1,4 +1,5 @@
-import { isIntraday, type Timeframe } from './ranges';
+import { parseInterval, startOf } from './interval';
+import { isIntraday, type Interval } from './ranges';
 
 export interface Bar {
   t: number; // unix seconds; a daily bar is midnight UTC of its trading date
@@ -12,7 +13,7 @@ export interface Bar {
 const IST_OFFSET = 19_800; // seconds
 
 /** Start of the bar a timestamp falls in. Intraday bars are aligned to the clock (IST is a whole number of 15 minutes from UTC). */
-export function barTime(tsSec: number, tf: Timeframe): number {
+export function barTime(tsSec: number, tf: Interval): number {
   switch (tf) {
     case '2m':
     case '3m':
@@ -42,6 +43,10 @@ export function barTime(tsSec: number, tf: Timeframe): number {
       return Math.floor(tsSec / 900) * 900;
     case '1D':
       return Math.floor((tsSec + IST_OFFSET) / 86_400) * 86_400;
+    default: {
+      const p = parseInterval(tf); // an interval the person typed
+      return p.ok ? startOf(tsSec, p) : Math.floor(tsSec / 60) * 60;
+    }
   }
 }
 
@@ -60,7 +65,7 @@ export function inSession(tsSec: number): boolean {
 }
 
 /** Whether a tick should move the chart. Intraday bars only grow during the session (an exchange snapshot stamped after the close must not start a bar), and a price far from the last bar's is ignored rather than drawn as a candle that is not this stock's. */
-export function tickFitsChart(last: Bar | undefined, price: number, tsSec: number, tf: Timeframe): boolean {
+export function tickFitsChart(last: Bar | undefined, price: number, tsSec: number, tf: Interval): boolean {
   if (!(price > 0)) return false;
   if (isIntraday(tf) && !inSession(tsSec)) return false;
   if (last && last.c > 0 && Math.abs(price / last.c - 1) > MAX_MOVE) return false;
@@ -68,7 +73,7 @@ export function tickFitsChart(last: Bar | undefined, price: number, tsSec: numbe
 }
 
 /** The bar to draw after a trade at `price`: the last bar updated, or a new bar when the trade falls in a later one. */
-export function applyTick(last: Bar | undefined, price: number, tsSec: number, tf: Timeframe, volume = 0): Bar {
+export function applyTick(last: Bar | undefined, price: number, tsSec: number, tf: Interval, volume = 0): Bar {
   const t = barTime(tsSec, tf);
   if (last && last.t === t) {
     return { ...last, h: Math.max(last.h, price), l: Math.min(last.l, price), c: price, v: last.v + volume };

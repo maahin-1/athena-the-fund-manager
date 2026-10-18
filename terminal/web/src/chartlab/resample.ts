@@ -1,5 +1,6 @@
 import type { Bar } from '../bars';
-import type { Timeframe } from '../ranges';
+import { groupBars, mergeBars, parseInterval, planOf } from '../interval';
+import type { Interval, Timeframe } from '../ranges';
 
 const IST = 19_800;
 const OPEN = 9 * 3600 + 15 * 60; // 09:15 IST, in seconds after midnight
@@ -16,13 +17,6 @@ export const SOURCE: Record<Timeframe, { fetch: Timeframe; factor: number }> = {
   '1D': { fetch: '1D', factor: 1 }, '1W': { fetch: '1D', factor: 1 }, '1M': { fetch: '1D', factor: 1 },
 };
 
-function merge(group: Bar[], t: number): Bar {
-  return {
-    t, o: group[0].o, h: Math.max(...group.map((b) => b.h)), l: Math.min(...group.map((b) => b.l)), c: group[group.length - 1].c,
-    v: group.reduce((sum, b) => sum + b.v, 0),
-  };
-}
-
 /** Combine intraday bars into bars of `minutes` minutes, aligned to the 09:15 IST open (so 30-minute bars start 09:15, 09:45, and so on). A bar
  *  that spans fewer source bars at the close is kept as it is. */
 export function resampleIntraday(bars: Bar[], minutes: number): Bar[] {
@@ -36,14 +30,14 @@ export function resampleIntraday(bars: Bar[], minutes: number): Bar[] {
     const day = Math.floor(local / DAY);
     const slot = day * 1_000_000 + Math.floor((local - day * DAY - OPEN) / width);
     if (slot !== bucket && group.length) {
-      out.push(merge(group, start));
+      out.push(mergeBars(group, start));
       group = [];
     }
     if (!group.length) start = day * DAY + OPEN + Math.floor((local - day * DAY - OPEN) / width) * width - IST;
     bucket = slot;
     group.push(b);
   }
-  if (group.length) out.push(merge(group, start));
+  if (group.length) out.push(mergeBars(group, start));
   return out;
 }
 
@@ -63,21 +57,33 @@ export function resampleDaily(bars: Bar[], unit: 'W' | 'M'): Bar[] {
   for (const b of bars) {
     const s = periodStart(b.t, unit);
     if (s !== start && group.length) {
-      out.push(merge(group, start));
+      out.push(mergeBars(group, start));
       group = [];
     }
     start = s;
     group.push(b);
   }
-  if (group.length) out.push(merge(group, start));
+  if (group.length) out.push(mergeBars(group, start));
   return out;
 }
 
-/** The bars for `tf` from what was fetched for `SOURCE[tf].fetch`. */
-export function build(tf: Timeframe, fetched: Bar[]): Bar[] {
+/** The interval the server is asked for to build `tf`, and the factor (source bars to a bar). A custom interval is planned from its text; one that is not
+ *  an interval at all is a daily chart. */
+export function sourceOf(tf: Interval): { fetch: Timeframe; factor: number } {
+  if (tf in SOURCE) return SOURCE[tf as Timeframe];
+  const p = parseInterval(tf);
+  return p.ok ? planOf(p) : SOURCE['1D'];
+}
+
+/** The bars for `tf` from what was fetched for `sourceOf(tf).fetch`. */
+export function build(tf: Interval, fetched: Bar[]): Bar[] {
+  if (!(tf in SOURCE)) {
+    const p = parseInterval(tf);
+    return p.ok ? groupBars(fetched, p) : fetched;
+  }
   if (tf === '1W') return resampleDaily(fetched, 'W');
   if (tf === '1M') return resampleDaily(fetched, 'M');
-  const { factor } = SOURCE[tf];
-  const minutes = MINUTES[tf];
+  const { factor } = SOURCE[tf as Timeframe];
+  const minutes = MINUTES[tf as Timeframe];
   return factor > 1 && minutes ? resampleIntraday(fetched, minutes) : fetched;
 }

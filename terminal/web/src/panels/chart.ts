@@ -41,7 +41,7 @@ export class ChartPanel extends Panel {
   private tfOverride: Timeframe | null = null; // set when intraday bars are missing and daily bars are shown instead
 
   private get tf(): Timeframe {
-    return this.tfOverride ?? this.range.tf;
+    return this.tfOverride ?? (this.range.tf as Timeframe); // this panel only has the built-in ranges
   }
 
   private time(t: number): UTCTimestamp {
