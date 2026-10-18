@@ -134,3 +134,24 @@ test('removing a symbol keeps the others, and deleting a list asks twice', async
   await menu(page, /Sure\?/);
   await expect(page.locator('.wl-lists option')).toHaveCount(1);
 });
+
+test('the Advanced columns show market cap, P/E, ROE and the 1-year return for every stock, and sort', async ({ page }) => {
+  await menu(page, 'Columns');
+  await page.locator('.wl-pop .wl-presets').getByRole('button', { name: 'Advanced' }).click();
+  for (const title of ['Mkt cap (Rs cr)', 'P/E', 'ROE', '1Y']) await expect(page.locator('th.wl-th', { hasText: title })).toBeVisible();
+  await expect(row(page, 'SBIN').locator('td[data-col="pe"]')).toHaveText(/^\d+\.\d\d$/);
+  await expect(row(page, 'SBIN').locator('td[data-col="mcap"]')).toHaveText(/^[\d,]+$/);
+  await expect(row(page, 'SBIN').locator('td[data-col="roe"]')).toHaveText(/^-?\d+\.\d%$/);
+  await expect(row(page, 'SBIN').locator('td[data-col="r1y"]')).toHaveText(/^[+-]\d+\.\d\d%$/);
+  await expect(row(page, 'NIFTY 50').locator('td[data-col="mcap"]')).toHaveText('—'); // an index has no market cap
+  await page.locator('th.wl-th', { hasText: 'P/E' }).click();
+  const pes = await page.locator('.wl-row[data-symbol="SBIN"], .wl-row[data-symbol="TCS"], .wl-row[data-symbol="INFY"]').evaluateAll((rows) =>
+    rows.map((r) => parseFloat((r.querySelector('td[data-col="pe"]') as HTMLElement).textContent ?? '')),
+  );
+  const numbers = pes.filter((n) => !Number.isNaN(n));
+  expect(numbers.length).toBeGreaterThanOrEqual(2);
+  expect(numbers).toEqual([...numbers].sort((a, b) => a - b));
+  await menu(page, 'Columns');
+  await page.locator('.wl-pop .wl-presets').getByRole('button', { name: 'Basic' }).click();
+  await expect(page.locator('th.wl-th', { hasText: 'P/E' })).toHaveCount(0);
+});

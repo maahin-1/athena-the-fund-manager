@@ -3,12 +3,16 @@
 
 export const FLAGS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink'] as const;
 export type Flag = (typeof FLAGS)[number];
-export const COLUMNS = ['last', 'chg', 'chgpct', 'open', 'high', 'low', 'prev', 'volume', 'h52', 'l52', 'src'] as const;
+export const COLUMNS = ['last', 'chg', 'chgpct', 'open', 'high', 'low', 'prev', 'volume', 'h52', 'l52', 'src', 'sector', 'mcap', 'pe', 'pb', 'roe', 'dy', 'rsi', 'r1m', 'r3m', 'r1y'] as const;
 export type Column = (typeof COLUMNS)[number];
 export const COLUMN_TITLES: Record<Column, string> = {
   last: 'Last', chg: 'Chg', chgpct: 'Chg%', open: 'Open', high: 'High', low: 'Low', prev: 'Prev close', volume: 'Volume', h52: '52w High', l52: '52w Low', src: 'Source',
+  sector: 'Sector', mcap: 'Mkt cap (Rs cr)', pe: 'P/E', pb: 'P/B', roe: 'ROE', dy: 'Div yield', rsi: 'RSI 14', r1m: '1M', r3m: '3M', r1y: '1Y',
 };
 export const DEFAULT_COLUMNS: Column[] = ['last', 'chg', 'chgpct'];
+/** The column sets offered as one click: the price view, and the one with the market-wide fundamentals and returns (from the stored screen). */
+export const BASIC_COLUMNS: Column[] = ['last', 'chg', 'chgpct'];
+export const ADVANCED_COLUMNS: Column[] = ['last', 'chgpct', 'mcap', 'pe', 'roe', 'r1y'];
 export const MAX_NAME = 40;
 
 export type Section = { t: 'section'; title: string; color?: Flag; closed?: boolean };

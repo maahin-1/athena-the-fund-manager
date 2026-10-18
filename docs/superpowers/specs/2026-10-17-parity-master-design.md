@@ -215,3 +215,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Found:** the app already does in every window size, view, scaling and resize that was tried; the strip in the reported screenshot is Chrome's frame, outside the page. Hardening done anyway (pinned page, re-fit on every window event, pop-ups kept inside the window, one-row watchlist toolbar, a one-column layout M below 760 pixels), with six end-to-end tests that guard it. If the strip persists, it is a browser or window state (side panel, snap, taskbar), and the window size and Chrome version are needed.
 
+## 18. Symbol details and advanced watchlist view (5e-2, 2026-10-18)
+
+**Done:** a Details panel (key facts, performance 1W to 5Y and YTD, technicals dial from 11 oscillators and 14 moving averages on 1D/1W/1M, seasonal paths and month statistics) that follows the linked symbol, for stocks, ETFs and indices; the watchlist's Advanced columns (sector, market cap, P/E, P/B, ROE, yield, RSI, 1M/3M/1Y) for every stock from the stored screen; `/api/known` returns the ISIN. Spec `2026-10-18-symbol-details-design.md`, plan `2026-10-18-symbol-details.md`, TRD section 2.29.
+
+**Honest limits:** the gauge rules are ours (written down in the TRD), so the verdict can differ from TradingView's; the gauge is daily and above, not intraday; ATM IV term structure, volatility curve and news in the details panel wait for the F&O and news batches; fundamentals-derived facts exist only for companies with stored statements (the others show a dash); website and employee count have no free source.
+
+**Next in this track:** drawing tools (5d), remaining chart types, peers (6f) and screens (6g), alerts (5g), F&O and MCX.
+

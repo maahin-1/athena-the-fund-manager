@@ -1,7 +1,7 @@
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import {
-  activeList, addSection, colourSection, COLUMN_TITLES, COLUMNS, cycleSort, deleteList, exportText, FLAGS, filterByFlag, importText, isIndexSymbol, moveItem,
+  ADVANCED_COLUMNS, activeList, addSection, BASIC_COLUMNS, colourSection, COLUMN_TITLES, COLUMNS, cycleSort, deleteList, exportText, FLAGS, filterByFlag, importText, isIndexSymbol, moveItem,
   newList, nextFlag, removeSection, removeSymbol, renameList, renameSection, setActive, setColumns, setFlag, sortedSymbols, symbolsInText, toggleSection,
   type Column, type Flag, type List, type SortKey,
 } from '../watchlists/model';
@@ -46,7 +46,7 @@ export class WatchlistPanel extends Panel {
   }
 
   protected build(): void {
-    this.offs.push(this.ctx.watchlist.subscribe(() => this.render()), this.ctx.indices.subscribe(() => this.paintIndices()));
+    this.offs.push(this.ctx.watchlist.subscribe(() => this.render()), this.ctx.indices.subscribe(() => this.paintIndices()), this.ctx.market.subscribe(() => this.render()));
     this.render();
   }
 
@@ -88,6 +88,7 @@ export class WatchlistPanel extends Panel {
       case 'h52': return n.h52;
       case 'l52': return n.l52;
       case 'src': return this.quote(symbol)?.src ?? null;
+      default: return this.market(symbol, key);
     }
   };
 
@@ -108,7 +109,31 @@ export class WatchlistPanel extends Panel {
       case 'h52': return money(n.h52);
       case 'l52': return money(n.l52);
       case 'src': return { text: isIndexSymbol(symbol) ? 'index' : this.quote(symbol)?.src === 'stream' ? 'live' : this.quote(symbol) ? 'delayed' : '—' };
+      case 'sector': return { text: String(this.market(symbol, column) ?? '—') };
+      case 'mcap': { const v = this.market(symbol, column); return { text: typeof v === 'number' ? Math.round(v).toLocaleString('en-IN') : '—' }; }
+      case 'pe': case 'pb': { const v = this.market(symbol, column); return { text: typeof v === 'number' ? v.toFixed(2) : '—' }; }
+      case 'rsi': { const v = this.market(symbol, column); return { text: typeof v === 'number' ? v.toFixed(1) : '—' }; }
+      case 'roe': case 'dy': { const v = this.market(symbol, column); return { text: typeof v === 'number' ? `${(v * 100).toFixed(1)}%` : '—' }; }
+      case 'r1m': case 'r3m': case 'r1y': {
+        const v = this.market(symbol, column);
+        return typeof v === 'number' ? { text: pct(v * 100), dir: v > 0 ? 'up' : v < 0 ? 'dn' : 'flat' } : { text: '—' };
+      }
     }
+  }
+
+  /** A market-wide figure for a symbol: from the stored screen for a stock or ETF, from the exchange snapshot for an index (which has P/E, P/B and yield only). Null when there is none. */
+  private market(symbol: string, column: Column): number | string | null {
+    if (isIndexSymbol(symbol)) {
+      const ix = this.ctx.indices.get(symbol);
+      if (column === 'pe') return ix?.pe ?? null;
+      if (column === 'pb') return ix?.pb ?? null;
+      if (column === 'dy') return ix?.dy == null ? null : ix.dy / 100; // the snapshot gives percent, the screen a fraction
+      return null;
+    }
+    const row = this.ctx.market.get(symbol);
+    const key = ({ sector: 'sector', mcap: 'market_cap_cr', pe: 'pe', pb: 'pb', roe: 'roe', dy: 'dividend_yield', rsi: 'rsi_14', r1m: 'ret_1m', r3m: 'ret_3m', r1y: 'ret_1y' } as Record<string, string>)[column];
+    const v = key && row ? row[key] : null;
+    return v === undefined ? null : v;
   }
 
   // ---- drawing -------------------------------------------------------------------------------------------------------------------------
@@ -275,6 +300,14 @@ export class WatchlistPanel extends Panel {
 
   private columnsPopover(list: List): HTMLElement {
     const box = el('div', 'wl-pop');
+    const presets = el('div', 'wl-presets');
+    for (const [name, set] of [['Basic', BASIC_COLUMNS], ['Advanced', ADVANCED_COLUMNS]] as const) {
+      const b = el('button', 'wl-btn', name);
+      b.title = name === 'Basic' ? 'Last, change and change %' : 'Last, change %, market cap, P/E, ROE and 1-year return, for every stock';
+      b.addEventListener('click', () => this.ctx.watchlist.update((d) => setColumns(d, [...set])));
+      presets.append(b);
+    }
+    box.append(presets);
     for (const c of COLUMNS) {
       const label = el('label', 'wl-check');
       const box1 = el('input');

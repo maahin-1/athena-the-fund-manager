@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  activeList, addSection, addSymbol, colourSection, cycleSort, deleteList, exportText, filterByFlag, findList, importText, migrate, moveItem, newList,
+  ADVANCED_COLUMNS, BASIC_COLUMNS, COLUMN_TITLES, COLUMNS, activeList, addSection, addSymbol, colourSection, cycleSort, deleteList, exportText, filterByFlag, findList, importText, migrate, moveItem, newList,
   nextFlag, removeSection, removeSymbol, renameList, renameSection, setActive, setColumns, setFlag, sortedSymbols, symbolsOf, toggleSection, validate,
   WatchlistError, type Doc, type Item,
 } from '../src/watchlists/model';
@@ -201,5 +201,35 @@ describe('import and export', () => {
   it('puts symbols under their ### heading in a list that already has it', () => {
     const { doc: back } = importText(doc(), '###Stocks\nNSE:HDFCBANK\n###New\nNSE:LT', all);
     expect(items(back)).toEqual(['#Indices', 'NIFTY 50', 'NIFTY BANK', '#Stocks', 'SBIN', 'TCS', 'INFY', 'HDFCBANK', '#New', 'LT']);
+  });
+});
+
+describe('advanced columns', () => {
+  it('the fundamentals and return columns are accepted, kept in order, and survive a round trip', () => {
+    const d = setColumns(doc(), ['last', 'chgpct', 'mcap', 'pe', 'roe', 'r1y', 'sector']);
+    expect(activeList(d).columns).toEqual(['last', 'chgpct', 'mcap', 'pe', 'roe', 'r1y', 'sector']);
+    expect(validate(JSON.parse(JSON.stringify(d)))).toEqual(d);
+  });
+
+  it('the Basic and Advanced presets are valid column sets', () => {
+    expect(activeList(setColumns(doc(), [...ADVANCED_COLUMNS])).columns).toEqual(ADVANCED_COLUMNS);
+    expect(activeList(setColumns(doc(), [...BASIC_COLUMNS])).columns).toEqual(BASIC_COLUMNS);
+    expect(COLUMN_TITLES.mcap).toContain('Mkt cap');
+    for (const c of [...ADVANCED_COLUMNS, ...BASIC_COLUMNS]) expect(COLUMNS).toContain(c);
+  });
+
+  it('a made-up column is dropped when a document is read', () => {
+    const d = doc();
+    const odd = { ...d, lists: [{ ...d.lists[0], columns: ['last', 'ebitda'] }] };
+    expect(activeList(validate(odd)).columns).toEqual(['last']);
+  });
+
+  it('sorting by a number column orders numerically and leaves blanks last in either direction', () => {
+    const pe: Record<string, number | null> = { X: 25, Y: null, Z: 9 };
+    let d = setColumns(with_(abc), ['pe']);
+    d = cycleSort(d, 'pe'); // first click: ascending
+    expect(sortedSymbols(activeList(d), (s) => pe[s])).toEqual(['Z', 'X', 'Y']);
+    d = cycleSort(d, 'pe'); // second click: descending
+    expect(sortedSymbols(activeList(d), (s) => pe[s])).toEqual(['X', 'Z', 'Y']);
   });
 });

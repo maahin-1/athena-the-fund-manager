@@ -46,3 +46,7 @@ TRD §2.29 (details and advanced columns, the written gauge rules), master desig
 
 ## Order and commits
 Tasks 1–3 are independent pure modules; 4 before 5 and 6. One commit per task, `feat(web): ...` with the trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
+
+## As built (2026-10-18)
+
+All seven tasks done. Differences from the plan: the Details panel sits under the watchlist in layout A (420 px, its own group, so layout A has 6 groups) rather than as a tab of Quote, because the Quote group is too short for it; it is a tab of the watchlist group in the narrow layout M. `AppContext` gained `market` (ScreenStore) and `history` (BarsCache). The command line also takes `DETAILS NIFTY 50` and `NIFTY 50 DETAILS`. The Hull average has almost no lag, so on a wobbling rise it can vote against the trend; the tests assert the lagging averages only. Counts at the end: vitest 209, Playwright 56, cargo 109.
