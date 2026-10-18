@@ -119,6 +119,13 @@ const SCREEN_ALL: [&str; 26] = [
 ];
 const SCREEN_TEXT: [&str; 5] = ["symbol", "kind", "name", "sector", "trend"];
 
+/// A two-column query as symbol -> text; empty when the query fails (a table that does not exist yet).
+fn symbol_map(conn: &Connection, sql: &str) -> std::collections::HashMap<String, String> {
+    let Ok(mut stmt) = conn.prepare(sql) else { return Default::default() };
+    let Ok(rows) = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) else { return Default::default() };
+    rows.filter_map(Result::ok).collect()
+}
+
 /// Every row of the stored market screen (all stocks and ETFs) as `{columns, rows, market_day}`, for the page to filter and sort. A missing figure is `null`, never zero.
 pub fn screen_all(path: &Path) -> Result<Value, AnalysisError> {
     let conn = connect(path)?;
@@ -140,8 +147,28 @@ pub fn screen_all(path: &Path) -> Result<Value, AnalysisError> {
         .map_err(|_| AnalysisError::Busy)?
         .filter_map(Result::ok)
         .collect::<Vec<_>>();
+    // the exchange's industry and the indices each stock is in (the table is missing in a warehouse built before it existed: both columns are then null)
+    let industries = symbol_map(
+        &conn,
+        "WITH size AS (SELECT index_name, count(*) AS n FROM index_members GROUP BY 1)          SELECT m.symbol, arg_max(m.industry, size.n) FROM index_members m JOIN size USING (index_name) WHERE m.industry <> '' GROUP BY m.symbol",
+    );
+    let indices = symbol_map(&conn, "SELECT symbol, string_agg(index_name, '|' ORDER BY index_name) FROM index_members GROUP BY symbol");
+    let rows = rows
+        .into_iter()
+        .map(|mut row| {
+            let symbol = row[0].as_str().unwrap_or_default().to_string();
+            let extra = |map: &std::collections::HashMap<String, String>| map.get(&symbol).map(|t| Value::String(t.clone())).unwrap_or(Value::Null);
+            if let Value::Array(cells) = &mut row {
+                cells.push(extra(&industries));
+                cells.push(extra(&indices));
+            }
+            row
+        })
+        .collect::<Vec<_>>();
+    let mut columns: Vec<&str> = SCREEN_ALL.to_vec();
+    columns.extend(["industry", "indices"]);
     let market_day: Option<String> = conn.query_row("SELECT CAST(max(day) AS VARCHAR) FROM days WHERE status = 'loaded'", [], |r| r.get(0)).ok().flatten();
-    Ok(json!({"columns": SCREEN_ALL, "rows": rows, "market_day": market_day}))
+    Ok(json!({"columns": columns, "rows": rows, "market_day": market_day}))
 }
 
 /// Whether the warehouse knows a symbol: a stock or ETF in the universe, or an index it holds bars for. Lets the page refuse a typo instead of waiting for a quote that never comes.
@@ -239,6 +266,27 @@ mod tests {
         assert_eq!(at("pe"), 9.8);
         assert_eq!(at("trend"), "up");
         assert!(at("debt_to_equity").is_null()); // a blank is not a zero
+    }
+
+    #[test]
+    fn each_row_carries_its_industry_and_the_indices_it_is_in_and_the_columns_are_null_without_the_table() {
+        let none = screen_all(&warehouse("screen_no_members")).unwrap();
+        let cols = |a: &Value| -> Vec<String> { a["columns"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_string()).collect() };
+        let at = |a: &Value, name: &str| a["rows"][0][cols(a).iter().position(|c| c == name).unwrap()].clone();
+        assert!(at(&none, "industry").is_null() && at(&none, "indices").is_null());
+
+        let path = warehouse("screen_members");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE index_members (index_name VARCHAR, symbol VARCHAR, industry VARCHAR, fetched_at TIMESTAMP);
+                 INSERT INTO index_members VALUES ('NIFTY 500', 'SBIN', 'Financial Services', now()), ('NIFTY 500', 'TCS', 'Information Technology', now()),
+                   ('NIFTY BANK', 'SBIN', 'Banking', now()), ('NIFTY 50', 'SBIN', 'Financial Services', now());",
+            )
+            .unwrap();
+        let a = screen_all(&path).unwrap();
+        assert_eq!(at(&a, "industry"), "Financial Services"); // the largest index holding it decides (NIFTY 500 has two rows)
+        assert_eq!(at(&a, "indices"), "NIFTY 50|NIFTY 500|NIFTY BANK");
     }
 
     #[test]
