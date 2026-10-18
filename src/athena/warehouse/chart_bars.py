@@ -35,7 +35,18 @@ def chart_bars(warehouse: Warehouse, symbol: str, limit: int) -> dict[str, Any]:
         }
         for bar in bars[-limit:]
     ]
-    return {"bars": out, "flags": list(history.price_flags(symbol)), "notes": list(history.notes(symbol))}
+    return {"bars": out, "flags": list(history.price_flags(symbol)), "notes": list(history.notes(symbol)), "joined": joined_notes(warehouse, symbol)}
+
+
+def joined_notes(warehouse: Warehouse, symbol: str) -> list[dict[str, str]]:
+    """The earlier symbols whose bars the chart of `symbol` begins with, each with a sentence for the page."""
+    out = []
+    for step in warehouse.predecessors(symbol):
+        note = f"Earlier history is {step.old}'s, the symbol until {step.change_day}."
+        if step.event:
+            note += f" Around then: {step.event}."
+        out.append({"symbol": step.old, "until": step.change_day.isoformat(), "note": note})
+    return out
 
 
 def main(argv: Sequence[str] | None = None) -> int:
