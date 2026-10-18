@@ -22,7 +22,7 @@ interface Row {
 }
 
 type Mode = { kind: 'new' } | { kind: 'rename' } | { kind: 'section' } | { kind: 'sectionName'; index: number } | null;
-type Pop = 'columns' | 'transfer' | null;
+type Pop = 'menu' | 'columns' | 'transfer' | null;
 
 /** The watchlist: many named lists with sections and flags, columns of your choice, sorting by a heading, drag to reorder, text import and export.
  * Index rows take their values from the exchange's index snapshot; stocks from the live feed. Clicking a row moves every panel linked to this one. */
@@ -119,6 +119,7 @@ export class WatchlistPanel extends Panel {
     const list = this.list;
     this.body.append(this.toolbar(list));
     if (this.mode) this.body.append(this.inputRow());
+    if (this.pop === 'menu') this.body.append(this.menuPopover(list));
     if (this.pop === 'columns') this.body.append(this.columnsPopover(list));
     if (this.pop === 'transfer') this.body.append(this.transferPopover(list));
     const table = el('table', 'wl');
@@ -152,6 +153,7 @@ export class WatchlistPanel extends Panel {
     this.select(this.symbol);
   }
 
+  /** One row: the list picker and a menu button. Everything else is in the menu, so a narrow panel keeps its room for the symbols. */
   private toolbar(list: List): HTMLElement {
     const bar = el('div', 'wl-bar');
     const pick = el('select', 'wl-lists');
@@ -162,25 +164,27 @@ export class WatchlistPanel extends Panel {
       pick.append(o);
     }
     pick.addEventListener('change', () => this.ctx.watchlist.update((d) => setActive(d, pick.value)));
-    const button = (text: string, title: string, run: () => void, cls = ''): HTMLButtonElement => {
+    const more = el('button', `wl-btn wl-more${this.pop === 'menu' ? ' on' : ''}`, '⋯');
+    more.title = 'More: new list, rename, delete, headings, columns, import and export';
+    more.setAttribute('aria-label', 'watchlist menu');
+    more.addEventListener('click', () => this.togglePop('menu'));
+    bar.append(pick, more);
+    return bar;
+  }
+
+  private menuPopover(list: List): HTMLElement {
+    const box = el('div', 'wl-pop wl-menu');
+    const item = (text: string, title: string, run: () => void, cls = ''): HTMLButtonElement => {
       const b = el('button', `wl-btn ${cls}`.trim(), text);
       b.title = title;
       b.addEventListener('click', run);
       return b;
     };
-    const flags = el('select', 'wl-flagfilter');
-    flags.title = 'Show only the symbols with this flag';
-    flags.append(new Option('All flags', ''));
-    for (const f of FLAGS) {
-      const o = new Option(f, f);
-      o.selected = f === this.flagFilter;
-      flags.append(o);
-    }
-    flags.addEventListener('change', () => {
-      this.flagFilter = (flags.value || null) as Flag | null;
-      this.render();
-    });
-    const del = button(this.deleteArmed ? 'Sure?' : 'Delete', 'Delete this watchlist (click twice)', () => {
+    const ask = (mode: Mode): void => {
+      this.pop = null;
+      this.setMode(mode);
+    };
+    const del = item(this.deleteArmed ? 'Sure? Delete this list' : 'Delete', 'Delete this watchlist (click twice)', () => {
       if (!this.deleteArmed) {
         this.deleteArmed = true;
         this.render();
@@ -193,20 +197,33 @@ export class WatchlistPanel extends Panel {
         return;
       }
       this.deleteArmed = false;
+      this.pop = null;
       this.ctx.watchlist.update((d) => deleteList(d, list.id));
+      this.render();
     }, this.deleteArmed ? 'armed' : '');
     del.disabled = this.ctx.watchlist.doc.lists.length <= 1;
-    bar.append(
-      pick,
-      button('New', 'Make a new watchlist', () => this.setMode({ kind: 'new' })),
-      button('Rename', 'Rename this watchlist', () => this.setMode({ kind: 'rename' })),
+    const flags = el('select', 'wl-flagfilter');
+    flags.title = 'Show only the symbols with this flag';
+    flags.append(new Option('All flags', ''));
+    for (const f of FLAGS) {
+      const o = new Option(f, f);
+      o.selected = f === this.flagFilter;
+      flags.append(o);
+    }
+    flags.addEventListener('change', () => {
+      this.flagFilter = (flags.value || null) as Flag | null;
+      this.render();
+    });
+    box.append(
+      item('New list', 'Make a new watchlist', () => ask({ kind: 'new' })),
+      item('Rename', 'Rename this watchlist', () => ask({ kind: 'rename' })),
       del,
-      button('+ Section', 'Add a heading at the end of the list', () => this.setMode({ kind: 'section' })),
-      button('Columns', 'Choose the columns', () => this.togglePop('columns')),
-      button('Import / Export', 'Copy the list as text or paste symbols in', () => this.togglePop('transfer')),
+      item('+ Section', 'Add a heading at the end of the list', () => ask({ kind: 'section' })),
+      item('Columns', 'Choose the columns', () => this.togglePop('columns')),
+      item('Import / Export', 'Copy the list as text or paste symbols in', () => this.togglePop('transfer')),
       flags,
     );
-    return bar;
+    return box;
   }
 
   private setMode(mode: Mode): void {

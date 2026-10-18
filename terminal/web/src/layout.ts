@@ -16,7 +16,7 @@ export interface Placement {
   id: string;
   type: PanelType;
   ref?: string;
-  direction?: 'left' | 'right' | 'above' | 'below';
+  direction?: 'left' | 'right' | 'above' | 'below' | 'within'; // within: a tab of the reference panel's group
   size?: number; // pixels along the split
 }
 
@@ -69,7 +69,7 @@ const base = (panels: Record<string, PanelState>, arrangement: Placement[]): Lay
   theme: 'dark',
 });
 
-export type PresetName = 'A' | 'B' | 'C' | 'D';
+export type PresetName = 'A' | 'B' | 'C' | 'D' | 'M';
 
 /** A: one stock. B: a chart grid with a tape. C: dense, everything about one stock on one screen. D: research, the chart beside the stored analysis and verdict. */
 export const PRESETS: Record<PresetName, () => LayoutModel> = {
@@ -86,7 +86,7 @@ export const PRESETS: Record<PresetName, () => LayoutModel> = {
         { id: 'chart-1', type: 'chart' },
         { id: 'watchlist-1', type: 'watchlist', ref: 'chart-1', direction: 'left', size: 280 },
         { id: 'depth-1', type: 'depth', ref: 'chart-1', direction: 'right', size: 280 },
-        { id: 'quote-1', type: 'quote', ref: 'depth-1', direction: 'below', size: 220 },
+        { id: 'quote-1', type: 'quote', ref: 'depth-1', direction: 'below', size: 310 },
         { id: 'tape-1', type: 'tape', ref: 'chart-1', direction: 'below', size: 40 },
       ],
     ),
@@ -124,6 +124,23 @@ export const PRESETS: Record<PresetName, () => LayoutModel> = {
         { id: 'tape-1', type: 'tape', ref: 'chart-1', direction: 'below', size: 40 },
       ],
     ),
+  M: () =>
+    base(
+      {
+        'chart-1': { type: 'chart', group: 'blue', symbol: 'SBIN', range: '1D', indicators: ['EMA 20'] },
+        'watchlist-1': { type: 'watchlist', group: 'blue' },
+        'quote-1': { type: 'quote', group: 'blue', symbol: 'SBIN' },
+        'depth-1': { type: 'depth', group: 'blue', symbol: 'SBIN' },
+        'tape-1': { type: 'tape', group: 'none' },
+      },
+      [
+        { id: 'chart-1', type: 'chart' },
+        { id: 'watchlist-1', type: 'watchlist', ref: 'chart-1', direction: 'below', size: 300 },
+        { id: 'quote-1', type: 'quote', ref: 'watchlist-1', direction: 'within' },
+        { id: 'depth-1', type: 'depth', ref: 'watchlist-1', direction: 'within' },
+        { id: 'tape-1', type: 'tape', ref: 'chart-1', direction: 'above', size: 36 },
+      ],
+    ),
   D: () =>
     base(
       {
@@ -143,4 +160,7 @@ export const PRESETS: Record<PresetName, () => LayoutModel> = {
     ),
 };
 
-export const PRESET_NAMES: PresetName[] = ['A', 'B', 'C', 'D'];
+export const PRESET_NAMES: PresetName[] = ['A', 'B', 'C', 'D', 'M'];
+
+/** A window narrower than this gets the one-column arrangement M. */
+export const NARROW_PX = 760;

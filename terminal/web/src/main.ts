@@ -5,7 +5,7 @@ import { parse, type Command } from './command';
 import { attachSuggest, commandContext, commandFor, searchInstruments } from './suggest';
 import { Feed } from './feed';
 import {
-  deserialize, LayoutError, PRESET_NAMES, PRESETS, serialize, DEFAULT_WATCHLIST,
+  deserialize, LayoutError, NARROW_PX, PRESET_NAMES, PRESETS, serialize, DEFAULT_WATCHLIST,
   type LayoutModel, type PanelState, type PanelType, type PresetName,
 } from './layout';
 import { LinkBus } from './links';
@@ -68,6 +68,8 @@ class App implements AppContext {
   private screen!: ScreenView;
   private view: View = 'terminal';
   private lastPreset: PresetName = 'A';
+  /** The one-column arrangement was chosen by the window's width, not by the person: it is not saved over their own layout. */
+  private narrow = false;
   private titles = new Map<string, string>();
   private headerPaints = new Set<() => void>();
   private known = new Map<string, boolean>();
@@ -114,6 +116,17 @@ class App implements AppContext {
     });
     this.feed.onStatus(() => this.paintHealth());
     this.feed.connect();
+    // the panels are laid out to the window, and laid out again whenever the window changes (resize, maximise, rotate, fullscreen, back from the cache)
+    const fit = (): void => {
+      const w = this.dockHost.clientWidth;
+      const h = this.dockHost.clientHeight;
+      if (w > 0 && h > 0) this.dock.layout(w, h);
+    };
+    window.addEventListener('resize', fit);
+    window.visualViewport?.addEventListener('resize', fit);
+    window.addEventListener('orientationchange', fit);
+    window.addEventListener('pageshow', fit);
+    document.addEventListener('fullscreenchange', fit);
     window.addEventListener('keydown', (e) => this.hotkeys(e));
     this.indices.subscribe(() => this.paintIndexStrip());
     this.indices.start();
@@ -247,6 +260,7 @@ class App implements AppContext {
   }
 
   private load(model: LayoutModel): void {
+    this.narrow = false;
     this.loading = true;
     try {
       this.dock.clear();
@@ -268,10 +282,17 @@ class App implements AppContext {
     } finally {
       this.loading = false;
     }
+    // tabs added 'within' a group leave the last one on show: show the watchlist (the first thing a narrow window needs)
+    if (model.arrangement?.some((p) => p.direction === 'within')) this.dock.getPanel(model.arrangement.find((p) => p.type === 'watchlist')?.id ?? '')?.api.setActive();
     this.changed();
   }
 
   private async restore(): Promise<void> {
+    if (window.innerWidth < NARROW_PX) {
+      this.loadPreset('M');
+      this.narrow = true;
+      return;
+    }
     const keep = localStorage.getItem(STORE_KEY);
     if (keep) {
       try {
@@ -291,6 +312,7 @@ class App implements AppContext {
   }
 
   private async persist(): Promise<void> {
+    if (this.narrow) return;
     const text = serialize(this.model());
     try {
       localStorage.setItem(STORE_KEY, text);
@@ -314,7 +336,7 @@ class App implements AppContext {
     this.layoutSelect.replaceChildren(new Option('Layouts', ''));
     const presets = document.createElement('optgroup');
     presets.label = 'Presets';
-    PRESET_NAMES.forEach((n) => presets.append(new Option(`${n}${{ A: ' · one stock', B: ' · chart grid', C: ' · dense', D: ' · research' }[n]}`, `preset:${n}`)));
+    PRESET_NAMES.forEach((n) => presets.append(new Option(`${n}${{ A: ' · one stock', B: ' · chart grid', C: ' · dense', D: ' · research', M: ' · narrow screen' }[n]}`, `preset:${n}`)));
     this.layoutSelect.append(presets);
     if (this.saved.length) {
       const mine = document.createElement('optgroup');

@@ -209,3 +209,9 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Still open:** fundamentals exist only for companies fetched so far (the Nifty 50, RVNL, IRFC and what is fetched through the button); a full-market fetch is a long manual run (`--universe all`, about a minute per company).
 
+## 17. Fitting any window (2026-10-18)
+
+**Asked for:** the app must fill the browser window whatever the device or window size, with nothing running past the edges.
+
+**Found:** the app already does in every window size, view, scaling and resize that was tried; the strip in the reported screenshot is Chrome's frame, outside the page. Hardening done anyway (pinned page, re-fit on every window event, pop-ups kept inside the window, one-row watchlist toolbar, a one-column layout M below 760 pixels), with six end-to-end tests that guard it. If the strip persists, it is a browser or window state (side panel, snap, taskbar), and the window size and Chrome version are needed.
+

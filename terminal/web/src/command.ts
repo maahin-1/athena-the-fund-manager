@@ -18,7 +18,7 @@ export interface CommandContext {
 
 const SYMBOL = /^[A-Z0-9&-]{1,20}$/;
 const INDEX_NAME = /^(NIFTY(?: [A-Z0-9]+){1,2}|INDIA VIX)$/;
-const PRESETS = ['A', 'B', 'C', 'D'];
+const PRESETS = ['A', 'B', 'C', 'D', 'M'];
 
 const fail = (message: string): Command => ({ kind: 'error', message });
 

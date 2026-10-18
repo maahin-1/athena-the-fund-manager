@@ -17,6 +17,12 @@ const START = {
   }],
 };
 
+/** Open the watchlist menu (if it is not open) and press one of its buttons. */
+async function menu(page: Page, name: string | RegExp): Promise<void> {
+  if (!(await page.locator('.wl-menu').count())) await page.getByLabel('watchlist menu').click();
+  await page.locator('.wl-menu').getByRole('button', { name }).click();
+}
+
 async function reset(page: Page): Promise<void> {
   await page.evaluate(async (doc) => {
     window.localStorage.clear();
@@ -48,7 +54,7 @@ test('index rows and the top-bar strip show the exchange snapshot values', async
 });
 
 test('a new list, a heading, a flag and a command that adds to a named list all persist across a reload', async ({ page }) => {
-  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await menu(page, 'New list');
   await page.locator('.wl-input').fill('Banks');
   await page.locator('.wl-input').press('Enter');
   await expect(page.locator('.wl-lists')).toHaveValue('l2');
@@ -59,7 +65,7 @@ test('a new list, a heading, a flag and a command that adds to a named list all 
   await command(page).fill('ADD SBIN TO Nowhere');
   await command(page).press('Enter');
   await expect(page.locator('.statusline')).toContainText('no watchlist named "Nowhere"');
-  await page.getByRole('button', { name: '+ Section' }).click();
+  await menu(page, '+ Section');
   await page.locator('.wl-input').fill('Private');
   await page.locator('.wl-input').press('Enter');
   await expect(page.locator('.wl-section')).toContainText('Private');
@@ -76,7 +82,7 @@ test('a new list, a heading, a flag and a command that adds to a named list all 
 });
 
 test('columns can be added and the list sorts by a heading, ascending then descending then back', async ({ page }) => {
-  await page.getByRole('button', { name: 'Columns' }).click();
+  await menu(page, 'Columns');
   await page.getByLabel('Volume').check();
   await expect(page.locator('.wl-th', { hasText: 'Volume' })).toBeVisible();
   await expect(row(page, 'SBIN').locator('td[data-col="volume"]')).toBeVisible();
@@ -106,7 +112,7 @@ test('a heading folds its symbols away and unfolds them', async ({ page }) => {
 });
 
 test('export shows the text form and an import adds known symbols and names the unknown ones', async ({ page }) => {
-  await page.getByRole('button', { name: 'Import / Export' }).click();
+  await menu(page, 'Import / Export');
   await expect(page.locator('.wl-text')).toHaveValue('###Indices\nNSE:NIFTY 50,NSE:NIFTY BANK\n###Stocks\nNSE:SBIN,NSE:TCS,NSE:INFY');
   await page.locator('.wl-text').fill('###Stocks\nNSE:HDFCBANK,NSE:ZZZNOTASTOCK');
   await page.getByRole('button', { name: 'Import into this list' }).click();
@@ -120,11 +126,11 @@ test('removing a symbol keeps the others, and deleting a list asks twice', async
   await row(page, 'TCS').locator('.x').click();
   await expect(row(page, 'TCS')).toHaveCount(0);
   await expect(row(page, 'SBIN')).toBeVisible();
-  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await menu(page, 'New list');
   await page.locator('.wl-input').fill('Scratch');
   await page.locator('.wl-input').press('Enter');
-  await page.locator('.wl-bar').getByRole('button', { name: 'Delete' }).click();
-  await expect(page.getByRole('button', { name: 'Sure?' })).toBeVisible();
-  await page.getByRole('button', { name: 'Sure?' }).click();
+  await menu(page, 'Delete');
+  await expect(page.locator('.wl-menu').getByRole('button', { name: /Sure\?/ })).toBeVisible();
+  await menu(page, /Sure\?/);
   await expect(page.locator('.wl-lists option')).toHaveCount(1);
 });

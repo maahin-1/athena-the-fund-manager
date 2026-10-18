@@ -126,6 +126,24 @@ export function attachSuggest(input: HTMLInputElement, options: SuggestOptions):
     list.replaceChildren();
   };
 
+  /** Under the box when there is room, above it when there is not, and never wider or lower than the window. */
+  const place = (): void => {
+    const r = input.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    const width = Math.min(Math.max(r.width, 300), vw - 16);
+    const below = vh - r.bottom - 8;
+    const above = r.top - 8;
+    const up = below < 160 && above > below;
+    list.style.minWidth = `${width}px`;
+    list.style.maxWidth = `${vw - 16}px`;
+    list.style.left = `${Math.max(8, Math.min(r.left, vw - width - 8))}px`;
+    list.style.left = `${Math.max(8, Math.min(r.left, vw - list.offsetWidth - 8))}px`; // again with the width the names actually need
+    list.style.maxHeight = `${Math.max(80, Math.min(340, up ? above : below))}px`;
+    list.style.top = up ? 'auto' : `${r.bottom + 2}px`;
+    list.style.bottom = up ? `${vh - r.top + 2}px` : 'auto';
+  };
+
   const paint = (): void => {
     list.replaceChildren();
     hits.forEach((hit, i) => {
@@ -157,11 +175,8 @@ export function attachSuggest(input: HTMLInputElement, options: SuggestOptions):
       list.append(row);
     });
     if (!hits.length) return void (list.hidden = true);
-    const r = input.getBoundingClientRect();
-    list.style.left = `${Math.max(0, r.left)}px`;
-    list.style.top = `${r.bottom + 2}px`;
-    list.style.minWidth = `${Math.max(r.width, 300)}px`;
     list.hidden = false;
+    place();
   };
 
   const choose = (hit: Hit): void => {
@@ -219,6 +234,7 @@ export function attachSuggest(input: HTMLInputElement, options: SuggestOptions):
   input.addEventListener('input', onInput);
   input.addEventListener('keydown', onKey, true); // before the box's own handlers
   input.addEventListener('blur', close);
+  window.addEventListener('resize', close);
   return {
     close,
     destroy() {
@@ -226,6 +242,7 @@ export function attachSuggest(input: HTMLInputElement, options: SuggestOptions):
       input.removeEventListener('input', onInput);
       input.removeEventListener('keydown', onKey, true);
       input.removeEventListener('blur', close);
+      window.removeEventListener('resize', close);
       list.remove();
     },
   };
