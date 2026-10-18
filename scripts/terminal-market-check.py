@@ -4,7 +4,13 @@
 
 Connects to the running terminal server the way the page does, watches the symbols (default: ten large stocks) and prints, per symbol, how
 many updates arrived and the median and 95th-percentile gap between them, plus the delay from the server building a frame to this script
-receiving it. It reads no setting and prints no secret; the server must already be running (scripts/terminal.ps1)."""
+receiving it. It reads no setting and prints no secret; the server must already be running (scripts/terminal.ps1).
+
+Still to check in a market session (derivatives, Task B2 of docs/superpowers/plans/2026-10-19-derivatives.md; nothing here does it yet):
+  - subscribe a few NFO option and future tokens (exchange type 2) and an MCX one (5) in snap-quote mode and capture raw packets;
+  - compare the decoder's open interest (int64 at offset 131) and change in open interest percent (float64 at 139) with the exchange's own option chain;
+  - compare the Options page's implied volatility and Greeks for one at-the-money contract with the broker's or the exchange's figures;
+  - the live derivative route and a live OptionFeed do not exist until that is done, and the Options page shows synthetic prices."""
 from __future__ import annotations
 
 import argparse

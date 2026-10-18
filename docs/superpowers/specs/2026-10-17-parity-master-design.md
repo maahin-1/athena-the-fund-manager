@@ -294,3 +294,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 **Honest limits:** bar replay at the chart's own interval only; a coarser chart in a synced replay lags the driving chart until its next bar completes; intraday replay reaches back only as far as the free source holds.
 
 **Next in this track:** 5f F&O and MCX.
+
+## 28. Futures, options and MCX (5f, 2026-10-19)
+
+**Done:** the contract table from Angel's public list for NFO, BFO and MCX with its `/api/derivs/*` routes; open interest read by the stream decoder; Black-76 prices, implied volatility and Greeks; chain statistics (forward, ATM, put-call ratio, max pain, smile, term structure); the Options tab (chain, smile, term curve, futures with basis, payoff builder). Spec `2026-10-19-derivatives-design.md`, plan `2026-10-19-derivatives.md`, TRD sections 2.46 and 2.47.
+
+**Honest limits:** the Options tab shows **synthetic prices** and says so; the live derivative stream (subscription by exchange type, open interest through the quote hub, a live `OptionFeed`) is not built because it can only be checked in a market session, and the decoder's open-interest offsets are not yet compared with a real packet; no margin estimate; MCX option Greeks are approximate; continuous futures (`NAME1!`, `NAME2!`) need a futures history fill and are the next piece.
+
+**Next in this track:** the live derivative path (Task B2, in a market session), continuous futures (Task H).

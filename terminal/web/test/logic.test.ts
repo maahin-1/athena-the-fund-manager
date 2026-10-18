@@ -57,6 +57,25 @@ describe('command line', () => {
   });
 });
 
+describe('options command', () => {
+  it('opens the Options page on an underlying, either word order, and on no underlying', () => {
+    expect(parse('OPTIONS', ctx)).toEqual({ kind: 'options', symbol: null });
+    expect(parse('chain', ctx)).toEqual({ kind: 'options', symbol: null });
+    expect(parse('options banknifty', ctx)).toEqual({ kind: 'options', symbol: 'BANKNIFTY' });
+    expect(parse('GOLD OPTIONS', ctx)).toEqual({ kind: 'options', symbol: 'GOLD' });
+    expect(parse('NIFTY OPTIONS', ctx)).toEqual({ kind: 'options', symbol: 'NIFTY' });
+    expect(parse('NIFTY chain', ctx)).toEqual({ kind: 'options', symbol: 'NIFTY' });
+    expect(parse('OPTIONS NIFTY', ctx)).toEqual({ kind: 'options', symbol: 'NIFTY' });
+  });
+  it('still reads an index name of several words as an index', () => {
+    expect(parse('NIFTY BANK', ctx)).toEqual({ kind: 'symbol', symbol: 'NIFTY BANK' });
+    expect(parse('NIFTY 50 CHART', ctx)).toEqual({ kind: 'chart', symbol: 'NIFTY 50' });
+  });
+  it('refuses a word that cannot be an underlying', () => {
+    expect(parse('OPTIONS a$b', ctx).kind).toBe('error');
+  });
+});
+
 describe('details command', () => {
   const ctx = { layouts: [] };
   it('opens the Details panel with or without a stock', () => {

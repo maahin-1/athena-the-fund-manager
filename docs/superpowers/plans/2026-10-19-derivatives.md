@@ -35,37 +35,37 @@
 
 - [ ] Subscribe derivative tokens with the segment's exchange type from the contract table, carry open interest through the quote and the hub, add a route that returns quotes for a list of contract tokens (at most 100), an `OptionFeed` on the page that reads it, and compare the decoder's offsets with real packets; add the derivative stream and open interest to `scripts/terminal-market-check.py`. Not started: it cannot be checked without a session.
 
-### Task C: Black-76, implied volatility and Greeks (pure)
+### Task C: Black-76, implied volatility and Greeks (pure) — done
 
 **Files:** create `terminal/web/src/options/black76.ts`, `terminal/web/test/black76.test.ts`.
 
-- [ ] Tests first: textbook prices, put-call parity, delta and gamma by finite difference, vega and theta signs, IV round trip over a grid of moneyness and expiries, refusals (below intrinsic, above the bound, no time left), time to expiry to 15:30 IST with a one-minute floor.
-- [ ] Implement `price`, `greeks`, `impliedVol`, `yearsToExpiry`; commit.
+- [x] Tests first: textbook prices, put-call parity, delta and gamma by finite difference, vega and theta signs, IV round trip over a grid of moneyness and expiries, refusals (below intrinsic, above the bound, no time left), time to expiry to 15:30 IST with a one-minute floor.
+- [x] Implement `price`, `greeks`, `impliedVol`, `yearsToExpiry`; commit.
 
-### Task D: chain statistics and payoff (pure)
+### Task D: chain statistics and payoff (pure) — done
 
 **Files:** create `terminal/web/src/options/chain.ts`, `terminal/web/src/options/payoff.ts`, tests.
 
-- [ ] Tests first: forward from a future or from spot, ATM strike, PCR by open interest and volume, max pain, volatility curve (calls above the forward, puts below), ATM term structure; payoff at expiry and now for each leg kind, a straddle, a bull call spread, an iron condor, a covered future; break-evens (including none and more than two), maximum profit and loss with unlimited ends reported as unlimited; net Greeks.
-- [ ] Implement; commit.
+- [x] Tests first: forward from a future or from spot, ATM strike, PCR by open interest and volume, max pain, volatility curve (calls above the forward, puts below), ATM term structure; payoff at expiry and now for each leg kind, a straddle, a bull call spread, an iron condor, a covered future; break-evens (including none and more than two), maximum profit and loss with unlimited ends reported as unlimited; net Greeks.
+- [x] Implement; commit.
 
-### Task E: synthetic option feed
+### Task E: synthetic option feed — done
 
 **Files:** create `terminal/web/src/options/synthetic.ts`, `terminal/web/test/synthetic.test.ts`.
 
-- [ ] Tests first: determinism for a contract and day; put-call parity of its prices; its implied volatilities reproduce the smile; open interest peaks near the money; every number finite and non-negative; bid below ask.
-- [ ] Implement `OptionFeed` and the synthetic feed; commit.
+- [x] Tests first: determinism for a contract and day; put-call parity of its prices; its implied volatilities reproduce the smile; open interest peaks near the money; every number finite and non-negative; bid below ask.
+- [x] Implement `OptionFeed` and the synthetic feed; commit.
 
-### Task F: the Options tab
+### Task F: the Options tab — done
 
 **Files:** create `terminal/web/src/options/view.ts`, `chainview.ts`, `curve.ts`, `payoffview.ts`; modify `main.ts`, `command.ts`, `style.css`; tests and `e2e/options.spec.ts`.
 
-- [ ] E2E first: open under the fake feed, choose an expiry, see chain, ATM, PCR and the curve; click prices to add a call and a put (a straddle); read break-evens, max loss and net premium; "synthetic prices" label.
-- [ ] Implement in slices: chain table, statistics line, curve charts, payoff builder, futures list; full suites; commit.
+- [x] E2E first: open under the fake feed, choose an expiry, see chain, ATM, PCR and the curve; click prices to add a call and a put (a straddle); read break-evens, max loss and net premium; "synthetic prices" label.
+- [x] Implement in slices: chain table, statistics line, curve charts, payoff builder, futures list; full suites; commit.
 
-### Task G: docs and the live-check list
+### Task G: docs and the live-check list — done
 
-- [ ] TRD 2.46 and 2.47, master design section 28, roadmap row (5f: built, awaiting live check), add the derivative stream, open interest and Greeks comparison to `scripts/terminal-market-check.py`'s checklist, `graphify update .`, full suites, commit.
+- [x] TRD 2.46 and 2.47, master design section 28, roadmap row (5f: built, awaiting live check), add the derivative stream, open interest and Greeks comparison to `scripts/terminal-market-check.py`'s checklist, `graphify update .`, full suites, commit.
 
 ### Task H (separate, after the above): continuous futures
 
