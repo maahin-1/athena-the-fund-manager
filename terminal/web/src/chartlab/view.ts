@@ -7,7 +7,10 @@ import { el, type AppContext } from '../panels/base';
 import { barLimit, type Range, type Timeframe } from '../ranges';
 import { settingsDialog } from './dialog';
 import { CHART_TYPES, ChartModel, isDerived, type ChartType, type LabState, type ScaleMode } from './model';
-import { caption, REGISTRY } from './registry';
+import { caption, isCustom, REGISTRY } from './registry';
+import { formulaDialog } from './formuladialog';
+import { formulaId } from '../formula/defs';
+import { FormulaStore, serverFormulaIO, type FormulaIO } from '../formula/store';
 import { build, SOURCE } from './resample';
 import { lightweightRenderer, type ChartRenderer, type RendererFactory } from './render';
 import { deserialize, History, serialize, StateError, Templates, type KeyValue } from './store';
@@ -68,6 +71,7 @@ export interface LabOptions {
   fetchBars?: BarsFetcher;
   storage?: KeyValue | null;
   drawingIO?: DrawingIO;
+  formulaIO?: FormulaIO;
 }
 
 function browserStorage(): KeyValue | null {
@@ -89,6 +93,7 @@ export class ChartLabView {
   readonly model = new ChartModel();
   private history = new History<LabState>(this.model.state());
   private templates: Templates;
+  private formulas: FormulaStore;
   private renderer: ChartRenderer | null = null;
   private fetcher: BarsFetcher;
   private makeRenderer: RendererFactory;
@@ -138,6 +143,7 @@ export class ChartLabView {
     this.storage = options.storage === undefined ? browserStorage() : options.storage;
     this.templates = new Templates(this.storage);
     this.drawingStore = new DrawingStore(options.drawingIO ?? serverDrawingIO(), this.storage);
+    this.formulas = new FormulaStore(options.formulaIO ?? serverFormulaIO(), this.storage); // registered from the browser copy at once, so a saved chart can use them
     this.fetcher = options.fetchBars ?? fetchBars;
     this.makeRenderer = options.renderer ?? lightweightRenderer;
     this.buildToolbar();
@@ -155,6 +161,31 @@ export class ChartLabView {
     this.offQuotes = ctx.feed.onQuotes((qs) => this.onQuotes(qs));
     this.offLink = ctx.bus.subscribe(LINK_GROUP, (s) => this.follow(s));
     this.restoreSaved();
+    this.formulas.subscribe(() => this.formulasChanged());
+    void this.formulas.load();
+  }
+
+  /** The formulas changed (loaded, saved, deleted): charts that use one that is gone lose it, and every formula line is computed again. */
+  private formulasChanged(): void {
+    if (this.model.refreshCustom()) {
+      this.history.push(this.model.state());
+      this.persist();
+      this.say('A formula indicator was taken off the chart because its formula was deleted.');
+    }
+  }
+
+  /** Open the formula editor; a new formula is put on the chart when it is saved. */
+  private editFormula(name?: string): void {
+    const existing = name ? this.formulas.get(name) ?? null : null;
+    formulaDialog(this.element, existing, async (formula) => {
+      try {
+        await this.formulas.save(formula);
+      } catch (e) {
+        return e instanceof Error ? e.message : 'the formula could not be saved';
+      }
+      if (!existing) this.commit(() => this.model.addIndicator(formulaId(formula.name)));
+      return null;
+    });
   }
 
   // ---- showing and loading -----------------------------------------------------------------------------------------------------------------
@@ -523,6 +554,7 @@ export class ChartLabView {
         });
         list.append(row);
       }
+      this.formulaSection(list, q);
     };
     search.addEventListener('input', fill);
     search.addEventListener('keydown', (e) => e.key === 'Escape' && (this.popover.hidden = true));
@@ -530,6 +562,66 @@ export class ChartLabView {
     this.popover.replaceChildren(search, list);
     this.popover.hidden = false;
     search.focus();
+  }
+
+  /** The user's formulas at the end of the Indicators list: each can be added, edited or deleted (a second click confirms), and a new one written. */
+  private formulaSection(list: HTMLElement, q: string): void {
+    list.append(el('div', 'lab-sep', 'My formulas'));
+    for (const def of this.formulas.defs().filter((d) => !q || d.name.toLowerCase().includes(q))) {
+      const row = el('div', 'lab-item-row');
+      const add = el('button', 'lab-item', def.name);
+      add.dataset.indicator = def.id;
+      add.append(el('span', 'note', def.pane === 'overlay' ? 'on price' : 'own pane'));
+      add.addEventListener('click', () => {
+        this.commit(() => this.model.addIndicator(def.id));
+        this.popover.hidden = true;
+      });
+      const edit = el('button', 'btn lab-mini', 'Edit');
+      edit.type = 'button';
+      edit.setAttribute('aria-label', `edit ${def.name}`);
+      edit.addEventListener('click', () => {
+        this.popover.hidden = true;
+        this.editFormula(def.name);
+      });
+      const del = el('button', 'btn lab-mini', 'Delete');
+      del.type = 'button';
+      del.setAttribute('aria-label', `delete ${def.name}`);
+      let armed = false;
+      del.addEventListener('click', () => {
+        if (!armed) {
+          armed = true;
+          del.textContent = 'Sure?';
+          setTimeout(() => {
+            armed = false;
+            del.textContent = 'Delete';
+          }, 3000);
+          return;
+        }
+        void this.formulas.remove(def.name).catch(() => this.say('The formula could not be deleted on the server.'));
+        this.popover.hidden = true;
+      });
+      row.append(add, edit, del);
+      list.append(row);
+    }
+    for (const [name, error] of Object.entries(this.formulas.errors)) {
+      const row = el('div', 'lab-item-row');
+      row.append(el('span', 'note bad', `${name}: ${error}`));
+      const edit = el('button', 'btn lab-mini', 'Edit');
+      edit.type = 'button';
+      edit.addEventListener('click', () => {
+        this.popover.hidden = true;
+        this.editFormula(name);
+      });
+      row.append(edit);
+      list.append(row);
+    }
+    const create = el('button', 'lab-item', 'New formula…');
+    create.dataset.action = 'new-formula';
+    create.addEventListener('click', () => {
+      this.popover.hidden = true;
+      this.editFormula();
+    });
+    list.append(create);
   }
 
   // ---- painting ------------------------------------------------------------------------------------------------------------------------------
@@ -626,6 +718,7 @@ export class ChartLabView {
   private openSettings(uid: string): void {
     const inst = this.model.indicators.find((i) => i.uid === uid);
     if (!inst) return;
+    if (isCustom(inst.id)) return this.editFormula(inst.id.slice(2)); // a formula's settings are its text
     settingsDialog(this.element, this.model.def(inst), inst, (params, colors) => {
       let error: string | null = null;
       this.commit(() => (error = this.model.updateIndicator(uid, params, colors)));

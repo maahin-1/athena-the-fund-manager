@@ -357,6 +357,7 @@ async fn api_indices(State(state): State<AppState>) -> Response {
 
 const WATCHLISTS: &str = "watchlists";
 const SCREENS: &str = "screens";
+const FORMULAS: &str = "formulas";
 
 /// The name a symbol's drawings are kept under in the lists folder: `dr-` and the upper-cased symbol, where letters, digits, space and `-` stay and every other character
 /// (including `_`) becomes `_` and two hex digits (`M&M` is `dr-M_26M`). None for a symbol outside `A-Z 0-9 & ^ space -` or one whose name would pass the store's 40 characters.
@@ -419,6 +420,22 @@ async fn screens_get(State(state): State<AppState>) -> Response {
 
 async fn screens_put(State(state): State<AppState>, body: Bytes) -> Response {
     match state.lists.put(SCREENS, &body) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+/// The user's saved formulas: one document, as the screens are (the page validates what is in it).
+async fn formulas_get(State(state): State<AppState>) -> Response {
+    match state.lists.get(FORMULAS) {
+        Ok(body) => ([("content-type", "application/json")], body).into_response(),
+        Err(LayoutError::Missing) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+async fn formulas_put(State(state): State<AppState>, body: Bytes) -> Response {
+    match state.lists.put(FORMULAS, &body) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => layout_status(e).into_response(),
     }
@@ -514,6 +531,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/search", get(api_search))
         .route("/api/watchlists", get(watchlists_get).put(watchlists_put))
         .route("/api/screens", get(screens_get).put(screens_put))
+        .route("/api/formulas", get(formulas_get).put(formulas_put))
         .route("/api/drawings/:symbol", get(drawings_get).put(drawings_put))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
@@ -669,6 +687,22 @@ mod tests {
         assert_eq!(client.put(&url).header("Origin", &origin).body("[]").send().await.unwrap().status(), 400);
         let big = format!(r#"{{"x":"{}"}}"#, "a".repeat(250 * 1024));
         assert_eq!(client.put(&url).header("Origin", &origin).body(big).send().await.unwrap().status(), 413);
+        assert_eq!(client.put(&url).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn saved_formulas_are_one_document_apart_from_the_screens_and_the_watchlists() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}/api/formulas");
+        assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().status(), 204);
+        let body = r#"{"version":1,"formulas":[{"name":"Spread","text":"sma(20) - sma(50)","pane":"own"}]}"#;
+        assert_eq!(client.put(&url).header("Origin", &origin).body(body).send().await.unwrap().status(), 204);
+        assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().text().await.unwrap(), body);
+        assert_eq!(client.get(format!("http://127.0.0.1:{port}/api/screens")).header("Origin", &origin).send().await.unwrap().status(), 204);
+        assert_eq!(client.put(&url).header("Origin", &origin).body("[]").send().await.unwrap().status(), 400);
         assert_eq!(client.put(&url).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
         stop.cancel();
     }

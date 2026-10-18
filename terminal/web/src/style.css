@@ -300,6 +300,18 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 /* the market screen */
 .screen { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: 10px 12px; background: var(--bg); }
 .screen > .note { padding: 2px 0; }
+/* formula indicators */
+.lab-sep { margin: 8px 0 2px; padding-top: 4px; border-top: 1px solid var(--border); font-size: 11px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .04em; }
+.lab-item-row { display: flex; align-items: center; gap: 4px; }
+.lab-item-row .lab-item { flex: 1; }
+.lab-mini { padding: 0 6px; font-size: 11px; }
+.lab-formula { min-width: 440px; max-width: 640px; }
+.lab-formula-text { width: 100%; box-sizing: border-box; font-family: var(--mono, ui-monospace, monospace); background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; padding: 4px 6px; resize: vertical; }
+.lab-formula-help { margin: 6px 0; color: var(--fg-dim); }
+.lab-formula-help summary { cursor: pointer; }
+.lab-example { margin: 2px 0; }
+.lab-example .linklike { font-family: var(--mono, ui-monospace, monospace); }
+.note.ok { color: var(--up); }
 /* calendar */
 .calendar { margin: 6px 0; }
 .cal-controls { margin-bottom: 6px; }

@@ -1,5 +1,5 @@
 import type { ChartType, LabState, ScaleMode } from './model';
-import { find } from './registry';
+import { find, isCustom } from './registry';
 
 const TYPES: ChartType[] = ['candles', 'hollow', 'bars', 'line', 'area', 'baseline', 'columns', 'step', 'heikin', 'renko', 'linebreak', 'range', 'highlow', 'volcandles', 'kagi', 'pnf'];
 const SCALES: ScaleMode[] = ['auto', 'log', 'percent'];
@@ -29,7 +29,9 @@ export function deserialize(text: string): LabState {
   if (typeof raw.adjusted !== 'boolean') throw new StateError('adjusted must be true or false');
   if (!(raw.compare === null || (typeof raw.compare === 'string' && /^[A-Za-z0-9&^ -]{1,24}$/.test(raw.compare)))) throw new StateError('bad compare symbol');
   if (!Array.isArray(raw.indicators) || raw.indicators.length > 40) throw new StateError('indicators must be a list of at most 40');
-  const indicators = raw.indicators.map((entry) => {
+  // a chart that uses a formula that has since been deleted keeps its other indicators: only a formula may go missing, never a built-in one
+  const known = raw.indicators.filter((entry) => !(isObject(entry) && typeof entry.id === 'string' && isCustom(entry.id) && !find(entry.id)));
+  const indicators = known.map((entry) => {
     if (!isObject(entry) || typeof entry.id !== 'string' || !find(entry.id)) throw new StateError(`unknown indicator ${isObject(entry) ? String(entry.id) : '?'}`);
     if (!isObject(entry.params) || !Object.values(entry.params).every((v) => typeof v === 'number' || typeof v === 'string')) throw new StateError('bad indicator settings');
     const colors = isObject(entry.colors) ? entry.colors : {};

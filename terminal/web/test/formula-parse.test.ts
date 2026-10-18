@@ -174,6 +174,7 @@ describe('errors', () => {
     expect(error('').message).toMatch(/type a formula/);
     expect(error('   ').message).toMatch(/type a formula/);
     expect(error('sma(20').message).toMatch(/missing "\)"/);
+    expect(error('sma(').message).toMatch(/missing "\)"/);
     expect(error('close)').message).toMatch(/unexpected "\)"/);
     expect(error('close > ').message).toMatch(/expected a value after >/);
     expect(error('close # 1').message).toMatch(/unexpected character "#"/);

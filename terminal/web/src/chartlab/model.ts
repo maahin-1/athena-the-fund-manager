@@ -109,6 +109,16 @@ export class ChartModel {
     this.listeners.forEach((fn) => fn(kind));
   }
 
+  /** The set of formula indicators changed (one was edited or deleted): drop the instances whose formula is gone, forget every computed series and redraw. Not an
+   *  undo step. Returns whether any instance was dropped. */
+  refreshCustom(): boolean {
+    const before = this.indicators.length;
+    this.indicators = this.indicators.filter((i) => find(i.id));
+    this.cache.clear();
+    this.listeners.forEach((fn) => fn('structure'));
+    return this.indicators.length !== before;
+  }
+
   setBars(bars: Bar[], tf: Timeframe): void {
     this.bars = bars;
     this.tf = tf;

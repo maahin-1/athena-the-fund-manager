@@ -153,8 +153,21 @@ export const REGISTRY: IndicatorDef[] = [
   { id: 'aroonosc', name: 'Aroon Oscillator', pane: 'own', inputs: [int('length', 'Length', 14)], outputs: [line('osc', 'Aroon osc', '--ind3')], levels: [0], compute: (b, p) => ({ osc: m2.aroonOsc(highs(b), lows(b), n(p, 'length')) }) },
 ];
 
+/** The indicators the user wrote as formulas (`formula/`), by id (`f:` and the name). They are registered when the page has them and replaced as a set. */
+const CUSTOM = new Map<string, IndicatorDef>();
+
+export function setCustom(defs: IndicatorDef[]): void {
+  CUSTOM.clear();
+  for (const d of defs) CUSTOM.set(d.id, d);
+}
+
+export const customDefs = (): IndicatorDef[] => [...CUSTOM.values()];
+
+/** Whether an id names a user's formula rather than a built-in indicator. */
+export const isCustom = (id: string): boolean => id.startsWith('f:');
+
 export function find(id: string): IndicatorDef | undefined {
-  return REGISTRY.find((d) => d.id === id);
+  return REGISTRY.find((d) => d.id === id) ?? CUSTOM.get(id);
 }
 
 /** An indicator's settings with every input at its default. */

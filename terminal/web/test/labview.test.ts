@@ -87,7 +87,7 @@ describe('chart lab page', () => {
   it('the Indicators list holds every indicator, and adding one gives a legend row, a data-window block, and undo and redo', async () => {
     const h = await shown();
     click(h.view.element, '.lab-ind');
-    const items = [...h.view.element.querySelectorAll('.lab-item')].map((i) => (i as HTMLElement).dataset.indicator);
+    const items = [...h.view.element.querySelectorAll('.lab-item[data-indicator]')].map((i) => (i as HTMLElement).dataset.indicator);
     expect(items).toEqual(REGISTRY.map((d) => d.id));
     click(h.view.element, '.lab-item[data-indicator="rsi"]');
     expect(h.view.element.querySelector('.lab-lrow .lg-name')?.textContent).toBe('RSI 14');
@@ -109,7 +109,7 @@ describe('chart lab page', () => {
     const search = h.view.element.querySelector('.lab-pop input') as HTMLInputElement;
     search.value = 'bands';
     search.dispatchEvent(new Event('input'));
-    expect([...h.view.element.querySelectorAll('.lab-item')].map((i) => (i as HTMLElement).dataset.indicator)).toEqual(['bb']);
+    expect([...h.view.element.querySelectorAll('.lab-item[data-indicator]')].map((i) => (i as HTMLElement).dataset.indicator)).toEqual(['bb']);
   });
 
   it('the gear opens the settings, a change is applied and shown in the legend, and a bad one is refused in place', async () => {

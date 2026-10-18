@@ -304,6 +304,7 @@ class Parser {
     let position = 0;
     while (this.peek.k !== 'rp') {
       const a = this.peek;
+      if (a.k === 'end') fail('missing ")"', a.at, 1);
       let setting = info.params[position];
       let named = false;
       if (a.k === 'word' && this.tokens[this.i + 1]?.k === 'eq') {
