@@ -184,8 +184,8 @@ test('the Terminal chart panel also keeps the earlier bars loaded behind a short
   expect(await candlesLeft(page, '.panel:has(.chart-body)')).toBeGreaterThan(200);
 });
 
-test('a renamed company reaches back past its rename: the old symbol is joined, scaled to match, with no cliff', async ({ page, request }) => {
-  for (const [symbol, old] of [['SHRIRAMFIN', 'SRTRANSFIN'], ['ETERNAL', 'ZOMATO'], ['TATACONSUM', 'TATAGLOBAL']] as const) {
+test('a renamed company reaches back past its rename: the old symbol is joined from the warehouse record, on one footing, with no cliff', async ({ page, request }) => {
+  for (const [symbol, old] of [['SHRIRAMFIN', 'SRTRANSFIN'], ['ETERNAL', 'ZOMATO'], ['TATACONSUM', 'TATAGLOBAL'], ['LTIM', 'LTI'], ['TMPV', 'TATAMOTORS']] as const) {
     const body = await (await request.get(`/api/bars?symbol=${symbol}&tf=1D&limit=5000`)).json();
     const ts: number[] = body.bars.map((b: { t: number }) => b.t);
     const ownFirst = (await (await request.get(`/api/bars?symbol=${old}&tf=1D&limit=5000`)).json()).bars[0].t;

@@ -231,3 +231,9 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Next in this track:** remaining chart types, peers (6f) and screens (6g), alerts (5g, which will add drawing alerts), F&O and MCX, then drawing tiers 2 and 3.
 
+## 20. Symbol succession and the rule against per-ticker fixes (2026-10-18)
+
+**Done:** `symbol_renames`, one record from the exchange's own rename file checked against our bars, read by Python prices, Rust raw bars, search and the fundamentals history; the three hand-kept lists are gone. Spec `2026-10-18-symbol-succession-design.md`, plan `2026-10-18-symbol-succession.md`, TRD section 2.32, `scripts/succession_audit.py`.
+
+**Rule (from the owner, 2026-10-18):** nothing in this product is fixed for one ticker by hand. A defect seen on one symbol is a defect class: find the data that defines the class, build the rule once, and run it over every symbol before calling it done. A table of named tickers in code is a defect in itself.
+
