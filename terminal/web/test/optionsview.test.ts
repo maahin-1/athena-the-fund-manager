@@ -43,7 +43,7 @@ class Memory {
 }
 
 function make(api = stubApi(), storage = new Memory()) {
-  const view = new OptionsView({} as AppContext, { api, storage, now: () => now });
+  const view = new OptionsView({} as AppContext, { api, storage, live: null, now: () => now });
   document.body.replaceChildren(view.element);
   return { view, api, storage };
 }
@@ -130,6 +130,11 @@ describe('the Options page', () => {
     box.dispatchEvent(new Event('change'));
     expect(view.element.querySelectorAll('td[data-col="delta"]').length).toBeGreaterThan(20);
     expect(view.element.querySelectorAll('td[data-col="theta"]').length).toBeGreaterThan(20);
+  });
+
+  it('shows the interest rate as typed, not as a float artefact', () => {
+    const { view } = make();
+    expect(view.element.querySelector<HTMLInputElement>('[aria-label="interest rate"]')!.value).toBe('7');
   });
 
   it('keeps its choices between visits', async () => {

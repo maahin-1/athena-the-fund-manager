@@ -31,9 +31,11 @@
 - [x] Tests first: a crafted 379-byte packet with open interest at offset 131 and its change in percent at 139; the cash packet still decodes; neighbouring fields undisturbed; the exchange type for each segment.
 - [x] Implement `open_interest` and `oi_change_pct` on the tick and the segment-to-exchange-type table (NSE cash 1, NFO 2, BSE cash 3, BFO 4, MCX 5, NCDEX 7, currency 13).
 
-### Task B2 (needs a market session): live derivative quotes
+### Task B2: live derivative quotes — done (market shut; a session check is left)
 
-- [ ] Subscribe derivative tokens with the segment's exchange type from the contract table, carry open interest through the quote and the hub, add a route that returns quotes for a list of contract tokens (at most 100), an `OptionFeed` on the page that reads it, and compare the decoder's offsets with real packets; add the derivative stream and open interest to `scripts/terminal-market-check.py`. Not started: it cannot be checked without a session.
+- [x] `deriv_quotes.rs` (wanted contracts kept 30 s, quotes by exchange type and token, `parse_keys`), the decoder carries the packet's exchange type, the stream subscribes and routes derivative ticks, `/api/derivs/quotes`, `options/livefeed.ts` and the page's refresh loop and badge; unit tests on both sides.
+- [x] Checked on the real stream with the market shut (TRD 2.48): offsets 131 and 139 give sensible values; open interest and volume are quantities for NFO and BFO and lots for MCX.
+- [ ] In a market session: the exchange time moves and the badge says live; tick rate; open-interest change against the exchange's own chain (the list is in `scripts/terminal-market-check.py`).
 
 ### Task C: Black-76, implied volatility and Greeks (pure) — done
 

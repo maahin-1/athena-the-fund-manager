@@ -5,6 +5,8 @@ pub const SNAP_QUOTE_LEN: usize = 379;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tick {
+    /// The stream's exchange type (1 NSE cash, 2 NFO, 3 BSE cash, 4 BFO, 5 MCX, …): a token is unique only within its exchange.
+    pub exchange_type: u8,
     pub token: String,
     pub exchange_ms: i64,
     pub last: i64,
@@ -64,6 +66,7 @@ pub fn decode(packet: &[u8]) -> Result<Tick, DecodeError> {
         }
     }
     Ok(Tick {
+        exchange_type: packet[1],
         token,
         exchange_ms: i64_at(packet, 35),
         last: i64_at(packet, 43),
@@ -87,9 +90,16 @@ pub fn decode(packet: &[u8]) -> Result<Tick, DecodeError> {
 /// A snap-quote packet built from fields, for tests here and in the stream and server tests.
 #[cfg(test)]
 pub fn test_packet(token: &str, ms: i64, last: i64, prev: i64, depth: &[(u16, i64, i64)]) -> Vec<u8> {
+    test_packet_on(1, token, ms, last, prev, depth, 0, 0.0)
+}
+
+/// The same on a given exchange type and with open interest and its change in percent.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub fn test_packet_on(exchange: u8, token: &str, ms: i64, last: i64, prev: i64, depth: &[(u16, i64, i64)], oi: i64, oi_pct: f64) -> Vec<u8> {
     let mut p = vec![0u8; SNAP_QUOTE_LEN];
     p[0] = 3;
-    p[1] = 1;
+    p[1] = exchange;
     p[2..2 + token.len()].copy_from_slice(token.as_bytes());
     p[35..43].copy_from_slice(&ms.to_le_bytes());
     p[43..51].copy_from_slice(&last.to_le_bytes());
@@ -100,7 +110,8 @@ pub fn test_packet(token: &str, ms: i64, last: i64, prev: i64, depth: &[(u16, i6
         p[o + 2..o + 10].copy_from_slice(&qty.to_le_bytes());
         p[o + 10..o + 18].copy_from_slice(&price.to_le_bytes());
     }
-    p[131..139].copy_from_slice(&0i64.to_le_bytes());
+    p[131..139].copy_from_slice(&oi.to_le_bytes());
+    p[139..147].copy_from_slice(&oi_pct.to_le_bytes());
     p[347..355].copy_from_slice(&88290i64.to_le_bytes());
     p[355..363].copy_from_slice(&72240i64.to_le_bytes());
     p[363..371].copy_from_slice(&91000i64.to_le_bytes());

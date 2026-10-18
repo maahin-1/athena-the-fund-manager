@@ -6,11 +6,12 @@ Connects to the running terminal server the way the page does, watches the symbo
 many updates arrived and the median and 95th-percentile gap between them, plus the delay from the server building a frame to this script
 receiving it. It reads no setting and prints no secret; the server must already be running (scripts/terminal.ps1).
 
-Still to check in a market session (derivatives, Task B2 of docs/superpowers/plans/2026-10-19-derivatives.md; nothing here does it yet):
-  - subscribe a few NFO option and future tokens (exchange type 2) and an MCX one (5) in snap-quote mode and capture raw packets;
-  - compare the decoder's open interest (int64 at offset 131) and change in open interest percent (float64 at 139) with the exchange's own option chain;
-  - compare the Options page's implied volatility and Greeks for one at-the-money contract with the broker's or the exchange's figures;
-  - the live derivative route and a live OptionFeed do not exist until that is done, and the Options page shows synthetic prices."""
+Derivatives (Task B2 of docs/superpowers/plans/2026-10-19-derivatives.md): the route /api/derivs/quotes?tokens=NFO:123,... is built and was checked with the market
+shut (TRD 2.48). Still to check in a market session; nothing here does it yet:
+  - the exchange time of a few NFO and MCX contracts moves, so the Options page badge says "live prices";
+  - the tick rate of the derivative stream while trading;
+  - the change in open interest (percent at offset 139, shown as contracts) against the exchange's own option chain;
+  - the page's implied volatility and Greeks for one at-the-money contract against the broker's or the exchange's figures."""
 from __future__ import annotations
 
 import argparse

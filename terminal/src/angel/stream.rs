@@ -1,6 +1,6 @@
 //! The Angel One market-data stream: connect, subscribe the symbols pages want (snap-quote mode), keep the heartbeat, turn each packet into
 //! a quote for the hub, and reconnect with backoff. Read-only: only subscribe, unsubscribe and ping messages are ever sent.
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::angel::decode::decode;
 use crate::angel::login::Session;
 use crate::angel::master::Master;
+use crate::deriv_quotes::{DerivQuote, DerivQuotes, Key};
 use crate::hub::Hub;
 use crate::quote::Quote;
 
@@ -23,8 +24,7 @@ const SNAP_QUOTE: u8 = 3;
 const NSE_CASH: u8 = 1;
 
 /// The stream's exchange type for a segment of the instrument list: NSE cash 1, NFO 2, BSE cash 3, BFO 4, MCX 5, NCDEX 7, currency 13. None for a segment the
-/// stream does not carry. Used when derivative tokens are subscribed (not yet: that part awaits a market session to be checked live).
-#[allow(dead_code)]
+/// stream does not carry. Derivative tokens are subscribed under these.
 pub fn exchange_type(segment: &str) -> Option<u8> {
     Some(match segment {
         "NSE" => NSE_CASH,
@@ -37,6 +37,20 @@ pub fn exchange_type(segment: &str) -> Option<u8> {
         _ => return None,
     })
 }
+/// The segment's name for a stream exchange type, the other way round.
+pub fn segment_of(exchange_type: u8) -> Option<&'static str> {
+    Some(match exchange_type {
+        1 => "NSE",
+        2 => "NFO",
+        3 => "BSE",
+        4 => "BFO",
+        5 => "MCX",
+        7 => "NCDEX",
+        13 => "CDS",
+        _ => return None,
+    })
+}
+
 const HEARTBEAT: Duration = Duration::from_secs(10);
 const SYNC_EVERY: Duration = Duration::from_millis(500);
 
@@ -48,18 +62,31 @@ pub enum FeedStatus {
     Off(&'static str),
 }
 
-fn message(action: u8, tokens: &[String]) -> Message {
-    let body = serde_json::json!({
-        "correlationID": "athena",
-        "action": action,
-        "params": {"mode": SNAP_QUOTE, "tokenList": [{"exchangeType": NSE_CASH, "tokens": tokens}]}
-    });
+/// A subscribe (action 1) or unsubscribe (0) message for tokens grouped by exchange type.
+fn message(action: u8, groups: &[(u8, Vec<String>)]) -> Message {
+    let list: Vec<serde_json::Value> = groups.iter().map(|(e, tokens)| serde_json::json!({"exchangeType": e, "tokens": tokens})).collect();
+    let body = serde_json::json!({"correlationID": "athena", "action": action, "params": {"mode": SNAP_QUOTE, "tokenList": list}});
     Message::Text(body.to_string().into())
+}
+
+/// Contracts grouped by exchange type, in a fixed order.
+fn by_exchange<'a>(keys: impl Iterator<Item = &'a Key>) -> Vec<(u8, Vec<String>)> {
+    let mut groups: BTreeMap<u8, Vec<String>> = BTreeMap::new();
+    for (e, t) in keys {
+        groups.entry(*e).or_default().push(t.clone());
+    }
+    groups
+        .into_iter()
+        .map(|(e, mut t)| {
+            t.sort();
+            (e, t)
+        })
+        .collect()
 }
 
 /// One connection's life: returns when the socket closes or fails, or when asked to stop.
 async fn session_once(
-    url: &str, session: &Session, master: &Master, hub: &Hub, status: &watch::Sender<FeedStatus>, shutdown: &CancellationToken,
+    url: &str, session: &Session, master: &Master, hub: &Hub, derivs: &DerivQuotes, status: &watch::Sender<FeedStatus>, shutdown: &CancellationToken,
 ) -> Result<(), &'static str> {
     let mut request = url.into_client_request().map_err(|_| "bad stream address")?;
     let headers = request.headers_mut();
@@ -75,6 +102,7 @@ async fn session_once(
     let (mut tx, mut rx) = socket.split();
     let _ = status.send(FeedStatus::On);
     let mut subscribed: HashSet<String> = HashSet::new();
+    let mut subscribed_derivs: HashSet<Key> = HashSet::new();
     let mut beat = interval(HEARTBEAT);
     let mut sync = interval(SYNC_EVERY);
     loop {
@@ -85,17 +113,27 @@ async fn session_once(
                 let wanted: HashSet<String> = hub.wanted_symbols().into_iter().filter(|s| master.token(s).is_some()).collect();
                 let add: Vec<String> = wanted.difference(&subscribed).filter_map(|s| master.token(s).map(String::from)).collect();
                 let remove: Vec<String> = subscribed.difference(&wanted).filter_map(|s| master.token(s).map(String::from)).collect();
-                if !add.is_empty() { tx.send(message(1, &add)).await.map_err(|_| "send failed")?; }
-                if !remove.is_empty() { tx.send(message(0, &remove)).await.map_err(|_| "send failed")?; }
+                if !add.is_empty() { tx.send(message(1, &[(NSE_CASH, add)])).await.map_err(|_| "send failed")?; }
+                if !remove.is_empty() { tx.send(message(0, &[(NSE_CASH, remove)])).await.map_err(|_| "send failed")?; }
                 subscribed = wanted;
+                let wanted_derivs = derivs.wanted(Instant::now());
+                let add_derivs = by_exchange(wanted_derivs.difference(&subscribed_derivs));
+                let remove_derivs = by_exchange(subscribed_derivs.difference(&wanted_derivs));
+                if !add_derivs.is_empty() { tx.send(message(1, &add_derivs)).await.map_err(|_| "send failed")?; }
+                if !remove_derivs.is_empty() { tx.send(message(0, &remove_derivs)).await.map_err(|_| "send failed")?; }
+                subscribed_derivs = wanted_derivs;
             }
             incoming = rx.next() => match incoming {
                 Some(Ok(Message::Binary(bytes))) => {
                     if let Ok(tick) = decode(&bytes) {
-                        if let Some(symbol) = master.symbol(&tick.token) {
-                            if let Some(quote) = Quote::from_tick(symbol, &tick) {
-                                hub.update(quote, Instant::now());
+                        if tick.exchange_type == NSE_CASH {
+                            if let Some(symbol) = master.symbol(&tick.token) {
+                                if let Some(quote) = Quote::from_tick(symbol, &tick) {
+                                    hub.update(quote, Instant::now());
+                                }
                             }
+                        } else if let Some(segment) = segment_of(tick.exchange_type) {
+                            derivs.update(tick.exchange_type, DerivQuote::from_tick(segment, tick.exchange_type, &tick));
                         }
                     }
                 }
@@ -109,13 +147,13 @@ async fn session_once(
 
 /// Keep a connection to `url` until asked to stop, reconnecting after a drop with 1, 2, 4 … 30 seconds of waiting.
 pub async fn run_stream_at(
-    url: String, session: Session, master: Arc<Master>, hub: Hub, status: watch::Sender<FeedStatus>, shutdown: CancellationToken,
+    url: String, session: Session, master: Arc<Master>, hub: Hub, derivs: DerivQuotes, status: watch::Sender<FeedStatus>, shutdown: CancellationToken,
 ) {
     let mut wait = Duration::from_secs(1);
     loop {
         let _ = status.send(FeedStatus::Connecting);
         let started = Instant::now();
-        let outcome = session_once(&url, &session, &master, &hub, &status, &shutdown).await;
+        let outcome = session_once(&url, &session, &master, &hub, &derivs, &status, &shutdown).await;
         if shutdown.is_cancelled() {
             return;
         }
@@ -131,14 +169,14 @@ pub async fn run_stream_at(
     }
 }
 
-pub async fn run_stream(session: Session, master: Arc<Master>, hub: Hub, status: watch::Sender<FeedStatus>, shutdown: CancellationToken) {
-    run_stream_at(STREAM_URL.to_string(), session, master, hub, status, shutdown).await
+pub async fn run_stream(session: Session, master: Arc<Master>, hub: Hub, derivs: DerivQuotes, status: watch::Sender<FeedStatus>, shutdown: CancellationToken) {
+    run_stream_at(STREAM_URL.to_string(), session, master, hub, derivs, status, shutdown).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::angel::decode::test_packet;
+    use crate::angel::decode::{test_packet, test_packet_on};
     use crate::quote::Source;
     use tokio::net::TcpListener;
     use tokio_tungstenite::accept_hdr_async;
@@ -206,7 +244,7 @@ mod tests {
         hub.watch(client, &["SBIN".into()]);
         let (status, _rx) = watch::channel(FeedStatus::Connecting);
         let stop = CancellationToken::new();
-        let task = tokio::spawn(run_stream_at(url, session(), master(), hub.clone(), status, stop.clone()));
+        let task = tokio::spawn(run_stream_at(url, session(), master(), hub.clone(), DerivQuotes::new(), status, stop.clone()));
         let frame = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if let Some(f) = hub.frame(client) {
@@ -230,6 +268,68 @@ mod tests {
         assert!(subs[0].contains("\"3045\"") && subs[0].contains("\"mode\":3") && subs[0].contains("\"action\":1"));
     }
 
+    /// A stand-in that waits for a subscribe naming exchange type 2, then sends a derivative packet and one on the same token as a cash symbol.
+    async fn derivative_server() -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = accept_hdr_async(stream, |_: &Request, resp: Response| Ok(resp)).await.unwrap();
+            let mut subscribes = Vec::new();
+            while let Some(Ok(msg)) = ws.next().await {
+                if let Message::Text(t) = msg {
+                    if t.as_str() == "ping" {
+                        continue;
+                    }
+                    subscribes.push(t.to_string());
+                    if t.contains("\"exchangeType\":2") {
+                        let option = test_packet_on(2, "777", 1_760_000_000_000, 12_345, 9_000, &[(1, 650, 12_340), (0, 130, 12_350)], 1_250_000, -3.5);
+                        let collision = test_packet_on(2, "3045", 1_760_000_000_000, 55_555, 50_000, &[], 10, 1.0); // SBIN's cash token on NFO is not SBIN
+                        let _ = ws.send(Message::Binary(option.into())).await;
+                        let _ = ws.send(Message::Binary(collision.into())).await;
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                        break;
+                    }
+                }
+            }
+            subscribes
+        });
+        (url, handle)
+    }
+
+    #[tokio::test]
+    async fn wanted_derivative_tokens_are_subscribed_under_their_exchange_type_and_their_ticks_go_to_the_derivative_store_not_the_cash_hub() {
+        let (url, server) = derivative_server().await;
+        let hub = Hub::new();
+        let derivs = DerivQuotes::new();
+        derivs.want(&[(2, "777".into()), (2, "3045".into())], Instant::now());
+        let (status, _rx) = watch::channel(FeedStatus::Connecting);
+        let stop = CancellationToken::new();
+        let task = tokio::spawn(run_stream_at(url, session(), master(), hub.clone(), derivs.clone(), status, stop.clone()));
+        let got = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let q = derivs.get(&[(2, "777".into())]);
+                if !q.is_empty() {
+                    return q;
+                }
+                sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("a derivative quote arrives");
+        assert_eq!((got[0].segment.as_str(), got[0].last, got[0].oi), ("NFO", Some(123.45), 1_250_000));
+        // the cash symbol that shares a token number with an NFO contract is not confused with it
+        let client = hub.register_client();
+        hub.watch(client, &["SBIN".into()]);
+        assert!(hub.frame(client).is_none(), "an NFO tick on SBIN's token number must not become an SBIN quote");
+        assert_eq!(derivs.get(&[(2, "3045".into())])[0].last, Some(555.55));
+        stop.cancel();
+        let _ = task.await;
+        let subs = server.await.unwrap();
+        let sub = subs.iter().find(|m| m.contains("\"exchangeType\":2")).expect("a derivative subscribe");
+        assert!(sub.contains("\"action\":1") && sub.contains("\"mode\":3") && sub.contains("\"777\""));
+    }
+
     #[tokio::test]
     async fn reconnects_and_subscribes_again_after_a_drop() {
         let (url, server) = fake_server(2).await;
@@ -238,7 +338,7 @@ mod tests {
         hub.watch(client, &["SBIN".into()]);
         let (status, _rx) = watch::channel(FeedStatus::Connecting);
         let stop = CancellationToken::new();
-        let task = tokio::spawn(run_stream_at(url, session(), master(), hub.clone(), status, stop.clone()));
+        let task = tokio::spawn(run_stream_at(url, session(), master(), hub.clone(), DerivQuotes::new(), status, stop.clone()));
         let seen = tokio::time::timeout(Duration::from_secs(10), server).await.expect("two connections").unwrap();
         stop.cancel();
         let _ = task.await;
@@ -251,7 +351,7 @@ mod tests {
         let (status, rx) = watch::channel(FeedStatus::Connecting);
         let stop = CancellationToken::new();
         // nothing listens on this port, so the connection fails and the status becomes Off with a fixed phrase
-        let task = tokio::spawn(run_stream_at("ws://127.0.0.1:9".into(), session(), master(), Hub::new(), status, stop.clone()));
+        let task = tokio::spawn(run_stream_at("ws://127.0.0.1:9".into(), session(), master(), Hub::new(), DerivQuotes::new(), status, stop.clone()));
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if matches!(*rx.borrow(), FeedStatus::Off(_)) {

@@ -299,6 +299,8 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Done:** the contract table from Angel's public list for NFO, BFO and MCX with its `/api/derivs/*` routes; open interest read by the stream decoder; Black-76 prices, implied volatility and Greeks; chain statistics (forward, ATM, put-call ratio, max pain, smile, term structure); the Options tab (chain, smile, term curve, futures with basis, payoff builder). Spec `2026-10-19-derivatives-design.md`, plan `2026-10-19-derivatives.md`, TRD sections 2.46 and 2.47.
 
-**Honest limits:** the Options tab shows **synthetic prices** and says so; the live derivative stream (subscription by exchange type, open interest through the quote hub, a live `OptionFeed`) is not built because it can only be checked in a market session, and the decoder's open-interest offsets are not yet compared with a real packet; no margin estimate; MCX option Greeks are approximate; continuous futures (`NAME1!`, `NAME2!`) need a futures history fill and are the next piece.
+**Live prices (added the same day):** the stream subscribes the futures and options a page asks for (`/api/derivs/quotes`), the Options tab shows live prices, with last-session prices labelled as such when the market is shut, and falls back to synthetic ones (labelled) when the server has no stream. Checked against the real stream with the market shut: prices, bid and ask, volume, open interest and its change arrive for NFO, BFO and MCX; open interest and volume are quantities for NFO and BFO and lots for MCX. TRD 2.48.
 
-**Next in this track:** the live derivative path (Task B2, in a market session), continuous futures (Task H).
+**Honest limits:** not yet seen in a market session (the exchange time moving, the tick rate, open-interest change against the exchange's own chain); no margin estimate; MCX option Greeks are approximate; continuous futures (`NAME1!`, `NAME2!`) need a futures history fill and are the next piece.
+
+**Next in this track:** continuous futures (Task H).

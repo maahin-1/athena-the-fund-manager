@@ -45,6 +45,10 @@ pub struct AppState {
     pub pyind: Arc<crate::pyind::PyInd>,
     /// The futures and options contracts of NFO, BFO and MCX, from the instrument list.
     pub derivs: crate::derivs::DerivsStore,
+    /// What the stream last said about the futures and options pages asked for.
+    pub deriv_quotes: crate::deriv_quotes::DerivQuotes,
+    /// False under the fake feed: there is no broker stream to ask, and the quotes route says so.
+    pub live_derivs: bool,
 }
 
 /// An Origin header is acceptable only when it is this server's own page.
@@ -253,6 +257,27 @@ async fn api_derivs_expiries(State(state): State<AppState>, Query(q): Query<Deri
 async fn api_derivs_chain(State(state): State<AppState>, Query(q): Query<DerivsQuery>) -> Response {
     let (Some(name), Some(expiry)) = (derivs_name(&q), q.expiry.clone()) else { return (StatusCode::BAD_REQUEST, "give an underlying and an expiry").into_response() };
     derivs_reply(state.derivs.with(|t| t.chain(&name, &expiry)))
+}
+
+#[derive(serde::Deserialize)]
+struct QuotesQuery {
+    tokens: Option<String>,
+}
+
+/// Live quotes for the contracts asked about (`tokens=NFO:123,MCX:45`). It marks them as wanted, so the stream subscribes them, and answers with what the stream has
+/// said so far (a contract it has not yet spoken about is simply absent: ask again in a moment). `live` says whether there is a stream at all; with none (the
+/// fake feed, or the broker not connected) it answers `live: false` and the page keeps its synthetic prices.
+async fn api_derivs_quotes(State(state): State<AppState>, Query(q): Query<QuotesQuery>) -> Response {
+    let keys = match crate::deriv_quotes::parse_keys(q.tokens.as_deref().unwrap_or("")) {
+        Ok(k) => k,
+        Err(why) => return (StatusCode::BAD_REQUEST, why).into_response(),
+    };
+    let live = state.live_derivs && matches!(*state.status.borrow(), FeedStatus::On);
+    if !live {
+        return Json(serde_json::json!({ "live": false, "quotes": [] })).into_response();
+    }
+    state.deriv_quotes.want(&keys, std::time::Instant::now());
+    Json(serde_json::json!({ "live": true, "quotes": state.deriv_quotes.get(&keys) })).into_response()
 }
 
 async fn api_derivs_futures(State(state): State<AppState>, Query(q): Query<DerivsQuery>) -> Response {
@@ -661,6 +686,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/derivs/expiries", get(api_derivs_expiries))
         .route("/api/derivs/chain", get(api_derivs_chain))
         .route("/api/derivs/futures", get(api_derivs_futures))
+        .route("/api/derivs/quotes", get(api_derivs_quotes))
         .route("/api/indices", get(api_indices))
         .route("/api/search", get(api_search))
         .route("/api/watchlists", get(watchlists_get).put(watchlists_put))
@@ -712,6 +738,10 @@ mod tests {
     }
 
     async fn start() -> (u16, AppState, CancellationToken) {
+        start_with(false).await
+    }
+
+    async fn start_with(live_derivs: bool) -> (u16, AppState, CancellationToken) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (status, _rx) = watch::channel(FeedStatus::On);
@@ -721,7 +751,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new() };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -1045,6 +1075,37 @@ mod tests {
         assert_eq!(get(format!("{base}/futures?underlying=NIFTY")).await.status(), 200);
         assert_eq!(get(format!("{base}/futures?underlying=NOPE")).await.status(), 404);
         assert_eq!(client.get(format!("{base}/underlyings")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_derivative_quotes_route_says_when_there_is_no_stream_and_otherwise_marks_contracts_wanted_and_answers_what_the_stream_said() {
+        // no broker stream (the fake feed): live false, nothing marked wanted
+        let (port, state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api/derivs/quotes");
+        let body: serde_json::Value = client.get(format!("{base}?tokens=NFO:777")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(body["live"], false);
+        assert!(state.deriv_quotes.wanted(std::time::Instant::now()).is_empty());
+        assert_eq!(client.get(format!("{base}?tokens=NSE:3045")).send().await.unwrap().status(), 400);
+        stop.cancel();
+
+        // a stream is there: the contract is wanted, absent until the stream speaks, then answered
+        let (port, state, stop) = start_with(true).await;
+        let base = format!("http://127.0.0.1:{port}/api/derivs/quotes");
+        let body: serde_json::Value = client.get(format!("{base}?tokens=NFO:777,MCX:5")).send().await.unwrap().json().await.unwrap();
+        assert_eq!(body["live"], true);
+        assert_eq!(body["quotes"], serde_json::json!([]));
+        assert_eq!(state.deriv_quotes.wanted(std::time::Instant::now()).len(), 2);
+        let tick = crate::angel::decode::decode(&crate::angel::decode::test_packet_on(2, "777", 1_760_000_000_000, 12_345, 9_000, &[(1, 650, 12_340), (0, 130, 12_350)], 1_250_000, -3.5)).unwrap();
+        state.deriv_quotes.update(2, crate::deriv_quotes::DerivQuote::from_tick("NFO", 2, &tick));
+        let body: serde_json::Value = client.get(format!("{base}?tokens=NFO:777")).send().await.unwrap().json().await.unwrap();
+        let q = &body["quotes"][0];
+        assert_eq!((q["seg"].as_str(), q["token"].as_str(), q["last"].as_f64(), q["oi"].as_i64(), q["oip"].as_f64()), (Some("NFO"), Some("777"), Some(123.45), Some(1_250_000), Some(-3.5)));
+        assert_eq!((q["bid"].as_f64(), q["ask"].as_f64()), (Some(123.4), Some(123.5)));
+        assert_eq!(client.get(format!("{base}?tokens=NFO:x")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(&base).send().await.unwrap().status(), 200); // no tokens: just the status
+        assert_eq!(client.get(format!("{base}?tokens=NFO:1")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         stop.cancel();
     }
 

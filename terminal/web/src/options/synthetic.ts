@@ -12,6 +12,8 @@ export interface ContractKey {
   kind: 'call' | 'put' | 'future';
   /** Ignored for a future. */
   strike: number;
+  /** Where the live stream knows the contract from (the list's segment and token); the synthetic feed ignores it. */
+  ref?: { segment: string; token: string; lot: number };
 }
 
 export const keyOf = (c: ContractKey): string => `${c.underlying}|${c.expiry}|${c.kind}|${c.kind === 'future' ? 0 : c.strike}`;
@@ -22,6 +24,8 @@ export interface OptionFeed {
   readonly synthetic: boolean;
   spot(underlying: string): Promise<number | null>;
   quotes(keys: ContractKey[]): Promise<Map<string, Quote>>;
+  /** What the page shows beside the prices instead of the default label, when the feed has something more exact to say. */
+  badge?(): { text: string; title: string };
 }
 
 /** A number in [0, 1) that depends only on the text (FNV-1a), so a contract gets the same "random" numbers every time. */

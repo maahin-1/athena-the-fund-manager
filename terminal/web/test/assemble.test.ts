@@ -86,13 +86,32 @@ describe('a chain assembled from a synthetic market', () => {
     for (const p of v.smile) expect(p.side).toBe(p.strike >= v.forward! ? 'call' : 'put');
   });
 
-  it('uses spot grown at the rate when the expiry has no future, and says so', async () => {
+  it('reads the forward from the option prices (put-call parity) when the expiry has no future, and says so', async () => {
     const s = structure(false);
     const { quotes, spot } = await quotesFor(s);
     const v = assemble(s, quotes, spot, now, 0.07);
-    expect(v.forwardFrom).toBe('spot');
-    expect(v.forward).toBeCloseTo(spot! * Math.exp(0.07 * v.T), 10);
+    expect(v.forwardFrom).toBe('parity');
+    expect(Math.abs(v.forward! - spot! * Math.exp(0.07 * v.T))).toBeLessThan(0.5); // the synthetic prices were made from that forward, to the tick
     expect(v.future).toBeNull();
+  });
+
+  it('follows the option prices, not a spot taken at another time, when there is no future', async () => {
+    const s = structure(false);
+    const { quotes, spot } = await quotesFor(s);
+    const stale = assemble(s, quotes, spot! * 1.01, now, 0.07); // spot 1% off the prices: inside the 5% that parity is trusted
+    const exact = assemble(s, quotes, spot, now, 0.07);
+    expect(stale.forward).toBeCloseTo(exact.forward!, 6);
+    expect(stale.forwardFrom).toBe('parity');
+  });
+
+  it('uses spot grown at the rate when no strike has both a call and a put price, and when the implied forward is far from it', async () => {
+    const s = structure(false, [24_000, 24_500]);
+    const none = assemble(s, new Map(), 24_500, now, 0.07);
+    expect(none.forwardFrom).toBe('spot');
+    expect(none.forward).toBeCloseTo(24_500 * Math.exp(0.07 * none.T), 10);
+    const { quotes, spot } = await quotesFor(structure(false));
+    const wild = assemble(structure(false), quotes, spot! * 1.2, now, 0.07); // spot 20% away from the prices: the prices are not believed
+    expect(wild.forwardFrom).toBe('spot');
   });
 });
 

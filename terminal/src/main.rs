@@ -4,6 +4,7 @@ mod angel;
 mod bars;
 mod calendar;
 mod config;
+mod deriv_quotes;
 mod derivs;
 mod fake;
 mod fund_fetch;
@@ -133,7 +134,7 @@ fn now_unix() -> u64 {
 
 /// Log in, load the instrument list and run the stream; if the feed stays down for ten minutes (an expired login, for instance) start over.
 /// Nothing here can stop the server: every failure is a short status phrase and a retry.
-async fn supervise(settings_file: PathBuf, hub: Hub, status: watch::Sender<FeedStatus>, shutdown: CancellationToken) {
+async fn supervise(settings_file: PathBuf, hub: Hub, derivs: deriv_quotes::DerivQuotes, status: watch::Sender<FeedStatus>, shutdown: CancellationToken) {
     let client = reqwest::Client::new();
     let retry = Duration::from_secs(60);
     while !shutdown.is_cancelled() {
@@ -154,7 +155,7 @@ async fn supervise(settings_file: PathBuf, hub: Hub, status: watch::Sender<FeedS
             }
             Ok((session, master)) => {
                 let child = shutdown.child_token();
-                let stream = tokio::spawn(angel::stream::run_stream(session, master, hub.clone(), status.clone(), child.clone()));
+                let stream = tokio::spawn(angel::stream::run_stream(session, master, hub.clone(), derivs.clone(), status.clone(), child.clone()));
                 let mut off_since: Option<Instant> = None;
                 loop {
                     tokio::select! { _ = shutdown.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(30)) => {} }
@@ -208,12 +209,13 @@ async fn main() {
     let (status, _keep) = watch::channel(if args.fake_feed { FeedStatus::On } else { FeedStatus::Connecting });
     let shutdown = CancellationToken::new();
     let index_store = indices::IndexStore::new();
+    let deriv_quotes = deriv_quotes::DerivQuotes::new();
     if args.fake_feed {
         tokio::spawn(fake::run_fake(hub.clone(), shutdown.clone()));
         tokio::spawn(indices::run_fake(index_store.clone(), shutdown.clone()));
     } else {
         tokio::spawn(indices::run_refresher(index_store.clone(), reqwest::Client::new(), shutdown.clone()));
-        tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), status.clone(), shutdown.clone()));
+        tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), deriv_quotes.clone(), status.clone(), shutdown.clone()));
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
     }
     let bars = Arc::new(bars::Bars {
@@ -231,7 +233,7 @@ async fn main() {
     let pyind = pyind::PyInd::new(args.fund_python.as_deref().unwrap_or(&args.python), &args.indicator_runner, &args.indicators_dir);
     let derivs = derivs::DerivsStore::new();
     tokio::spawn(derivs::run_loader(derivs.clone(), reqwest::Client::new(), args.derivs_master.clone(), args.derivs_offline, shutdown.clone()));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists, search, fund_fetch, pyind, derivs };
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, indices: index_store, lists, search, fund_fetch, pyind, derivs, deriv_quotes, live_derivs: !args.fake_feed };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))

@@ -10,6 +10,8 @@ export interface Quote {
   /** Open interest in contracts, and its change since the previous day's close. */
   oi: number;
   oiChange: number;
+  /** The exchange's time of the last trade in milliseconds, when the feed says (a live feed does, the synthetic one does not). */
+  time?: number;
 }
 
 export interface StrikeRow {
@@ -18,11 +20,36 @@ export interface StrikeRow {
   put: Quote | null;
 }
 
-/** The forward of an expiry: its future when it trades, else spot grown at the rate to the expiry. Null when there is neither. */
-export function forwardOf(spot: number | null, future: number | null, T: number, r: number): number | null {
+/** The forward the options themselves imply: put-call parity, `C - P = e^(-rT)(F - K)`, at the strikes where the call and the put cost most nearly the same (the
+ *  ones at the money), the middle of the readings. Null when no strike has both prices. It does not depend on the spot or on any dividend, and it agrees with the
+ *  option prices whatever time the spot was taken, which is what makes the volatilities read from them consistent. */
+export function parityForward(rows: StrikeRow[], T: number, r: number): number | null {
+  const readings: { strike: number; gap: number; forward: number }[] = [];
+  for (const row of rows) {
+    const c = quotePrice(row.call);
+    const p = quotePrice(row.put);
+    if (c === null || p === null) continue;
+    readings.push({ strike: row.strike, gap: Math.abs(c - p), forward: row.strike + Math.exp(r * Math.max(T, 0)) * (c - p) });
+  }
+  if (!readings.length) return null;
+  const nearest = readings
+    .sort((a, b) => a.gap - b.gap || a.strike - b.strike)
+    .slice(0, 3)
+    .map((x) => x.forward)
+    .sort((a, b) => a - b);
+  return nearest[Math.floor(nearest.length / 2)];
+}
+
+/** How far the forward the options imply may be from spot grown at the rate before it is taken for bad prices (a dividend or a stale print moves it a little). */
+const PARITY_TRUST = 0.05;
+
+/** The forward of an expiry: its future when it trades, else the one the options imply, else spot grown at the rate to the expiry. Null when there is none. The
+ *  implied one is set aside when spot is known and it is more than 5% away from spot grown. */
+export function forwardOf(spot: number | null, future: number | null, T: number, r: number, parity: number | null = null): number | null {
   if (future !== null && future > 0) return future;
-  if (spot !== null && spot > 0 && T > 0) return spot * Math.exp(r * T);
-  return null;
+  const grown = spot !== null && spot > 0 && T > 0 ? spot * Math.exp(r * T) : null;
+  if (parity !== null && parity > 0 && (grown === null || Math.abs(parity / grown - 1) <= PARITY_TRUST)) return parity;
+  return grown;
 }
 
 /** The strike nearest the forward; the lower one when two are equally near. Null for no strikes or no forward. */
@@ -100,13 +127,18 @@ export interface SmilePoint {
 }
 
 /** Implied volatility by strike from the out-of-the-money options, calls at and above the forward and puts below it, the usual smile. A strike whose option has no
- *  price or no volatility is left out. */
-export function smile(rows: StrikeRow[], forward: number | null, T: number, r: number): SmilePoint[] {
+ *  price or no volatility is left out, and so is one priced under `minPrice` or with nobody on one side of the book (a far wing sitting at the lowest tick, or a
+ *  stale last trade with no bid, gives a volatility that means nothing). A feed that gives no bids or asks at all is not held to the two-sided rule. */
+export function smile(rows: StrikeRow[], forward: number | null, T: number, r: number, minPrice = 0): SmilePoint[] {
   if (forward === null) return [];
+  const book = rows.some((x) => (x.call?.bid ?? 0) > 0 || (x.put?.bid ?? 0) > 0);
   const out: SmilePoint[] = [];
   for (const row of [...rows].sort((a, b) => a.strike - b.strike)) {
     const side = row.strike >= forward ? 'call' : 'put';
-    const iv = rowIv(side === 'call' ? row.call : row.put, side, row.strike, forward, T, r);
+    const q = side === 'call' ? row.call : row.put;
+    if ((quotePrice(q) ?? 0) < minPrice) continue;
+    if (q && book && !(q.bid !== null && q.bid > 0 && q.ask !== null && q.ask > 0)) continue;
+    const iv = rowIv(q, side, row.strike, forward, T, r);
     if (iv.ok) out.push({ strike: row.strike, iv: iv.iv, side });
   }
   return out;

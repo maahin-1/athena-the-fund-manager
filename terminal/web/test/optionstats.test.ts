@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { price } from '../src/options/black76';
-import { atmIv, atmStrike, forwardOf, maxPain, pcr, quotePrice, smile, termStructure, type Quote, type StrikeRow } from '../src/options/chain';
+import { atmIv, atmStrike, forwardOf, maxPain, parityForward, pcr, quotePrice, smile, termStructure, type Quote, type StrikeRow } from '../src/options/chain';
 import { breakEvens, curve, extremes, netDebit, netGreeks, payoffAtExpiry, payoffNow, slopeAbove, type Leg, type Market } from '../src/options/payoff';
 
 const q = (oi: number, extra: Partial<Quote> = {}): Quote => ({ last: 1, bid: null, ask: null, volume: 0, oi, oiChange: 0, ...extra });
@@ -92,6 +92,33 @@ function smiling(F: number, T: number, r: number): StrikeRow[] {
   return strikes.map((K) => ({ strike: K, call: side('call', K), put: side('put', K) }));
 }
 
+describe('the forward the options imply', () => {
+  const r = 0.07;
+  const T = 0.1;
+  const F = 24_400;
+  const book = (kind: 'call' | 'put', K: number): Quote => ({ last: price(kind, F, K, T, 0.15, r), bid: null, ask: null, volume: 1, oi: 1, oiChange: 0 });
+  const rows = [24_200, 24_300, 24_400, 24_500, 24_600].map((K) => ({ strike: K, call: book('call', K), put: book('put', K) }));
+
+  it('is the forward the prices were made from, from the strikes at the money', () => {
+    expect(parityForward(rows, T, r)!).toBeCloseTo(F, 6);
+  });
+
+  it('is null with no strike that has both prices', () => {
+    expect(parityForward([], T, r)).toBeNull();
+    expect(parityForward(rows.map((x) => ({ ...x, put: null })), T, r)).toBeNull();
+  });
+
+  it('is the future when there is one, the implied one next, spot grown last, and the implied one is not believed far from spot', () => {
+    const implied = parityForward(rows, T, r);
+    expect(forwardOf(24_000, 24_450, T, r, implied)).toBe(24_450);
+    expect(forwardOf(24_300, null, T, r, implied)).toBe(implied);
+    expect(forwardOf(24_300, null, T, r, null)).toBeCloseTo(24_300 * Math.exp(r * T), 10);
+    expect(forwardOf(30_000, null, T, r, implied)).toBeCloseTo(30_000 * Math.exp(r * T), 10);
+    expect(forwardOf(null, null, T, r, implied)).toBe(implied);
+    expect(forwardOf(null, null, T, r, null)).toBeNull();
+  });
+});
+
 describe('the volatility smile', () => {
   const F = 100;
   const T = 0.1;
@@ -110,6 +137,22 @@ describe('the volatility smile', () => {
     rows[5].call = { last: 1000, bid: null, ask: null, volume: 0, oi: 0, oiChange: 0 }; // more than a call can be worth: no volatility
     const points = smile(rows, F, T, r);
     expect(points.map((p) => p.strike)).toEqual([80, 95, 100, 105, 120]);
+  });
+
+  it('leaves out a wing priced under the minimum, which sits at the lowest tick and gives a volatility that means nothing', () => {
+    const rows = smiling(F, T, r);
+    const cheap = rows.map((x) => Math.min(x.call!.last!, x.put!.last!));
+    const min = [...cheap].sort((a, b) => a - b)[2] + 1e-9; // the three cheapest are under it
+    const points = smile(rows, F, T, r, min);
+    expect(points.length).toBe(7 - 3);
+    for (const p of points) expect(p.strike).not.toBe(rows[cheap.indexOf(Math.min(...cheap))].strike);
+  });
+
+  it('leaves out a wing with nobody on one side of the book when the feed has a book, and keeps it when the feed has none', () => {
+    const rows: StrikeRow[] = smiling(F, T, r).map((x) => ({ ...x, call: { ...x.call!, bid: x.call!.last! * 0.99, ask: x.call!.last! * 1.01 }, put: { ...x.put!, bid: x.put!.last! * 0.99, ask: x.put!.last! * 1.01 } }));
+    rows[0].put = { ...rows[0].put!, bid: null, ask: null }; // the 80 put has a last trade but no bid or ask
+    expect(smile(rows, F, T, r).map((p) => p.strike)).toEqual([90, 95, 100, 105, 110, 120]);
+    expect(smile(smiling(F, T, r), F, T, r).map((p) => p.strike)).toEqual([80, 90, 95, 100, 105, 110, 120]); // no bids anywhere: not held to it
   });
 
   it('is empty with no forward, and in order whatever order the strikes arrive in', () => {

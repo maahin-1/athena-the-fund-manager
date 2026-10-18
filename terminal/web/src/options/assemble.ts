@@ -1,6 +1,6 @@
 import type { ChainStructure, ContractRef } from './api';
 import { greeks, yearsToExpiry, type Greeks } from './black76';
-import { atmIv, atmStrike, forwardOf, maxPain, pcr, quotePrice, rowIv, smile, type Pcr, type Quote, type SmilePoint, type StrikeRow } from './chain';
+import { atmIv, atmStrike, forwardOf, parityForward, maxPain, pcr, quotePrice, rowIv, smile, type Pcr, type Quote, type SmilePoint, type StrikeRow } from './chain';
 import { keyOf, type ContractKey } from './synthetic';
 
 /** One chain, put together for the page: each strike's call and put with its quote, implied volatility and Greeks, and the statistics of the whole. Pure. */
@@ -32,7 +32,7 @@ export interface ChainView {
   spot: number | null;
   forward: number | null;
   /** Where the forward came from: the future of that expiry, spot grown at the rate, or nothing. */
-  forwardFrom: 'future' | 'spot' | null;
+  forwardFrom: 'future' | 'parity' | 'spot' | null;
   atm: number | null;
   atmIv: number | null;
   pcr: Pcr;
@@ -43,27 +43,33 @@ export interface ChainView {
   lot: number | null;
 }
 
+const refOf = (s: ChainStructure, c: { token: string; lot: number }): Pick<ContractKey, 'ref'> => (s.segment ? { ref: { segment: s.segment, token: c.token, lot: c.lot } } : {});
+
 /** The feed keys of everything a chain needs prices for. */
 export function chainKeys(s: ChainStructure): ContractKey[] {
   const keys: ContractKey[] = [];
   for (const row of s.strikes) {
-    if (row.call) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'call', strike: row.strike });
-    if (row.put) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'put', strike: row.strike });
+    if (row.call) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'call', strike: row.strike, ...refOf(s, row.call) });
+    if (row.put) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'put', strike: row.strike, ...refOf(s, row.put) });
   }
-  if (s.future) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'future', strike: 0 });
+  if (s.future) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'future', strike: 0, ...refOf(s, s.future) });
   return keys;
 }
 
 const quoteOf = (quotes: Map<string, Quote>, s: ChainStructure, kind: ContractKey['kind'], strike: number): Quote | null =>
   quotes.get(keyOf({ underlying: s.underlying, expiry: s.expiry, kind, strike })) ?? null;
 
+/** A wing option must be priced at least this many ticks to count in the smile. */
+const SMILE_MIN_TICKS = 10;
+
 export function assemble(structure: ChainStructure, quotes: Map<string, Quote>, spot: number | null, nowSec: number, rate: number): ChainView {
   const T = yearsToExpiry(structure.expiry, nowSec);
   const futureQuote = structure.future ? quoteOf(quotes, structure, 'future', 0) : null;
   const futurePrice = futureQuote ? quotePrice(futureQuote) : null;
-  const forward = forwardOf(spot, futurePrice, T, rate);
-  const forwardFrom = forward === null ? null : futurePrice !== null && futurePrice > 0 ? 'future' : 'spot';
   const stats: StrikeRow[] = structure.strikes.map((r) => ({ strike: r.strike, call: r.call ? quoteOf(quotes, structure, 'call', r.strike) : null, put: r.put ? quoteOf(quotes, structure, 'put', r.strike) : null }));
+  const parity = parityForward(stats, T, rate);
+  const forward = forwardOf(spot, futurePrice, T, rate, parity);
+  const forwardFrom = forward === null ? null : futurePrice !== null && futurePrice > 0 ? 'future' : forward === parity ? 'parity' : 'spot';
   const atm = atmStrike(stats, forward);
   const side = (ref: ContractRef | null, quote: Quote | null, kind: 'call' | 'put', strike: number): SideView | null => {
     if (!ref) return null;
@@ -96,7 +102,7 @@ export function assemble(structure: ChainStructure, quotes: Map<string, Quote>, 
     atmIv: atmIv(stats, forward, T, rate),
     pcr: pcr(stats),
     maxPain: maxPain(stats),
-    smile: smile(stats, forward, T, rate),
+    smile: smile(stats, forward, T, rate, (structure.tick ?? 0.05) * SMILE_MIN_TICKS),
     rows,
     future: structure.future ? { ref: structure.future, quote: futureQuote } : null,
     lot: structure.lot,
