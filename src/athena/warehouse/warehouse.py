@@ -127,6 +127,10 @@ class Warehouse:
             "fetched_at TIMESTAMP NOT NULL, PRIMARY KEY (index_name, symbol))"
         )
         self._con.execute(
+            "CREATE TABLE IF NOT EXISTS events (symbol VARCHAR NOT NULL, event_date DATE NOT NULL, purpose VARCHAR NOT NULL, description VARCHAR, "
+            "company VARCHAR, fetched_at TIMESTAMP NOT NULL, PRIMARY KEY (symbol, event_date, purpose))"
+        )
+        self._con.execute(
             "CREATE TABLE IF NOT EXISTS verdicts (symbol VARCHAR NOT NULL, made_at TIMESTAMP NOT NULL, data_as_of DATE NOT NULL, close DOUBLE, "
             "annual_period DATE, quarter DATE, payload VARCHAR NOT NULL, PRIMARY KEY (symbol, made_at))"
         )
@@ -413,6 +417,29 @@ class Warehouse:
         except duckdb.CatalogException:
             return {"renames": 0, "joinable": 0, "retired": 0, "checked_at": None}
         return {"renames": row[0], "joinable": row[1], "retired": row[2], "checked_at": row[3].replace(tzinfo=_UTC) if row[3] else None}
+
+    def replace_events(self, events: Iterable[Mapping[str, Any]], first: date, now: datetime) -> int:
+        """Replace every event dated `first` or later by `events` (dicts with symbol, day, purpose, description, company); earlier dates are kept. All or
+        nothing."""
+        stamp = _naive(now)
+        data = [[e["symbol"], e["day"], e["purpose"], e["description"], e["company"], stamp] for e in events]
+        self._con.execute("BEGIN")
+        try:
+            self._con.execute("DELETE FROM events WHERE event_date >= ?", [first])
+            if data:
+                self._con.executemany("INSERT OR REPLACE INTO events VALUES (?, ?, ?, ?, ?, ?)", data)
+            self._con.execute("COMMIT")
+        except Exception:
+            self._con.execute("ROLLBACK")
+            raise
+        return len(data)
+
+    def events_status(self) -> dict[str, Any]:
+        try:
+            row = self._con.execute("SELECT count(*), min(event_date), max(event_date), max(fetched_at) FROM events").fetchone()
+        except duckdb.CatalogException:
+            return {"events": 0, "first": None, "last": None, "fetched_at": None}
+        return {"events": row[0], "first": row[1], "last": row[2], "fetched_at": row[3].replace(tzinfo=_UTC) if row[3] else None}
 
     def index_names(self) -> list[str]:
         """Every index the warehouse holds bars for."""

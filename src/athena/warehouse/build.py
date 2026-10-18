@@ -16,6 +16,7 @@ from typing import Any
 
 from athena.clock import utc_now
 from athena.warehouse.actions import ingest_actions
+from athena.warehouse.events import refresh_events
 from athena.warehouse.members import refresh_members
 from athena.warehouse.renames import refresh_renames
 from athena.warehouse.indices import ingest_indices
@@ -75,6 +76,7 @@ def run_build(
     full_actions: bool = False,
     renames_fetch: Callable[[], Any] | None = None,
     members_get: Callable[[str], bytes | None] | None = None,
+    events_get: Callable[[str], bytes | None] | None = None,
 ) -> dict[str, Any]:
     """Run every step of the nightly build, one failing never stopping the next, and say what each did. The price step is the one the
     others lean on: if it stopped early the build is not ok even when the later steps ran."""
@@ -97,6 +99,8 @@ def run_build(
         step("renames", lambda: refresh_renames(warehouse, renames_fetch, now))
     if members_get is not None:  # which index each stock is in, and its industry, for peers and screens
         step("members", lambda: refresh_members(warehouse, members_get, now))
+    if events_get is not None:  # the next weeks' board meetings (results, dividends, fund raising) for the calendar
+        step("events", lambda: refresh_events(warehouse, events_get, now))
     step("indices", lambda: ingest_indices(warehouse, get, first, now), lambda r: not r["stopped"] and not r["failed"])
     step("universe", lambda: ingest_universe(warehouse, *lists(), now))
     if statements_budget and statements_fetch is not None:
@@ -141,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             from athena.pit.bhavcopy import ArchiveClient, BhavcopyStore
 
             client = ArchiveClient()
-            outcome = run_build(warehouse, started, first, client.get, BhavcopyStore(client), masters, default_fetch, args.statements, on_progress=print, full_actions=bool(args.since), renames_fetch=fetch_symbol_changes, members_get=client.get)
+            outcome = run_build(warehouse, started, first, client.get, BhavcopyStore(client), masters, default_fetch, args.statements, on_progress=print, full_actions=bool(args.since), renames_fetch=fetch_symbol_changes, members_get=client.get, events_get=client.get)
             ok = outcome["ok"]
             print("report:", write_build_status(outcome, started, utc_now()))
         print(format_status(warehouse.status(first, ready_through(started)), first))
