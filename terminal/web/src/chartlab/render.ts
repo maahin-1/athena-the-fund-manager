@@ -1,9 +1,12 @@
 import {
   AreaSeries, BarSeries, BaselineSeries, CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, LineStyle, LineType, PriceScaleMode,
-  type IChartApi, type ISeriesApi, type SeriesType, type UTCTimestamp,
+  type IChartApi, type ISeriesApi, type Logical, type SeriesType, type UTCTimestamp,
 } from 'lightweight-charts';
 import type { Bar } from '../bars';
-import { isValueType, type ChartModel } from './model';
+import { isValueType, stepSeconds, type ChartModel } from './model';
+import type { DrawingHost } from './drawings/host';
+import { DrawingPrimitive } from './drawings/primitive';
+import { Projection } from './drawings/projection';
 import { isIntraday } from '../ranges';
 import type { Series } from './maths';
 
@@ -23,6 +26,8 @@ export interface ChartRenderer {
   /** The pane an indicator instance is drawn in. */
   paneOf(uid: string): number;
   snapshot(): HTMLCanvasElement | null;
+  /** Where drawings are painted and measured (absent in test stand-ins, which have no canvas). */
+  drawings?: DrawingHost;
   /** Re-read the page's theme colours for the chart frame (the view then repaints the series). */
   applyTheme(): void;
   dispose(): void;
@@ -53,6 +58,10 @@ export const lightweightRenderer: RendererFactory = (host) => {
   let times: number[] = [];
   let crosshair: (i: number | null) => void = () => {};
   const panes = new Map<string, number>();
+  const primitive = new DrawingPrimitive();
+  let rawTimes: number[] = []; // the bars' own times (no display offset), index = the chart's logical index
+  let step = 86_400;
+  let paintHook: ((ctx: CanvasRenderingContext2D, projection: Projection, size: { w: number; h: number }) => void) | null = null;
   const parts = new Map<string, { key: string; kind: 'line' | 'histogram'; s: ISeriesApi<SeriesType> }[]>();
 
   const time = (t: number): UTCTimestamp => (intraday ? t + IST_OFFSET : t) as UTCTimestamp;
@@ -72,6 +81,34 @@ export const lightweightRenderer: RendererFactory = (host) => {
       : bars.map((b) => ({ time: time(b.t), open: b.o, high: b.h, low: b.l, close: b.c }));
   };
 
+  const projection = (): Projection | null => {
+    if (!main || rawTimes.length === 0) return null;
+    return new Projection(rawTimes, step, {
+      x: (i) => chart.timeScale().logicalToCoordinate(i as Logical),
+      index: (x) => chart.timeScale().coordinateToLogical(x),
+      y: (p) => main?.priceToCoordinate(p) ?? null,
+      price: (y) => main?.coordinateToPrice(y) ?? null,
+    });
+  };
+  primitive.setPainter((ctx, size) => {
+    const p = projection();
+    if (p && paintHook) paintHook(ctx, p, size);
+  });
+  const drawings: DrawingHost = {
+    projection,
+    size: () => {
+      const w = chart.timeScale().width();
+      const h = chart.paneSize(0).height;
+      return w > 0 && h > 0 ? { w, h } : null;
+    },
+    onPaint: (fn) => {
+      paintHook = fn;
+      primitive.redraw();
+    },
+    redraw: () => primitive.redraw(),
+    freeze: (on) => chart.applyOptions({ handleScroll: !on, handleScale: !on }),
+  };
+
   const volumeData = (bars: Bar[]) => bars.map((b) => ({ time: time(b.t), value: b.v, color: b.c >= b.o ? css('--up-dim') : css('--dn-dim') }));
 
   return {
@@ -82,6 +119,8 @@ export const lightweightRenderer: RendererFactory = (host) => {
       parts.clear();
       intraday = isIntraday(model.tf);
       times = model.displayBars().map((b) => time(b.t) as number);
+      rawTimes = model.derived ? [] : model.displayBars().map((b) => b.t);
+      step = stepSeconds(model.tf);
       chart.priceScale('right').applyOptions({ mode: MODES[model.scale] });
       chart.timeScale().applyOptions({ timeVisible: intraday });
       const up = css('--up');
@@ -99,6 +138,7 @@ export const lightweightRenderer: RendererFactory = (host) => {
       else if (model.type === 'hollow') main = chart.addSeries(CandlestickSeries, { upColor: 'rgba(0,0,0,0)', downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn, borderVisible: true });
       else main = chart.addSeries(CandlestickSeries, { upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn });
       main.setData(mainData(model) as never);
+      main.attachPrimitive(primitive);
       main.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.3 } });
       series.push(main);
       volume = null;
@@ -149,6 +189,7 @@ export const lightweightRenderer: RendererFactory = (host) => {
       else main.update(data[data.length - 1] as never);
       const last = model.bars[model.bars.length - 1];
       times = model.displayBars().map((b) => time(b.t) as number);
+      rawTimes = model.derived ? [] : model.displayBars().map((b) => b.t);
       if (!model.derived) volume?.update(volumeData([last])[0]);
       if (compare && model.compare) compare.setData(points(model.bars, model.compareSeries()));
       for (const [uid, list] of parts) {
@@ -161,6 +202,7 @@ export const lightweightRenderer: RendererFactory = (host) => {
       }
     },
 
+    drawings,
     fit: () => chart.timeScale().fitContent(),
     onCrosshair: (cb) => (crosshair = cb),
     paneElement: (index) => chart.panes()[index]?.getHTMLElement() ?? null,
