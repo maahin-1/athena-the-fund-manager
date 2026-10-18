@@ -4,7 +4,7 @@ export type Row = Record<string, Cell>;
 /** A column's label and how it is shown. "pct" columns are stored as fractions and shown as percent. */
 export type Style = 'text' | 'price' | 'pct' | 'number' | 'number0';
 export const COLUMNS: Record<string, [string, Style]> = {
-  symbol: ['Symbol', 'text'], name: ['Name', 'text'], kind: ['Type', 'text'], sector: ['Sector', 'text'],
+  symbol: ['Symbol', 'text'], name: ['Name', 'text'], kind: ['Type', 'text'], sector: ['Sector', 'text'], industry: ['Industry', 'text'], indices: ['Indices', 'text'],
   close: ['Close', 'price'], ret_1d: ['1D', 'pct'], ret_1m: ['1M', 'pct'], ret_3m: ['3M', 'pct'], ret_6m: ['6M', 'pct'], ret_1y: ['1Y', 'pct'],
   from_52w_high: ['From 52w high', 'pct'], from_52w_low: ['Above 52w low', 'pct'], rsi_14: ['RSI', 'number'], trend: ['Trend', 'text'],
   sma50_vs_200: ['50d vs 200d', 'pct'], market_cap_cr: ['Mkt cap (Rs cr)', 'number0'], traded_value_cr: ['Traded (Rs cr/day)', 'number'],
@@ -44,10 +44,12 @@ export interface Filters {
   ranges: Limits;
   trends: string[];
   sector: string; // empty means every sector
+  industry: string; // empty means every industry
+  index: string; // empty means any index or none
   cleanOnly: boolean;
 }
 
-export const noFilters = (): Filters => ({ kinds: ['stock'], text: '', ranges: {}, trends: [], sector: '', cleanOnly: false });
+export const noFilters = (): Filters => ({ kinds: ['stock'], text: '', ranges: {}, trends: [], sector: '', industry: '', index: '', cleanOnly: false });
 
 /** Rows from the server's `{columns, rows}` form. */
 export function toRows(columns: string[], rows: Cell[][]): Row[] {
@@ -69,6 +71,8 @@ export function filterRows(rows: Row[], f: Filters): Row[] {
     if (needle && !String(row.symbol).toLowerCase().includes(needle) && !String(row.name ?? '').toLowerCase().includes(needle)) return false;
     if (f.trends.length && !f.trends.includes(String(row.trend))) return false;
     if (f.sector && row.sector !== f.sector) return false;
+    if (f.industry && String(row.industry ?? '').toLowerCase() !== f.industry.toLowerCase()) return false;
+    if (f.index && !String(row.indices ?? '').toLowerCase().split('|').includes(f.index.toLowerCase())) return false;
     if (f.cleanOnly && row.flags) return false;
     return limits.every(([column, [lo, hi]]) => within(row[column], lo, hi));
   });
