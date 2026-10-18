@@ -147,12 +147,12 @@ pub fn screen_all(path: &Path) -> Result<Value, AnalysisError> {
 /// Whether the warehouse knows a symbol: a stock or ETF in the universe, or an index it holds bars for. Lets the page refuse a typo instead of waiting for a quote that never comes.
 pub fn known(path: &Path, symbol: &str) -> Result<Value, AnalysisError> {
     let conn = connect(path)?;
-    let listed: Option<(String, String)> = conn
-        .query_row("SELECT name, kind FROM universe WHERE symbol = ?", [symbol], |r| Ok((r.get(0)?, r.get(1)?)))
+    let listed: Option<(String, String, Option<String>)> = conn
+        .query_row("SELECT name, kind, isin FROM universe WHERE symbol = ?", [symbol], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()
         .map_err(|_| AnalysisError::Busy)?;
-    if let Some((name, kind)) = listed {
-        return Ok(json!({"known": true, "name": name, "kind": kind}));
+    if let Some((name, kind, isin)) = listed {
+        return Ok(json!({"known": true, "name": name, "kind": kind, "isin": isin}));
     }
     let index: Option<String> = conn
         .query_row("SELECT index_name FROM index_bars WHERE lower(index_name) = lower(?) LIMIT 1", [symbol], |r| r.get(0))
@@ -246,6 +246,8 @@ mod tests {
         let w = warehouse("known");
         assert_eq!(known(&w, "SBIN").unwrap()["known"], true);
         assert_eq!(known(&w, "SBIN").unwrap()["name"], "State Bank of India");
+        assert_eq!(known(&w, "SBIN").unwrap()["isin"], "X");
+        assert!(known(&w, "NIFTY 50").unwrap().get("isin").is_none()); // an index has none
         assert_eq!(known(&w, "NIFTY 50").unwrap()["kind"], "index");
         assert_eq!(known(&w, "ZZZFAKE").unwrap()["known"], false);
     }
