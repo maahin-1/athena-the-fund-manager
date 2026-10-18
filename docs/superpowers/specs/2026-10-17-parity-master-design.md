@@ -255,3 +255,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Next in this track:** `fund_metrics` from the ratio engine into the screen as the full fetch finishes; then 5i heatmaps and calendars.
 
+## 23. Heatmap and calendars (5i, 2026-10-18)
+
+**Done:** a market heatmap (sized, grouped and coloured by choice, following the screen's filters and query) and a calendar of board meetings and ex-dates, as two more views in the Screen tab. Spec `2026-10-18-heatmap-calendar-design.md`, plan `2026-10-18-heatmap-calendar.md`, TRD section 2.37.
+
+**Honest limits:** no economic calendar (no free structured source), ex-dates only once announced, heatmap colours limited to the returns and the 52-week distance until the filing-store fields join the screen, no group-level aggregate colour.
+
+**Next in this track:** 5b custom intervals and the bar volume profile, 5k chart grid, 5j replay, 5h formula language, 5f F&O and MCX.
+

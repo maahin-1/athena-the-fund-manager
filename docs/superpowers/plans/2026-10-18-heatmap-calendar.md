@@ -47,3 +47,8 @@
 ### Task 5: docs and suites
 
 - [ ] TRD (2.37), master design, `graphify update .`, full suites, commit.
+
+## As built (2026-10-18)
+
+All five tasks done. Differences from the plan: the events table also drops an event the exchange withdrew from a date its listing still covers; the corporate-action classifier gained `meeting` and `distribution` after checking all stored subjects (5,379 are general meetings and 942 interest payments); the heatmap writes a symbol only where it fits. Counts: pytest +6, cargo 126, vitest +36, Playwright 9 new (5 heatmap, 4 calendar).
+
