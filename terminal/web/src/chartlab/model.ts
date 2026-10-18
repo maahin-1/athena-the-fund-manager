@@ -1,6 +1,7 @@
 import { applyTick, tickFitsChart, type Bar } from '../bars';
 import { parseInterval, stepOf } from '../interval';
 import { clampRows, ROWS } from './profile';
+import { revealedCount } from './replay';
 import type { Interval, Timeframe } from '../ranges';
 import { atr, type Series } from './maths';
 import { kagi, lineBreak, pointAndFigure, rangeBars, renko, sequence } from './derived';
@@ -109,6 +110,9 @@ export class ChartModel {
   adjusted = true;
   indicators: IndicatorInstance[] = [];
   compare: { symbol: string; bars: Bar[] } | null = null;
+  /** While replaying: every bar loaded (`bars` is then the part of them that has ended by `replayMoment`). */
+  private full: Bar[] | null = null;
+  replayMoment: number | null = null;
   private cache = new Map<string, Record<string, Series>>();
   private listeners = new Set<(kind: ChangeKind) => void>();
   private counter = 0;
@@ -134,14 +138,46 @@ export class ChartModel {
   }
 
   setBars(bars: Bar[], tf: Interval): void {
-    this.bars = bars;
     this.tf = tf;
+    if (this.full && this.replayMoment !== null) {
+      // new bars while replaying (another interval, adjusted or raw prices): the same moment, at these bars
+      this.full = bars;
+      this.bars = bars.slice(0, revealedCount(bars, this.replayMoment, tf));
+    } else this.bars = bars;
+    this.changed();
+  }
+
+  get replaying(): boolean {
+    return this.full !== null;
+  }
+
+  /** Every bar loaded, whether or not replay has revealed them. */
+  get loadedBars(): Bar[] {
+    return this.full ?? this.bars;
+  }
+
+  /** Show the bars that have ended by `moment`, and no others (replay). One more bar than before is a tick for the chart; anything else rebuilds it. */
+  showAt(moment: number): void {
+    const all = (this.full ??= this.bars);
+    const before = this.bars.length;
+    this.replayMoment = moment;
+    this.bars = all.slice(0, revealedCount(all, moment, this.tf));
+    this.changed(this.bars.length === before + 1 && before > 0 ? 'tick' : 'structure');
+  }
+
+  /** Leave replay: every bar is shown again, and live prices count. */
+  endReplay(): void {
+    if (!this.full) return;
+    this.bars = this.full;
+    this.full = null;
+    this.replayMoment = null;
     this.changed();
   }
 
   /** A live trade. The last bar is updated when the trade is in it, a new bar is added when it is in a later one, and a trade that does not fit
    *  (outside the session for an intraday chart, far from the last price, for an earlier bar) changes nothing. */
   tick(price: number, tsSec: number, volume = 0): TickResult {
+    if (this.full) return 'ignored'; // a live price would show what the replay has not reached
     const last = this.bars[this.bars.length - 1];
     if (!last || !tickFitsChart(last, price, tsSec, this.tf)) return 'ignored';
     const next = applyTick(last, price, tsSec, this.tf, volume);
