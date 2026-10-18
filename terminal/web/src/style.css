@@ -242,6 +242,11 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 .lab-symbol { width: 110px; text-transform: uppercase; }
 .lab-compare { width: 130px; }
 .lab-interval { width: 92px; }
+/* replay */
+.lab-replay { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 4px 10px; background: var(--bg-panel); border-bottom: 1px solid var(--border); }
+.lab-replay-status { color: var(--fg-dim); font-size: 12px; }
+.lab-replay-date { width: 150px; }
+.lab-speed { width: 100px; }
 /* chart grid */
 .grid-page { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .grid-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 10px; background: var(--bg-bar); border-bottom: 1px solid var(--border); }

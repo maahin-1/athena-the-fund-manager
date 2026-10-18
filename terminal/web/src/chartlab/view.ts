@@ -10,6 +10,7 @@ import { settingsDialog } from './dialog';
 import { CHART_TYPES, ChartModel, isDerived, type ChartType, type LabState, type ScaleMode } from './model';
 import { rowMid, type Profile } from './profile';
 import { indexAtMoment, momentOf, periodIndexes } from './grid';
+import { barEnd, momentOfDate, Player, revealedCount, SPEEDS } from './replay';
 import { caption, isCustom, REGISTRY } from './registry';
 import { formulaDialog } from './formuladialog';
 import { switchOnDialog } from './pydialog';
@@ -157,6 +158,15 @@ export class ChartLabView {
   private recentRow = el('span', 'ranges');
   private intervalInput = el('input', 'cmd lab-interval');
   private recent: string[] = [];
+  private replayButton = el('button', 'rbtn', 'Replay');
+  private replayBar = el('div', 'lab-replay');
+  private replayStatus = el('span', 'lab-replay-status');
+  private playButton = el('button', 'btn', '▶');
+  private speedSelect = el('select', 'lab-select lab-speed');
+  private dateBox = el('input', 'cmd lab-replay-date');
+  private player: Player | null = null;
+  private picking = false;
+  private replayTimer: ReturnType<typeof setTimeout> | null = null;
   private scaleRow = el('span', 'ranges');
   private adjButton = el('button', 'rbtn', 'ADJ');
   private undoButton = el('button', 'btn', 'Undo');
@@ -204,7 +214,8 @@ export class ChartLabView {
     this.side.append(this.tabs, this.windowBox, this.objectsBox);
     if (this.cell) this.main.append(this.wrap);
     else this.main.append(this.wrap, this.side);
-    this.element.append(this.toolbar, sub, this.popover, this.main, this.note);
+    this.buildReplay();
+    this.element.append(this.toolbar, this.replayBar, sub, this.popover, this.main, this.note);
     if (!this.cell) document.addEventListener('keydown', this.onKey);
     this.wrap.addEventListener('mouseenter', () => (this.pointerIn = true));
     this.wrap.addEventListener('mouseleave', () => {
@@ -291,6 +302,7 @@ export class ChartLabView {
   }
 
   hide(): void {
+    this.pauseReplay();
     this.visible = false;
     this.element.hidden = true;
     this.ctx.feed.release(this.feedKey);
@@ -298,6 +310,7 @@ export class ChartLabView {
 
   private follow(symbol: string, force = false): void {
     if (!this.visible || !symbol || (symbol === this.symbol && !force)) return;
+    if (symbol !== this.symbol) this.exitReplay(); // another symbol's history is another replay
     this.symbol = symbol;
     void this.drawings?.setSymbol(symbol);
     this.symbolInput.value = symbol;
@@ -336,6 +349,192 @@ export class ChartLabView {
     void this.reload();
     this.paintBar();
     if (fromPerson) this.cell?.send.interval(id);
+  }
+
+  // ---- bar replay ------------------------------------------------------------------------------------------------------------------------------
+
+  private buildReplay(): void {
+    this.replayBar.hidden = true;
+    this.replayButton.type = 'button';
+    this.replayButton.title = 'Replay the chart bar by bar from a bar you choose';
+    this.replayButton.setAttribute('aria-label', 'replay');
+    this.replayButton.addEventListener('click', () => (this.picking || this.model.replaying ? this.exitReplay() : this.startPicking()));
+    const back = this.button('‹', 'Back one bar (Left)', () => this.stepReplay(-1));
+    back.setAttribute('aria-label', 'replay back');
+    this.playButton.type = 'button';
+    this.playButton.title = 'Play or pause (Space)';
+    this.playButton.setAttribute('aria-label', 'replay play');
+    this.playButton.addEventListener('click', () => this.togglePlay());
+    const next = this.button('›', 'Forward one bar (Right)', () => this.stepReplay(1));
+    next.setAttribute('aria-label', 'replay next');
+    this.speedSelect.setAttribute('aria-label', 'replay speed');
+    this.speedSelect.title = 'How fast replay plays';
+    for (const s of SPEEDS) this.speedSelect.append(new Option(s < 1 ? `1 bar / ${Math.round(1 / s)} s` : s === 1 ? '1 bar / s' : `${s} bars / s`, String(s)));
+    this.speedSelect.value = '1';
+    this.speedSelect.addEventListener('change', () => {
+      this.player?.setSpeed(Number(this.speedSelect.value));
+      if (this.player?.playing) this.schedule();
+    });
+    this.dateBox.placeholder = 'jump to YYYY-MM-DD';
+    this.dateBox.setAttribute('aria-label', 'replay date');
+    this.dateBox.addEventListener('keydown', (e) => e.key === 'Enter' && this.jumpReplay(this.dateBox.value));
+    const exit = this.button('Exit', 'Leave replay and show every bar again (Esc)', () => this.exitReplay());
+    exit.setAttribute('aria-label', 'replay exit');
+    this.replayBar.append(back, this.playButton, next, this.speedSelect, this.dateBox, this.replayStatus, exit);
+    // picking the start: the next click on the chart is the bar to start from, and goes no further
+    this.host.addEventListener(
+      'click',
+      (e) => {
+        if (!this.picking) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const index = this.hover;
+        if (index === null || index >= this.model.displayBars().length) return this.say('Click on a bar to start from.');
+        this.picking = false;
+        this.beginReplay(index + 1);
+      },
+      true,
+    );
+    document.addEventListener('visibilitychange', () => document.hidden && this.pauseReplay());
+  }
+
+  private startPicking(): void {
+    if (this.model.derived) return this.say('Replay needs a chart of time, not of price moves: choose candles, bars or a line.');
+    if (this.model.bars.length < 2) return this.say('There are no bars to replay yet.');
+    this.picking = true;
+    this.say('Click the bar to start the replay from (Esc cancels).');
+    this.paintBar();
+  }
+
+  private beginReplay(shown: number): void {
+    this.player = new Player(this.model.loadedBars.length, shown);
+    this.player.setSpeed(Number(this.speedSelect.value));
+    this.applyReplay('structure');
+    this.say('');
+  }
+
+  /** Show the bars the player has revealed; a forward step of one bar is the cheap update, anything else rebuilds the chart. */
+  private applyReplay(kind: 'step' | 'structure'): void {
+    const p = this.player;
+    if (!p) return;
+    const all = this.model.loadedBars;
+    this.hover = null; // the data window follows the newest revealed bar until the pointer moves again
+    this.model.showAt(barEnd(all, p.shown - 1, this.tf));
+    if (kind === 'structure') this.applyRange();
+    this.replayBar.hidden = false;
+    this.paintReplay();
+    this.paintBar();
+  }
+
+  private paintReplay(): void {
+    const p = this.player;
+    if (!p) return;
+    const all = this.model.loadedBars;
+    const bar = all[p.shown - 1];
+    const intraday = isIntraday(this.tf);
+    const when = bar ? new Date((bar.t + (intraday ? 19_800 : 0)) * 1000).toISOString().replace('T', ' ').slice(0, intraday ? 16 : 10) : '';
+    this.replayStatus.textContent = `Replay · ${when} · bar ${p.shown} of ${p.total}${p.atEnd ? ' · latest bar' : ''}`;
+    this.playButton.textContent = p.playing ? '❚❚' : '▶';
+    this.playButton.classList.toggle('on', p.playing);
+  }
+
+  private stepReplay(delta: 1 | -1): void {
+    const p = this.player;
+    if (!p) return;
+    const moved = delta === 1 ? p.next() : p.back();
+    if (moved) this.applyReplay(delta === 1 ? 'step' : 'structure');
+    else if (delta === 1) this.say('That is the latest bar.');
+    this.paintReplay();
+  }
+
+  private togglePlay(): void {
+    const p = this.player;
+    if (!p) return;
+    p.toggle();
+    if (p.playing) this.schedule();
+    else this.clearTimer();
+    if (!p.playing && p.atEnd) this.say('That is the latest bar.');
+    this.paintReplay();
+  }
+
+  private clearTimer(): void {
+    if (this.replayTimer) clearTimeout(this.replayTimer);
+    this.replayTimer = null;
+  }
+
+  private schedule(): void {
+    this.clearTimer();
+    const p = this.player;
+    if (!p?.playing) return;
+    this.replayTimer = setTimeout(() => {
+      this.replayTimer = null;
+      const result = p.tick();
+      if (result !== 'idle') this.applyReplay('step');
+      if (result === 'ended') this.say('Replay reached the latest bar.');
+      if (p.playing) this.schedule();
+    }, p.intervalMs);
+  }
+
+  private pauseReplay(): void {
+    this.clearTimer();
+    if (this.player?.playing) {
+      this.player.pause();
+      this.paintReplay();
+    }
+  }
+
+  private jumpReplay(text: string): void {
+    const p = this.player;
+    if (!p) return;
+    const moment = momentOfDate(text);
+    if (moment === null) return this.say('Write the date as YYYY-MM-DD.');
+    const shown = revealedCount(this.model.loadedBars, moment, this.tf);
+    if (shown === 0) return this.say('There are no bars before that date.');
+    p.jump(shown);
+    this.dateBox.value = '';
+    this.applyReplay('structure');
+  }
+
+  /** After other bars were loaded (another interval, adjusted or raw prices) the model kept the moment: the player follows it. */
+  private resyncPlayer(): void {
+    const all = this.model.loadedBars;
+    const was = this.player;
+    this.player = new Player(all.length, Math.max(1, this.model.bars.length));
+    this.player.speed = was?.speed ?? this.player.speed;
+    this.paintReplay();
+  }
+
+  /** Leave replay (or cancel picking its start): every bar is shown again, live prices count, the timer stops. */
+  private exitReplay(): void {
+    this.clearTimer();
+    const was = this.picking || this.model.replaying;
+    this.picking = false;
+    this.player = null;
+    this.replayBar.hidden = true;
+    if (this.model.replaying) {
+      this.hover = null;
+      this.model.endReplay();
+      this.applyRange();
+    }
+    if (was) this.paintBar();
+  }
+
+  /** Keys while replaying or choosing the start: Right and Left step, Space plays and pauses, Escape leaves. True when the key was used. */
+  private replayKey(e: KeyboardEvent, target: HTMLElement | null): boolean {
+    if (!this.picking && !this.player) return false;
+    const typing = !!target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+    if (e.key === 'Escape' && !typing) {
+      this.exitReplay();
+      this.say('');
+      return true;
+    }
+    if (typing || !this.player) return false;
+    if (e.key === 'ArrowRight') this.stepReplay(1);
+    else if (e.key === 'ArrowLeft') this.stepReplay(-1);
+    else if (e.key === ' ' && target?.tagName !== 'BUTTON') this.togglePlay();
+    else return false;
+    e.preventDefault();
+    return true;
   }
 
   // ---- being a cell of the chart grid: what the grid tells this chart ----------------------------------------------------------------------
@@ -436,6 +635,7 @@ export class ChartLabView {
     const bars = build(this.tf, fetched.bars);
     this.hover = null;
     this.model.setBars(bars, this.tf);
+    if (this.model.replaying) this.resyncPlayer();
     this.applyRange();
     const custom = !(this.tf in RANGES);
     this.say(bars.length ? fetched.note || (custom ? `${this.tf} bars are built from ${source.fetch} bars` : '') : `no ${this.tf} bars for ${this.symbol}`);
@@ -536,8 +736,10 @@ export class ChartLabView {
   }
 
   private hotkey(e: KeyboardEvent): void {
-    if (!this.visible || !(e.ctrlKey || e.metaKey)) return;
+    if (!this.visible) return;
     const t = e.target as HTMLElement | null;
+    if (this.replayKey(e, t)) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
     if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
     const k = e.key.toLowerCase();
     if (k === 'z' && !e.shiftKey) {
@@ -674,7 +876,7 @@ export class ChartLabView {
     if (this.cell) this.toolbar.append(this.symbolInput, this.intervalRow, this.intervalInput, this.typeSelect, indicators);
     else {
       this.toolbar.append(
-        this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, this.profileButton, this.profileRows, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
+        this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, this.profileButton, this.profileRows, this.replayButton, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
         this.templateSelect, snapshot, this.badge,
       );
     }
@@ -890,6 +1092,7 @@ export class ChartLabView {
     this.adjButton.classList.toggle('on', this.model.adjusted);
     this.typeSelect.value = this.model.type;
     this.profileButton.classList.toggle('on', this.model.profile.on);
+    this.replayButton.classList.toggle('on', this.picking || this.model.replaying);
     this.profileRows.hidden = !this.model.profile.on;
     if (![...this.profileRows.options].some((o) => o.value === String(this.model.profile.rows))) this.profileRows.append(new Option(`${this.model.profile.rows} rows`, String(this.model.profile.rows)));
     this.profileRows.value = String(this.model.profile.rows);
@@ -1040,6 +1243,7 @@ export class ChartLabView {
   }
 
   dispose(): void {
+    this.exitReplay();
     this.offQuotes?.();
     this.offLink?.();
     this.resize?.disconnect();
