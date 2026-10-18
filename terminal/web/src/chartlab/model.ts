@@ -157,12 +157,14 @@ export class ChartModel {
   }
 
   /** Show the bars that have ended by `moment`, and no others (replay). One more bar than before is a tick for the chart; anything else rebuilds it. */
-  showAt(moment: number): void {
+  showAt(moment: number): ChangeKind {
     const all = (this.full ??= this.bars);
     const before = this.bars.length;
     this.replayMoment = moment;
     this.bars = all.slice(0, revealedCount(all, moment, this.tf));
-    this.changed(this.bars.length === before + 1 && before > 0 ? 'tick' : 'structure');
+    const kind: ChangeKind = this.bars.length === before + 1 && before > 0 ? 'tick' : 'structure';
+    this.changed(kind);
+    return kind;
   }
 
   /** Leave replay: every bar is shown again, and live prices count. */

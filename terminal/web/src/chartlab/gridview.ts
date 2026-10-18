@@ -53,6 +53,9 @@ export class GridView {
   private state: GridState;
   private storage: KeyValue | null;
   private visible = false;
+  private replayButton = el('button', 'rbtn', 'Replay');
+  /** The moment the chart driving a replay has reached, or null when no replay is on. */
+  private moment: number | null = null;
 
   constructor(private ctx: AppContext, shared: SharedIndicators, options: GridOptions = {}) {
     this.element.hidden = true;
@@ -80,6 +83,11 @@ export class GridView {
             },
             crosshair: (m) => this.sync.crosshair(view, m),
             period: (a, b) => this.sync.period(view, a, b),
+            replay: (m) => {
+              this.moment = m;
+              this.sync.replay(view, m);
+              this.paintReplay();
+            },
           },
         },
       });
@@ -137,7 +145,11 @@ export class GridView {
       label.append(box, document.createTextNode(` ${s.label}`));
       this.bar.append(label);
     }
-    this.bar.append(el('span', 'note', 'Each chart keeps its own type and indicators.'));
+    this.replayButton.type = 'button';
+    this.replayButton.setAttribute('aria-label', 'grid replay');
+    this.replayButton.title = 'Replay: click a bar in any chart to start; every chart shows what had happened by then';
+    this.replayButton.addEventListener('click', () => this.toggleReplay());
+    this.bar.append(this.replayButton, el('span', 'note', 'Each chart keeps its own type and indicators.'));
   }
 
   /** Arrange the cells the layout shows, and stop the ones it does not (they keep their symbol and interval for when it grows again). */
@@ -161,6 +173,25 @@ export class GridView {
   private start(view: ChartLabView, i: number): void {
     const base = this.ctx.bus.symbolOf('blue') || this.ctx.watchlist.items[0] || '';
     view.show(this.state.cells[i].symbol || this.cells[0].currentSymbol || base);
+    if (this.moment !== null) view.followReplay(this.moment); // a chart brought in during a replay joins it
+  }
+
+  private shownCells(): ChartLabView[] {
+    return this.cells.slice(0, LAYOUTS[this.state.layout].cells);
+  }
+
+  private paintReplay(): void {
+    this.replayButton.classList.toggle('on', this.moment !== null || this.shownCells().some((c) => c.replayActive));
+  }
+
+  /** Start a replay (the next click on a bar in any chart is its start) or leave the one that is on. */
+  private toggleReplay(): void {
+    const cells = this.shownCells();
+    if (this.moment !== null || cells.some((c) => c.replayActive)) {
+      this.moment = null;
+      for (const c of this.cells) c.stopReplay();
+    } else for (const c of cells) c.pickReplayStart();
+    this.paintReplay();
   }
 
   show(symbol?: string): void {

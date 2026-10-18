@@ -24,12 +24,13 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function make(storage = new Memory()) {
   const fetched: [string, string][] = [];
+  const pointers: ((i: number | null) => void)[] = []; // the crosshair callback of each cell's chart, in the order the cells were shown
   const fetchBars: BarsFetcher = async (symbol, tf) => {
     fetched.push([symbol, tf]);
     return { bars, note: '' };
   };
   const renderer = (): ChartRenderer => ({
-    paint: () => {}, tick: () => {}, fit: () => {}, showLast: () => {}, onCrosshair: () => {},
+    paint: () => {}, tick: () => {}, fit: () => {}, showLast: () => {}, onCrosshair: (cb) => void pointers.push(cb),
     paneElement: () => null, paneOf: () => 0, snapshot: () => null, applyTheme: () => {}, dispose: () => {},
   });
   const feed = { onQuotes: () => () => {}, need: vi.fn(), release: vi.fn(), quotes: new Map() };
@@ -37,7 +38,7 @@ function make(storage = new Memory()) {
   const lab = new ChartLabView(ctx, { renderer, fetchBars, storage });
   const grid = new GridView(ctx, lab.shared(), { renderer, fetchBars, storage });
   document.body.append(grid.element);
-  return { grid, feed, fetched, storage };
+  return { grid, feed, fetched, storage, pointers };
 }
 const cells = (g: GridView) => [...g.element.querySelectorAll<HTMLElement>('.lab-cell')];
 const visible = (g: GridView) => cells(g).filter((c) => !c.hidden);
@@ -184,6 +185,61 @@ describe('the grid page', () => {
     g.grid.hide();
     for (let i = 0; i < 4; i++) expect(g.feed.release).toHaveBeenCalledWith(`chartlab:g${i}`);
     expect(g.grid.element.hidden).toBe(true);
+  });
+
+  it('Replay: a click on a bar in one chart starts it there, the others show what had ended by then, and leaving ends it for all', async () => {
+    const g = make();
+    g.grid.show('SBIN');
+    await flush();
+    const button = g.grid.element.querySelector<HTMLElement>('[aria-label="grid replay"]')!;
+    button.click();
+    expect(button.classList.contains('on')).toBe(true);
+    for (const c of cells(g.grid)) expect(c.querySelector('.lab-note')?.textContent).toContain('Click the bar'); // every chart waits for the click
+    g.pointers[0](9); // the crosshair of cell 0 is on its tenth bar
+    cells(g.grid)[0].querySelector('.lab-host')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    const bars = (i: number) => cells(g.grid)[i].querySelector('.lab-replay-status')?.textContent ?? '';
+    expect(bars(0)).toContain('bar 10 of 30'); // cell 0 drives and has the controls
+    expect(cells(g.grid)[0].querySelector<HTMLElement>('.lab-replay')!.hidden).toBe(false);
+    for (const i of [1, 2, 3]) expect(cells(g.grid)[i].querySelector<HTMLElement>('.lab-replay')!.hidden).toBe(true); // the others follow
+    expect(button.classList.contains('on')).toBe(true);
+
+    (cells(g.grid)[0].querySelector('[aria-label="replay next"]') as HTMLElement).click();
+    expect(bars(0)).toContain('bar 11 of 30');
+
+    button.click(); // leaves, for every chart
+    expect(button.classList.contains('on')).toBe(false);
+    for (const c of cells(g.grid)) expect(c.querySelector<HTMLElement>('.lab-replay')!.hidden).toBe(true);
+  });
+
+  it('Replay: a cancelled pick leaves the charts as they were', async () => {
+    const g = make();
+    g.grid.show('SBIN');
+    await flush();
+    const button = g.grid.element.querySelector<HTMLElement>('[aria-label="grid replay"]')!;
+    button.click();
+    button.click();
+    expect(button.classList.contains('on')).toBe(false);
+    g.pointers[1](4);
+    cells(g.grid)[1].querySelector('.lab-host')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(cells(g.grid)[1].querySelector<HTMLElement>('.lab-replay')!.hidden).toBe(true); // a click on a chart is only a click now
+  });
+
+  it('Replay: a chart brought in by a larger layout during a replay joins it', async () => {
+    const g = make();
+    g.grid.show('SBIN');
+    await flush();
+    const select = g.grid.element.querySelector<HTMLSelectElement>('[aria-label="grid layout"]')!;
+    select.value = '2h';
+    select.dispatchEvent(new Event('change'));
+    await flush();
+    g.grid.element.querySelector<HTMLElement>('[aria-label="grid replay"]')!.click();
+    g.pointers[0](9);
+    cells(g.grid)[0].querySelector('.lab-host')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    select.value = '2x2';
+    select.dispatchEvent(new Event('change'));
+    await flush();
+    expect(visible(g.grid)).toHaveLength(4);
+    expect(cells(g.grid)[2].querySelector('.lab-replay-status')).not.toBeNull();
   });
 
   it('opens with the defaults when what was kept is damaged', async () => {

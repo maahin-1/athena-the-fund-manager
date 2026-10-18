@@ -162,6 +162,8 @@ export interface CellPort {
   applyInterval(interval: string): void;
   showMoment(moment: number | null): void;
   showPeriod(from: number, to: number): void;
+  /** Another chart is driving a replay: show the bars that have ended by this moment, or leave replay (null). */
+  followReplay(moment: number | null): void;
 }
 
 export class GridSync {
@@ -190,5 +192,10 @@ export class GridSync {
 
   period(origin: CellPort, from: number, to: number): void {
     if (this.flags.time) for (const c of this.others(origin)) c.showPeriod(from, to);
+  }
+
+  /** The chart that drives a replay moved it (or ended it, null): every other chart follows. There is no switch: replay is its own button. */
+  replay(origin: CellPort, moment: number | null): void {
+    for (const c of this.others(origin)) c.followReplay(moment);
   }
 }

@@ -80,6 +80,8 @@ export interface CellSend {
   interval(interval: string): void;
   crosshair(moment: number | null): void;
   period(from: number, to: number): void;
+  /** This chart drives a replay and is now at this moment (null: it ended). */
+  replay(moment: number | null): void;
 }
 
 /** A Chart Lab chart that is one cell of the chart grid: compact, with its own saved state and feed name, not following the shared link group or the page's
@@ -165,6 +167,8 @@ export class ChartLabView {
   private speedSelect = el('select', 'lab-select lab-speed');
   private dateBox = el('input', 'cmd lab-replay-date');
   private player: Player | null = null;
+  /** A grid cell showing another chart's replay: its bars follow that chart's moment. */
+  private following = false;
   private picking = false;
   private replayTimer: ReturnType<typeof setTimeout> | null = null;
   private scaleRow = el('span', 'ranges');
@@ -398,6 +402,35 @@ export class ChartLabView {
     document.addEventListener('visibilitychange', () => document.hidden && this.pauseReplay());
   }
 
+  /** Whether a replay is under way or its start is being chosen. */
+  get replayActive(): boolean {
+    return this.picking || this.model.replaying;
+  }
+
+  /** The grid asks every chart to wait for a click on a bar. */
+  pickReplayStart(): void {
+    this.startPicking();
+  }
+
+  /** Leave replay, whoever was driving it. */
+  stopReplay(): void {
+    this.exitReplay();
+  }
+
+  /** Another chart drives the replay: show the bars that have ended by its moment, or leave replay when it ends. */
+  followReplay(moment: number | null): void {
+    if (moment === null) return this.exitReplay(false);
+    this.picking = false;
+    this.player = null;
+    this.following = true;
+    this.clearTimer();
+    this.replayBar.hidden = true;
+    this.hover = null;
+    const kind = this.model.showAt(moment);
+    if (kind === 'structure') this.applyRange();
+    this.paintBar();
+  }
+
   private startPicking(): void {
     if (this.model.derived) return this.say('Replay needs a chart of time, not of price moves: choose candles, bars or a line.');
     if (this.model.bars.length < 2) return this.say('There are no bars to replay yet.');
@@ -424,6 +457,7 @@ export class ChartLabView {
     this.replayBar.hidden = false;
     this.paintReplay();
     this.paintBar();
+    this.cell?.send.replay(barEnd(all, p.shown - 1, this.tf));
   }
 
   private paintReplay(): void {
@@ -505,10 +539,12 @@ export class ChartLabView {
   }
 
   /** Leave replay (or cancel picking its start): every bar is shown again, live prices count, the timer stops. */
-  private exitReplay(): void {
+  private exitReplay(notify = true): void {
     this.clearTimer();
     const was = this.picking || this.model.replaying;
+    const drove = this.picking || this.player !== null;
     this.picking = false;
+    this.following = false;
     this.player = null;
     this.replayBar.hidden = true;
     if (this.model.replaying) {
@@ -517,6 +553,7 @@ export class ChartLabView {
       this.applyRange();
     }
     if (was) this.paintBar();
+    if (notify && drove) this.cell?.send.replay(null); // the other charts leave replay with it
   }
 
   /** Keys while replaying or choosing the start: Right and Left step, Space plays and pauses, Escape leaves. True when the key was used. */
@@ -635,7 +672,7 @@ export class ChartLabView {
     const bars = build(this.tf, fetched.bars);
     this.hover = null;
     this.model.setBars(bars, this.tf);
-    if (this.model.replaying) this.resyncPlayer();
+    if (this.model.replaying && !this.following) this.resyncPlayer();
     this.applyRange();
     const custom = !(this.tf in RANGES);
     this.say(bars.length ? fetched.note || (custom ? `${this.tf} bars are built from ${source.fetch} bars` : '') : `no ${this.tf} bars for ${this.symbol}`);

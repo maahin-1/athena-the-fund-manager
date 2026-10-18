@@ -131,3 +131,33 @@ test('the Crosshair switch shows the pointer of one chart as a crosshair in the 
   await expect(head(page, 1)).toHaveText(before); // switched off: nothing follows
   expect(during).not.toBe(before);
 });
+
+test('Replay: a click on a bar of one chart starts it there; the other charts show only what had ended by then, and Replay again leaves', async ({ page }) => {
+  await expect(head(page, 3)).toContainText(/· 15m.*C\d/);
+  await expect(head(page, 1)).toContainText(/· 1W.*C\d/);
+  const weekBefore = (await head(page, 1).textContent()) ?? '';
+
+  await page.getByLabel('grid replay').click();
+  await expect(page.getByLabel('grid replay')).toHaveClass(/on/);
+  const box = (await cell(page, 0).locator('.lab-chart').boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.4);
+  await page.mouse.move(box.x + box.width * 0.5 + 3, box.y + box.height * 0.4);
+  await page.mouse.click(box.x + box.width * 0.5 + 3, box.y + box.height * 0.4);
+
+  await expect(cell(page, 0).locator('.lab-replay')).toBeVisible(); // the chart that was clicked drives and has the controls
+  await expect(cell(page, 1).locator('.lab-replay')).toBeHidden();
+  await expect(cell(page, 0).locator('.lab-replay-status')).toContainText('Replay · ');
+  // the 15-minute chart's bars are all from the last 40 sessions, after a date half-way back in the year: none has happened yet
+  await expect(head(page, 3)).not.toContainText(/C\d/);
+  await expect(head(page, 1)).not.toHaveText(weekBefore); // the weekly chart went back too
+
+  await cell(page, 0).getByLabel('replay next').click();
+  await expect(cell(page, 0).locator('.lab-replay-status')).toContainText('bar ');
+
+  await page.getByLabel('grid replay').click();
+  await expect(page.getByLabel('grid replay')).not.toHaveClass(/on/);
+  await expect(cell(page, 0).locator('.lab-replay')).toBeHidden();
+  await page.mouse.move(5, 5);
+  await expect(head(page, 3)).toContainText(/· 15m.*C\d/);
+  await expect(head(page, 1)).toHaveText(weekBefore);
+});

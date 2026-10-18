@@ -155,6 +155,7 @@ describe('sending between cells', () => {
       applyInterval: (i) => log.push(`${name} interval ${i}`),
       showMoment: (m) => log.push(`${name} moment ${m}`),
       showPeriod: (a, b) => log.push(`${name} period ${a}-${b}`),
+      followReplay: (m) => log.push(`${name} replay ${m}`),
     };
   }
   function grid(flags?: Partial<GridSync['flags']>) {
@@ -196,6 +197,13 @@ describe('sending between cells', () => {
     sync.flags = { symbol: false, interval: false, crosshair: false, time: true };
     sync.period(cells[0], 5, 9);
     expect(log).toEqual(['b period 5-9', 'c period 5-9']);
+  });
+
+  it('tells every other cell where a replay has got to, and when it ends, with no switch', () => {
+    const { sync, cells, log } = grid();
+    sync.replay(cells[1], 500);
+    sync.replay(cells[1], null);
+    expect(log).toEqual(['a replay 500', 'c replay 500', 'a replay null', 'c replay null']);
   });
 
   it('a cell that is not registered any more is not told', () => {

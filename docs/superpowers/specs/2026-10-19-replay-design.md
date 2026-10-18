@@ -39,7 +39,7 @@ Drawings, the volume profile and indicators use the revealed bars through the mo
 
 ## 5. Synced replay in the Grid
 
-A **Replay** switch in the grid bar: start replay by clicking a bar in any chart (that chart drives); every chart then reveals the bars that have ended by `M`; Play, Next and Back in any chart move the driver, and the others follow by `M`. Stepping the driver back moves `M` back. A chart at a coarser interval than the driver moves only when its next bar completes. Exit in any chart exits all. Charts with the Time switch on keep their view scrolled to the newest revealed bar.
+A **Replay** button in the grid bar: start replay by clicking a bar in any chart (that chart drives and holds the controls); every chart then reveals the bars that have ended by `M`; Play, Next and Back in the driving chart move `M`, and the others follow by `M`. Stepping the driver back moves `M` back. A chart at a coarser interval than the driver moves only when its next bar completes. Exit in the driver, or the grid's Replay button again, exits all. A chart brought in by a larger layout joins at the current `M`.
 
 ## 6. Limits
 

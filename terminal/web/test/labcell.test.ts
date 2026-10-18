@@ -22,12 +22,13 @@ class Memory implements KeyValue {
 
 function make(opts: { cell?: boolean; storage?: Memory } = {}) {
   const storage = opts.storage ?? new Memory();
-  const sent = { symbol: [] as string[], interval: [] as string[], crosshair: [] as (number | null)[], period: [] as [number, number][] };
+  const sent = { symbol: [] as string[], interval: [] as string[], crosshair: [] as (number | null)[], period: [] as [number, number][], replay: [] as (number | null)[] };
   const send: CellSend = {
     symbol: (s) => sent.symbol.push(s),
     interval: (i) => sent.interval.push(i),
     crosshair: (m) => sent.crosshair.push(m),
     period: (a, b) => sent.period.push([a, b]),
+    replay: (m) => sent.replay.push(m),
   };
   const calls = { crosshair: [] as (number | null)[], range: [] as [number, number][], fetched: [] as [string, string][] };
   let pointer: (i: number | null) => void = () => {};
@@ -199,6 +200,81 @@ describe('a chart in a grid cell', () => {
   it('shares the Chart Lab page\'s indicator lists and fetches none of its own', () => {
     const c = make({ cell: true });
     expect(c.view.shared()).toEqual(c.first.shared());
+  });
+});
+
+describe('replay in a grid cell', () => {
+  const click = (c: ReturnType<typeof make>) => c.view.element.querySelector('.lab-host')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+  it('drives: picking a bar starts it, tells the grid the moment of every step, and tells it when it ends', async () => {
+    const c = make({ cell: true });
+    c.view.show('SBIN');
+    await flush();
+    c.view.pickReplayStart();
+    expect(c.view.replayActive).toBe(true);
+    c.pointer(9);
+    click(c);
+    expect(c.view.model.bars).toHaveLength(10);
+    const end9 = Date.UTC(2026, 9, 14) / 1000 - 70 * 86_400 + 10 * 3600; // bar 9 of 80 ends at 15:30 IST of its date
+    expect(c.sent.replay).toEqual([end9]);
+    (c.view.element.querySelector('[aria-label="replay next"]') as HTMLElement).click();
+    expect(c.sent.replay).toEqual([end9, end9 + 86_400]);
+    (c.view.element.querySelector('[aria-label="replay exit"]') as HTMLElement).click();
+    expect(c.sent.replay.at(-1)).toBeNull();
+    expect(c.view.replayActive).toBe(false);
+  });
+
+  it('follows: shows the bars that ended by another chart\'s moment, with no controls, and sends nothing', async () => {
+    const c = make({ cell: true });
+    c.view.show('SBIN');
+    await flush();
+    const moment = Date.UTC(2026, 9, 14) / 1000 - 60 * 86_400 + 10 * 3600;
+    c.view.followReplay(moment);
+    expect(c.view.model.replaying).toBe(true);
+    expect(c.view.model.bars).toHaveLength(20);
+    expect((c.view.element.querySelector('.lab-replay') as HTMLElement).hidden).toBe(true);
+    c.view.followReplay(moment + 86_400 * 5);
+    expect(c.view.model.bars).toHaveLength(25);
+    c.view.followReplay(null);
+    expect(c.view.model.replaying).toBe(false);
+    expect(c.view.model.bars).toHaveLength(80);
+    expect(c.sent.replay).toEqual([]);
+  });
+
+  it('a follower that changes interval keeps the moment and does not become a driver', async () => {
+    const c = make({ cell: true });
+    c.view.show('SBIN');
+    await flush();
+    c.view.followReplay(Date.UTC(2026, 9, 14) / 1000 - 40 * 86_400 + 10 * 3600);
+    c.view.applyInterval('1W');
+    await flush();
+    expect(c.view.model.replaying).toBe(true);
+    expect((c.view.element.querySelector('.lab-replay') as HTMLElement).hidden).toBe(true);
+    expect(c.sent.replay).toEqual([]);
+  });
+
+  it('picking is cancelled when another chart starts the replay', async () => {
+    const c = make({ cell: true });
+    c.view.show('SBIN');
+    await flush();
+    c.view.pickReplayStart();
+    c.view.followReplay(Date.UTC(2026, 9, 14) / 1000 - 40 * 86_400 + 10 * 3600);
+    c.pointer(3);
+    click(c);
+    expect(c.sent.replay).toEqual([]); // the click no longer starts one here
+    expect(c.view.model.bars.length).toBeLessThan(80);
+  });
+
+  it('stopping a replay that a chart drives ends it for the grid too, and one it follows does not', async () => {
+    const c = make({ cell: true });
+    c.view.show('SBIN');
+    await flush();
+    c.view.followReplay(Date.UTC(2026, 9, 14) / 1000 - 40 * 86_400 + 10 * 3600);
+    c.view.stopReplay();
+    expect(c.sent.replay).toEqual([]);
+    c.view.pickReplayStart();
+    c.view.stopReplay(); // cancelling a pick is the driver's end
+    expect(c.sent.replay).toEqual([null]);
   });
 });
 

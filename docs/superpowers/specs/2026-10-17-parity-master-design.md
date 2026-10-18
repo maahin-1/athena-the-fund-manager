@@ -286,3 +286,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 **Honest limits:** no drawings, compare or data window inside a cell (use the Chart Lab); crosshair sync between a daily and an intraday chart matches to the day; the dockable terminal's own chart panels keep their own link-group behaviour and are not part of this grid.
 
 **Next in this track:** 5j replay, 5f F&O and MCX.
+
+## 27. Bar replay (5j, 2026-10-19)
+
+**Done:** replay of a chart bar by bar from a clicked bar with nine speeds, a date jump and keys, with no look-ahead (a chart shows a bar only once it has ended by the replay moment), and the same replay synced across the Grid. Spec `2026-10-19-replay-design.md`, plan `2026-10-19-replay.md`, TRD section 2.45. Paper trading stays parked.
+
+**Honest limits:** bar replay at the chart's own interval only; a coarser chart in a synced replay lags the driving chart until its next bar completes; intraday replay reaches back only as far as the free source holds.
+
+**Next in this track:** 5f F&O and MCX.
