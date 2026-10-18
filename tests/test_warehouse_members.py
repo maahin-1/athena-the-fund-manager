@@ -74,3 +74,21 @@ def test_one_file_that_fails_does_not_stop_the_others():
     summary = refresh_members(w, get, NOW)
     assert summary["found"] == 1 and summary["failed"] == 1
     assert w.members_status()["indices"] == 1
+
+
+def test_an_industry_is_spelled_the_way_the_largest_index_spells_it_so_one_industry_is_not_several():
+    w = with_indices("Nifty 500", "NIFTY Bank")
+    broad = "Company Name,Industry,Symbol\nA,Financial Services,AAA\nB,Financial Services,BBB\nC,Information Technology,CCC\n"
+    small = "Company Name,Industry,Symbol\nA,FINANCIAL SERVICES,AAA\nD,FINANCIAL SERVICES,DDD\n"
+    files = {BASE + "ind_nifty500list.csv": broad.encode(), BASE + "ind_niftybanklist.csv": small.encode()}
+    refresh_members(w, files.get, NOW)
+    rows = dict(w._con.execute("SELECT symbol, industry FROM index_members WHERE index_name = 'NIFTY BANK'").fetchall())
+    assert rows == {"AAA": "Financial Services", "DDD": "Financial Services"}
+
+
+def test_a_symbols_industry_is_read_from_the_largest_index_that_has_it():
+    w = with_indices("Nifty 500", "NIFTY Bank")
+    broad = "Company Name,Industry,Symbol\nA,Financial Services,AAA\nB,Healthcare,BBB\nC,Information Technology,CCC\n"
+    small = "Company Name,Industry,Symbol\nA,Banking,AAA\n"
+    refresh_members(w, {BASE + "ind_nifty500list.csv": broad.encode(), BASE + "ind_niftybanklist.csv": small.encode()}.get, NOW)
+    assert w.symbol_industries() == {"AAA": "Financial Services", "BBB": "Healthcare", "CCC": "Information Technology"}

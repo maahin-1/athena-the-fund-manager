@@ -50,6 +50,19 @@ def parse_members(index_name: str, text: str) -> list[Member]:
     return out
 
 
+def spelled_alike(rows: list[Member]) -> list[Member]:
+    """The files spell one industry several ways ("Financial Services", "FINANCIAL SERVICES"), so peers by industry would split. Each industry is
+    written the way the largest index that uses it writes it, whatever the case."""
+    sizes: dict[str, int] = {}
+    for m in rows:
+        sizes[m.index_name] = sizes.get(m.index_name, 0) + 1
+    spelling: dict[str, str] = {}
+    for m in sorted(rows, key=lambda m: -sizes[m.index_name]):
+        if m.industry:
+            spelling.setdefault(m.industry.lower(), m.industry)
+    return [Member(m.index_name, m.symbol, spelling.get(m.industry.lower(), "")) for m in rows]
+
+
 def refresh_members(warehouse: Warehouse, get: Callable[[str], bytes | None], now: datetime) -> dict[str, int]:
     """Fetch each index's constituent file and replace the table with what was read. `get` returns the file's bytes, or None when there is none.
     A file that fails is counted and the others go on; if no file answered at all, the table is kept as it was and the error says so."""
@@ -72,6 +85,7 @@ def refresh_members(warehouse: Warehouse, get: Callable[[str], bytes | None], no
             skipped += 1
     if not rows:
         raise AthenaError("no constituent file answered; the index membership table is as it was")
+    rows = spelled_alike(rows)
     warehouse.replace_members([(m.index_name, m.symbol, m.industry) for m in rows], now)
     return {"indices": len(files), "found": found, "skipped": skipped, "failed": failed, "members": len(rows)}
 

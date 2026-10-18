@@ -433,6 +433,18 @@ class Warehouse:
             raise
         return len(data)
 
+    def symbol_industries(self) -> dict[str, str]:
+        """symbol -> its industry as the largest index that holds it gives it (the broad lists carry the exchange's current classification, the
+        thematic ones sometimes an older one)."""
+        try:
+            rows = self._con.execute(
+                "WITH size AS (SELECT index_name, count(*) AS n FROM index_members GROUP BY 1) "
+                "SELECT m.symbol, arg_max(m.industry, size.n) FROM index_members m JOIN size USING (index_name) WHERE m.industry <> '' GROUP BY m.symbol"
+            ).fetchall()
+        except duckdb.CatalogException:
+            return {}
+        return dict(rows)
+
     def members_status(self) -> dict[str, Any]:
         try:
             row = self._con.execute("SELECT count(*), count(DISTINCT index_name), count(DISTINCT symbol), max(fetched_at) FROM index_members").fetchone()
