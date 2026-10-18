@@ -263,3 +263,10 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Next in this track:** 5b custom intervals and the bar volume profile, 5k chart grid, 5j replay, 5h formula language, 5f F&O and MCX.
 
+## 24. Formula language, formula indicators, strategy builder, Python indicators (5h, 2026-10-18)
+
+**Done:** one formula text that the page and the Python strategy engine read the same way (proved by a golden file made by the engine), formula indicators in the Chart Lab, the strategy builder in the Research tab with saved strategies, and Python indicators from a local folder. Spec `2026-10-18-formula-language-design.md`, plan `2026-10-18-formula-language.md`, TRD sections 2.38 to 2.41.
+
+**Honest limits:** formulas have no loops, variables or functions (a Python file does); Python indicators are the user's own code and are not sandboxed, which the page says where the switch is; the engine's strategy tree is version 1 (no multi-symbol rules); a Python indicator is asked for once per set of bars, so a live tick moves the other indicators but not a Python line until a bar is added.
+
+**Next in this track:** 5b custom intervals and the bar volume profile, 5k chart grid, 5j replay, 5f F&O and MCX.

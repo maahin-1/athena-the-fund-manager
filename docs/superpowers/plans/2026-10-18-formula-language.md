@@ -49,3 +49,7 @@
 ### Task E: docs and suites
 
 - [ ] TRD (2.38 to 2.41), master design, `graphify update .`, full suites, commit.
+
+## As built (2026-10-18)
+
+All five tasks done and committed. Formula parser, evaluator and the golden-file parity test with the Python engine (A1, A2); formula indicators with their dialog, menu section and server document (B); the strategy builder with saved strategies, end to end on a real backtest (C); the Python runner (19 tests), the Rust routes (6 tests), the Chart Lab section with the switch-on dialog and an end-to-end test (D); docs and suites (E: vitest 508, Playwright 100). Deviations from the plan: the formula registry lives in `formula/store.ts` and `formula/defs.ts` rather than `formula/registry.ts`; custom definitions are kept per source (`formula`, `python`) in `chartlab/registry.ts`; `caption` falls back to the indicator's name until a Python file has run.
