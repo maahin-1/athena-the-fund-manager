@@ -183,3 +183,22 @@ test('the Terminal chart panel also keeps the earlier bars loaded behind a short
   expect(await signature(page, '.panel:has(.chart-body)')).not.toBe(before); // with only 22 bars loaded there is nothing to scroll to and the picture stays put
   expect(await candlesLeft(page, '.panel:has(.chart-body)')).toBeGreaterThan(200);
 });
+
+test('a renamed company reaches back past its rename: the old symbol is joined, scaled to match, with no cliff', async ({ page, request }) => {
+  for (const [symbol, old] of [['SHRIRAMFIN', 'SRTRANSFIN'], ['ETERNAL', 'ZOMATO'], ['TATACONSUM', 'TATAGLOBAL']] as const) {
+    const body = await (await request.get(`/api/bars?symbol=${symbol}&tf=1D&limit=5000`)).json();
+    const ts: number[] = body.bars.map((b: { t: number }) => b.t);
+    const ownFirst = (await (await request.get(`/api/bars?symbol=${old}&tf=1D&limit=5000`)).json()).bars[0].t;
+    expect(ts[0], `${symbol} starts where ${old} does`).toBe(ownFirst);
+    expect(ts, 'in time order, no day twice').toEqual([...new Set(ts)].sort((a, b) => a - b));
+    expect(body.note).toContain(old);
+  }
+  // a 5x step at the join would be the old prices on the wrong footing: Shriram Finance was split 1:5 after the rename
+  const shriram = (await (await request.get('/api/bars?symbol=SHRIRAMFIN&tf=1D&limit=5000')).json()).bars as { t: number; c: number }[];
+  const last = (await (await request.get('/api/bars?symbol=SRTRANSFIN&tf=1D&limit=5000')).json()).bars.at(-1).t as number;
+  const at = shriram.findIndex((b) => b.t > last);
+  expect(Math.abs(shriram[at]!.c / shriram[at - 1]!.c - 1)).toBeLessThan(0.1);
+
+  await openLab(page, 'SHRIRAMFIN');
+  await expect(page.locator('.lab-note')).toContainText('SRTRANSFIN');
+});
