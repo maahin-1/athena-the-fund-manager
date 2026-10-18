@@ -123,6 +123,10 @@ class Warehouse:
             "event VARCHAR, reason VARCHAR, checked_at TIMESTAMP NOT NULL, PRIMARY KEY (old, new, change_day))"
         )
         self._con.execute(
+            "CREATE TABLE IF NOT EXISTS index_members (index_name VARCHAR NOT NULL, symbol VARCHAR NOT NULL, industry VARCHAR, "
+            "fetched_at TIMESTAMP NOT NULL, PRIMARY KEY (index_name, symbol))"
+        )
+        self._con.execute(
             "CREATE TABLE IF NOT EXISTS verdicts (symbol VARCHAR NOT NULL, made_at TIMESTAMP NOT NULL, data_as_of DATE NOT NULL, close DOUBLE, "
             "annual_period DATE, quarter DATE, payload VARCHAR NOT NULL, PRIMARY KEY (symbol, made_at))"
         )
@@ -409,6 +413,32 @@ class Warehouse:
         except duckdb.CatalogException:
             return {"renames": 0, "joinable": 0, "retired": 0, "checked_at": None}
         return {"renames": row[0], "joinable": row[1], "retired": row[2], "checked_at": row[3].replace(tzinfo=_UTC) if row[3] else None}
+
+    def index_names(self) -> list[str]:
+        """Every index the warehouse holds bars for."""
+        return [r[0] for r in self._con.execute("SELECT DISTINCT index_name FROM index_bars ORDER BY 1").fetchall()]
+
+    def replace_members(self, rows: Iterable[tuple[str, str, str]], now: datetime) -> int:
+        """Replace the index membership table by `rows` (index, symbol, industry). All or nothing, so a failed run keeps the last table."""
+        stamp = _naive(now)
+        data = [[i, s, ind, stamp] for i, s, ind in rows]
+        self._con.execute("BEGIN")
+        try:
+            self._con.execute("DELETE FROM index_members")
+            if data:
+                self._con.executemany("INSERT OR REPLACE INTO index_members VALUES (?, ?, ?, ?)", data)
+            self._con.execute("COMMIT")
+        except Exception:
+            self._con.execute("ROLLBACK")
+            raise
+        return len(data)
+
+    def members_status(self) -> dict[str, Any]:
+        try:
+            row = self._con.execute("SELECT count(*), count(DISTINCT index_name), count(DISTINCT symbol), max(fetched_at) FROM index_members").fetchone()
+        except duckdb.CatalogException:
+            return {"rows": 0, "indices": 0, "symbols": 0, "fetched_at": None}
+        return {"rows": row[0], "indices": row[1], "symbols": row[2], "fetched_at": row[3].replace(tzinfo=_UTC) if row[3] else None}
 
     def actions_status(self) -> dict[str, Any]:
         row = self._con.execute("SELECT count(*), count(DISTINCT symbol), min(ex_date), max(ex_date), max(fetched_at) FROM actions").fetchone()
