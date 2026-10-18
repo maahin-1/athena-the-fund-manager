@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +22,25 @@ LOADED, NO_SESSION, PENDING = "loaded", "no_session", "pending"
 STATEMENT_OK, STATEMENT_EMPTY, STATEMENT_ERROR = "ok", "empty", "error"
 STOCK, ETF, SME, OTHER = "stock", "etf", "sme", "other"
 _UTC = timezone.utc
+MAX_HOPS = 5  # a symbol renamed more than this many times in a row is read as a loop
+
+
+@dataclass(frozen=True)
+class Succession:
+    """One exchange rename as the warehouse has checked it against its own bars (see `athena.warehouse.renames`)."""
+
+    old: str
+    new: str
+    change_day: date
+    company: str
+    event: str  # wording of a demerger or scheme near the rename, or ""
+    joinable: bool  # the prices join: adjacent bars, a small step
+    retired: bool  # the old symbol stopped trading at the rename
+    reason: str  # why the prices do not join, or ""
+    gap_days: int | None
+    step: float | None  # first new close over last old close, minus one, as printed
+    last_old_day: date | None
+    first_new_day: date | None
 
 
 def _naive(moment: datetime) -> datetime:
@@ -97,6 +116,11 @@ class Warehouse:
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS actions (symbol VARCHAR NOT NULL, ex_date DATE NOT NULL, subject VARCHAR NOT NULL, face_value DOUBLE, "
             "series VARCHAR, isin VARCHAR, fetched_at TIMESTAMP NOT NULL, PRIMARY KEY (symbol, ex_date, subject))"
+        )
+        self._con.execute(
+            "CREATE TABLE IF NOT EXISTS symbol_renames (old VARCHAR NOT NULL, new VARCHAR NOT NULL, change_day DATE NOT NULL, company VARCHAR, "
+            "last_old_day DATE, first_new_day DATE, gap_days INTEGER, step DOUBLE, joinable BOOLEAN NOT NULL, retired BOOLEAN NOT NULL, "
+            "event VARCHAR, reason VARCHAR, checked_at TIMESTAMP NOT NULL, PRIMARY KEY (old, new, change_day))"
         )
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS verdicts (symbol VARCHAR NOT NULL, made_at TIMESTAMP NOT NULL, data_as_of DATE NOT NULL, close DOUBLE, "
@@ -321,6 +345,70 @@ class Warehouse:
             if action is not None:
                 out.append(replace(action, face_value=face_value))
         return out
+
+    def spans(self) -> dict[str, tuple[date, float, date, float]]:
+        """symbol -> (first day, first close, last day, last close) of every symbol with bars, as printed."""
+        return {
+            s: (a, ac, b, bc)
+            for s, a, ac, b, bc in self._con.execute("SELECT symbol, min(day), arg_min(close, day), max(day), arg_max(close, day) FROM bars GROUP BY symbol").fetchall()
+        }
+
+    def action_wordings(self, words: Iterable[str]) -> list[tuple[str, date, str]]:
+        """(symbol, ex-date, wording) of every corporate action whose wording holds any of `words` (case does not matter)."""
+        words = list(words)
+        if not words:
+            return []
+        clause = " OR ".join("lower(subject) LIKE ?" for _ in words)
+        return self._con.execute(f"SELECT symbol, ex_date, subject FROM actions WHERE {clause}", [f"%{w.lower()}%" for w in words]).fetchall()
+
+    def replace_renames(self, rows: Iterable[Mapping[str, Any]], now: datetime) -> int:
+        """Replace the whole rename table by `rows`. All or nothing, so a failed run keeps the last table."""
+        stamp = _naive(now)
+        data = [
+            [r["old"], r["new"], r["change_day"], r["company"], r["last_old_day"], r["first_new_day"], r["gap_days"], r["step"], r["joinable"], r["retired"], r["event"], r["reason"], stamp]
+            for r in rows
+        ]
+        self._con.execute("BEGIN")
+        try:
+            self._con.execute("DELETE FROM symbol_renames")
+            if data:
+                self._con.executemany("INSERT OR REPLACE INTO symbol_renames VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", data)
+            self._con.execute("COMMIT")
+        except Exception:
+            self._con.execute("ROLLBACK")
+            raise
+        return len(data)
+
+    def predecessors(self, symbol: str, joinable_only: bool = True) -> list[Succession]:
+        """The renames that lead to `symbol`, oldest first: for prices (`joinable_only`) those whose bars join, for statements and search
+        those whose old symbol is retired. A chain is followed back at most `MAX_HOPS` times and never through a symbol twice. Empty when
+        the table does not exist or holds nothing for the symbol."""
+        column = "joinable" if joinable_only else "retired"
+        out: list[Succession] = []
+        here, seen = symbol, {symbol}
+        try:
+            for _ in range(MAX_HOPS):
+                row = self._con.execute(
+                    "SELECT old, new, change_day, company, event, joinable, retired, reason, gap_days, step, last_old_day, first_new_day "
+                    f"FROM symbol_renames WHERE new = ? AND {column} ORDER BY change_day DESC",
+                    [here],
+                ).fetchall()
+                row = [r for r in row if r[0] not in seen]
+                if not row:
+                    break
+                out.append(Succession(*row[0]))
+                here = row[0][0]
+                seen.add(here)
+        except duckdb.CatalogException:
+            return []  # a read-only open of a warehouse built before the table existed
+        return out[::-1]
+
+    def renames_status(self) -> dict[str, Any]:
+        try:
+            row = self._con.execute("SELECT count(*), count(*) FILTER (WHERE joinable), count(*) FILTER (WHERE retired), max(checked_at) FROM symbol_renames").fetchone()
+        except duckdb.CatalogException:
+            return {"renames": 0, "joinable": 0, "retired": 0, "checked_at": None}
+        return {"renames": row[0], "joinable": row[1], "retired": row[2], "checked_at": row[3].replace(tzinfo=_UTC) if row[3] else None}
 
     def actions_status(self) -> dict[str, Any]:
         row = self._con.execute("SELECT count(*), count(DISTINCT symbol), min(ex_date), max(ex_date), max(fetched_at) FROM actions").fetchone()

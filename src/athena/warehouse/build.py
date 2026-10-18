@@ -16,6 +16,7 @@ from typing import Any
 
 from athena.clock import utc_now
 from athena.warehouse.actions import ingest_actions
+from athena.warehouse.renames import refresh_renames
 from athena.warehouse.indices import ingest_indices
 from athena.warehouse.ingest import ingest_prices, ingest_universe, ready_through
 from athena.warehouse.packets import build_packets
@@ -71,6 +72,7 @@ def run_build(
     statements_budget: int,
     on_progress: Callable[[str], None] = lambda text: None,
     full_actions: bool = False,
+    renames_fetch: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     """Run every step of the nightly build, one failing never stopping the next, and say what each did. The price step is the one the
     others lean on: if it stopped early the build is not ok even when the later steps ran."""
@@ -89,6 +91,8 @@ def run_build(
 
     step("prices", lambda: ingest_prices(warehouse, price_store, first, now), lambda r: not r["stopped"] and not r["failed"])
     step("actions", lambda: ingest_actions(warehouse, get, ready_through(now), now, since=first, full=full_actions))
+    if renames_fetch is not None:  # after prices and actions: the checks read both
+        step("renames", lambda: refresh_renames(warehouse, renames_fetch, now))
     step("indices", lambda: ingest_indices(warehouse, get, first, now), lambda r: not r["stopped"] and not r["failed"])
     step("universe", lambda: ingest_universe(warehouse, *lists(), now))
     if statements_budget and statements_fetch is not None:
@@ -129,10 +133,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not args.status:
             from athena.loaders.fundamentals import default_fetch
+            from athena.symbol_changes import fetch_symbol_changes
             from athena.pit.bhavcopy import ArchiveClient, BhavcopyStore
 
             client = ArchiveClient()
-            outcome = run_build(warehouse, started, first, client.get, BhavcopyStore(client), masters, default_fetch, args.statements, on_progress=print, full_actions=bool(args.since))
+            outcome = run_build(warehouse, started, first, client.get, BhavcopyStore(client), masters, default_fetch, args.statements, on_progress=print, full_actions=bool(args.since), renames_fetch=fetch_symbol_changes)
             ok = outcome["ok"]
             print("report:", write_build_status(outcome, started, utc_now()))
         print(format_status(warehouse.status(first, ready_through(started)), first))
