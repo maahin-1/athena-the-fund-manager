@@ -92,7 +92,123 @@ export function rangeBars(bars: Bar[], range: number): Bar[] {
   return out;
 }
 
+/** One Kagi line: `o` is where it starts (where the last one ended), `c` where it ends now. `thick` is its weight at its end (yang thick, yin thin); `flip`
+ *  is the price inside the line where it changed weight, when it did. */
+export interface KagiLine extends Bar {
+  thick: boolean;
+  flip?: number;
+}
+
+/** Kagi lines from closes: a line runs on while the close goes on in its direction, and turns only when the close comes back by `reversal`, the new
+ *  line starting where the old one ended. A line turns thick (yang) once it rises through the previous swing high and thin (yin) once it falls
+ *  through the previous swing low, changing weight at that price. The first line is thick when it rises and thin when it falls. Each line carries the
+ *  stamp of the source bar that last moved it and the volume of the source bars that moved it. */
+export function kagi(bars: Bar[], reversal: number): KagiLine[] {
+  const out: KagiLine[] = [];
+  if (!(reversal > 0) || bars.length < 2) return out;
+  const first = bars[0].c;
+  let shoulder: number | null = null; // end of the last line up before the line now running down: the high to rise through
+  let waist: number | null = null; // end of the last line down before the line now running up: the low to fall through
+  const reweigh = (line: KagiLine, up: boolean): void => {
+    if (up && !line.thick && shoulder !== null && line.c > shoulder) {
+      line.thick = true;
+      line.flip = shoulder;
+    } else if (!up && line.thick && waist !== null && line.c < waist) {
+      line.thick = false;
+      line.flip = waist;
+    }
+  };
+  for (const b of bars.slice(1)) {
+    const cur = out[out.length - 1];
+    if (!cur) {
+      if (Math.abs(b.c - first) < reversal) continue;
+      out.push({ t: b.t, o: first, h: Math.max(first, b.c), l: Math.min(first, b.c), c: b.c, v: b.v, thick: b.c > first });
+      continue;
+    }
+    const up = cur.c >= cur.o;
+    if ((up && b.c > cur.c) || (!up && b.c < cur.c)) {
+      cur.c = b.c;
+      cur.t = b.t;
+      cur.h = Math.max(cur.o, cur.c);
+      cur.l = Math.min(cur.o, cur.c);
+      cur.v += b.v;
+      reweigh(cur, up);
+    } else if (Math.abs(b.c - cur.c) >= reversal) {
+      if (up) shoulder = cur.c;
+      else waist = cur.c;
+      const next: KagiLine = { t: b.t, o: cur.c, h: Math.max(cur.c, b.c), l: Math.min(cur.c, b.c), c: b.c, v: b.v, thick: cur.thick };
+      out.push(next);
+      reweigh(next, !up);
+    }
+  }
+  return out;
+}
+
+/** One point-and-figure column: `l` and `h` are the bottom edge of its lowest box and the top edge of its highest. `up` columns are X (open at the
+ *  bottom, close at the top), the others O (open at the top, close at the bottom). `box` is the box size. */
+export interface PnfColumn extends Bar {
+  up: boolean;
+  box: number;
+}
+
+/** Point-and-figure columns from closes: prices are put into boxes of `box`; a column of X rises while closes reach new boxes, and turns into a column
+ *  of O when the close comes back `reversal` boxes (the O column starts one box under the top X); the same the other way round. The first column
+ *  starts in the first close's box once a close has moved a whole box away from it. */
+export function pointAndFigure(bars: Bar[], box: number, reversal = 3): PnfColumn[] {
+  const out: PnfColumn[] = [];
+  if (!(box > 0) || bars.length < 2) return out;
+  const cell = (price: number): number => Math.floor(price / box + 1e-9);
+  const start = cell(bars[0].c);
+  let up = true;
+  let lo = start;
+  let hi = start;
+  let begun = false;
+  let t = bars[0].t;
+  let v = 0;
+  const seal = (): void => {
+    const l = lo * box;
+    const h = (hi + 1) * box;
+    out.push({ t, o: up ? l : h, h, l, c: up ? h : l, v, up, box });
+  };
+  for (const b of bars.slice(1)) {
+    const c = cell(b.c);
+    if (!begun) {
+      if (c === start) continue;
+      begun = true;
+      up = c > start;
+      if (up) hi = c;
+      else lo = c;
+      t = b.t;
+      v = b.v;
+    } else if (up && c > hi) {
+      hi = c;
+      t = b.t;
+      v += b.v;
+    } else if (!up && c < lo) {
+      lo = c;
+      t = b.t;
+      v += b.v;
+    } else if (up && hi - c >= reversal) {
+      seal();
+      up = false;
+      hi -= 1; // the O column starts one box under the top X
+      lo = c;
+      t = b.t;
+      v = b.v;
+    } else if (!up && c - lo >= reversal) {
+      seal();
+      up = true;
+      lo += 1; // the X column starts one box over the bottom O
+      hi = c;
+      t = b.t;
+      v = b.v;
+    }
+  }
+  if (begun) seal();
+  return out;
+}
+
 /** Give each derived bar a stamp one step after the one before, so a time axis shows them in order: derived bars have no calendar position. */
-export function sequence(bars: Bar[], start: number, step: number): Bar[] {
+export function sequence<T extends Bar>(bars: T[], start: number, step: number): T[] {
   return bars.map((b, i) => ({ ...b, t: start + i * step }));
 }

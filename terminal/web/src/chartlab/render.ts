@@ -3,7 +3,8 @@ import {
   type IChartApi, type ISeriesApi, type Logical, type SeriesType, type UTCTimestamp,
 } from 'lightweight-charts';
 import type { Bar } from '../bars';
-import { isValueType, stepSeconds, type ChartModel } from './model';
+import { isShapeType, isValueType, stepSeconds, type ChartModel } from './model';
+import { ShapeView, type ShapeMode } from './shapeseries';
 import type { DrawingHost } from './drawings/host';
 import { DrawingPrimitive } from './drawings/primitive';
 import { Projection } from './drawings/projection';
@@ -77,6 +78,12 @@ export const lightweightRenderer: RendererFactory = (host) => {
 
   const mainData = (model: ChartModel): unknown[] => {
     const bars = model.displayBars();
+    if (isShapeType(model.type)) {
+      return bars.map((b) => {
+        const extra = b as Bar & { thick?: boolean; flip?: number; up?: boolean; box?: number };
+        return { time: time(b.t), open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v, thick: extra.thick, flip: extra.flip, up: extra.up, box: extra.box };
+      });
+    }
     if (model.type === 'columns') return bars.map((b) => ({ time: time(b.t), value: b.c, color: b.c >= b.o ? css('--up-dim') : css('--dn-dim') }));
     return isValueType(model.type)
       ? bars.map((b) => ({ time: time(b.t), value: b.c }))
@@ -136,12 +143,13 @@ export const lightweightRenderer: RendererFactory = (host) => {
         });
       } else if (model.type === 'columns') main = chart.addSeries(HistogramSeries, { priceLineVisible: true });
       else if (model.type === 'step') main = chart.addSeries(LineSeries, { color: css('--accent'), lineWidth: 2, lineType: LineType.WithSteps });
+      else if (isShapeType(model.type)) main = chart.addCustomSeries(new ShapeView(), { mode: model.type as ShapeMode, up, down: dn, accent: css('--accent') });
       else if (model.type === 'bars') main = chart.addSeries(BarSeries, { upColor: up, downColor: dn });
       else if (model.type === 'hollow') main = chart.addSeries(CandlestickSeries, { upColor: 'rgba(0,0,0,0)', downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn, borderVisible: true });
       else main = chart.addSeries(CandlestickSeries, { upColor: up, downColor: dn, borderVisible: false, wickUpColor: up, wickDownColor: dn });
       main.setData(mainData(model) as never);
       main.attachPrimitive(primitive);
-      main.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.3 } });
+      main.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: model.derived ? 0.06 : 0.3 } }); // the lower part is the volume's, and a price-move chart has none
       series.push(main);
       volume = null;
       if (!model.derived) {

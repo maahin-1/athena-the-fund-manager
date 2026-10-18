@@ -1,21 +1,25 @@
 import { applyTick, tickFitsChart, type Bar } from '../bars';
 import type { Timeframe } from '../ranges';
 import { atr, type Series } from './maths';
-import { lineBreak, rangeBars, renko, sequence } from './derived';
+import { kagi, lineBreak, pointAndFigure, rangeBars, renko, sequence } from './derived';
 import { MINUTES } from './resample';
 import { defaults, find, validate, type IndicatorDef, type Params } from './registry';
 
-export type ChartType = 'candles' | 'hollow' | 'bars' | 'line' | 'area' | 'baseline' | 'columns' | 'step' | 'heikin' | 'renko' | 'linebreak' | 'range';
+export type ChartType = 'candles' | 'hollow' | 'bars' | 'line' | 'area' | 'baseline' | 'columns' | 'step' | 'heikin' | 'renko' | 'linebreak' | 'range' | 'highlow' | 'volcandles' | 'kagi' | 'pnf';
 export type ScaleMode = 'auto' | 'log' | 'percent';
 export const CHART_TYPES: { id: ChartType; label: string }[] = [
   { id: 'candles', label: 'Candles' }, { id: 'hollow', label: 'Hollow candles' }, { id: 'bars', label: 'Bars' },
   { id: 'line', label: 'Line' }, { id: 'area', label: 'Area' }, { id: 'baseline', label: 'Baseline' }, { id: 'columns', label: 'Columns' },
   { id: 'step', label: 'Step line' }, { id: 'heikin', label: 'Heikin Ashi' }, { id: 'renko', label: 'Renko' }, { id: 'linebreak', label: 'Line break' },
-  { id: 'range', label: 'Range bars' },
+  { id: 'range', label: 'Range bars' }, { id: 'highlow', label: 'High-low' }, { id: 'volcandles', label: 'Volume candles' }, { id: 'kagi', label: 'Kagi' },
+  { id: 'pnf', label: 'Point and figure' },
 ];
 
 /** Types built from price moves, not time: indicators, compare and volume are not drawn on them. */
-export const isDerived = (type: ChartType): boolean => type === 'renko' || type === 'linebreak' || type === 'range';
+export const isDerived = (type: ChartType): boolean => type === 'renko' || type === 'linebreak' || type === 'range' || type === 'kagi' || type === 'pnf';
+
+/** Types the library has no series for: the chart paints them itself from shapes (see `shapes.ts`). */
+export const isShapeType = (type: ChartType): boolean => type === 'highlow' || type === 'volcandles' || type === 'kagi' || type === 'pnf';
 
 /** Types drawn as one value per bar (the close) rather than as open, high, low and close. */
 export const isValueType = (type: ChartType): boolean => ['line', 'area', 'baseline', 'columns', 'step'].includes(type);
@@ -200,11 +204,17 @@ export class ChartModel {
     return out;
   }
 
-  /** The bars as drawn: the real ones, Heikin Ashi bars, or (Renko, line break, range) bricks and lines stamped in sequence after the first bar. */
+  /** The bars as drawn: the real ones, Heikin Ashi bars, or (Renko, line break, range, Kagi, point and figure) bricks, lines and columns stamped in sequence after the first bar. */
   displayBars(): Bar[] {
     if (this.type === 'heikin') return heikinAshi(this.bars);
     if (!isDerived(this.type) || !this.bars.length) return this.bars;
-    const built = this.type === 'renko' ? renko(this.bars, autoSize(this.bars)) : this.type === 'linebreak' ? lineBreak(this.bars, 3) : rangeBars(this.bars, autoSize(this.bars, 0.5));
+    // Renko bricks and Kagi reversals are one average true range; range bars and point-and-figure boxes half of one (a P&F column turns after three boxes)
+    const built: Bar[] =
+      this.type === 'renko' ? renko(this.bars, autoSize(this.bars))
+      : this.type === 'linebreak' ? lineBreak(this.bars, 3)
+      : this.type === 'kagi' ? kagi(this.bars, autoSize(this.bars))
+      : this.type === 'pnf' ? pointAndFigure(this.bars, autoSize(this.bars, 0.5), 3)
+      : rangeBars(this.bars, autoSize(this.bars, 0.5));
     return sequence(built, this.bars[0].t, stepSeconds(this.tf));
   }
 

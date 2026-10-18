@@ -190,7 +190,7 @@ describe('chart lab page', () => {
   it('every chart type is offered, and a price-move type says indicators are not drawn on it', async () => {
     const h = await shown();
     const type = h.view.element.querySelector('.lab-type') as HTMLSelectElement;
-    expect([...type.options].map((o) => o.value)).toEqual(['candles', 'hollow', 'bars', 'line', 'area', 'baseline', 'columns', 'step', 'heikin', 'renko', 'linebreak', 'range']);
+    expect([...type.options].map((o) => o.value)).toEqual(['candles', 'hollow', 'bars', 'line', 'area', 'baseline', 'columns', 'step', 'heikin', 'renko', 'linebreak', 'range', 'highlow', 'volcandles', 'kagi', 'pnf']);
     h.view.model.addIndicator('rsi');
     type.value = 'renko';
     type.dispatchEvent(new Event('change'));

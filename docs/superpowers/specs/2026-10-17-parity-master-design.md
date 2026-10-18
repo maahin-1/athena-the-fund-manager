@@ -237,3 +237,11 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Rule (from the owner, 2026-10-18):** nothing in this product is fixed for one ticker by hand. A defect seen on one symbol is a defect class: find the data that defines the class, build the rule once, and run it over every symbol before calling it done. A table of named tickers in code is a defect in itself.
 
+## 21. Chart types, the rest of the list (5b, 2026-10-18)
+
+**Done:** High-low, Volume candles, Kagi, Point and figure, on every symbol and interval, through one custom series and pure shape functions. With the types of section 5b the Chart Lab now offers sixteen: candles, hollow candles, bars, line, area, baseline, columns, step line, Heikin Ashi, Renko, line break, range bars, high-low, volume candles, Kagi and point and figure. Spec `2026-10-18-chart-types-design.md`, plan `2026-10-18-chart-types.md`, TRD section 2.34.
+
+**Honest limits:** reversal and box sizes are automatic (a setting for all price-move types is a later item); Kagi and point and figure read closes only; no volume footprint (needs ticks); drawings stay off for the price-move types.
+
+**Next in this track:** peers (6f) and screens (6g), alerts (5g, with drawing alerts), F&O and MCX, drawing tiers 2 and 3.
+

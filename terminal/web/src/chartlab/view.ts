@@ -362,7 +362,7 @@ export class ChartLabView {
       objectsTab.textContent = c.list.length ? `Objects (${c.list.length})` : 'Objects';
       this.paintBar();
     });
-    this.rail.setEnabled(!isDerived(this.model.type), 'Drawings are not available on Renko, line-break or range charts');
+    this.rail.setEnabled(!isDerived(this.model.type), 'Drawings are not available on Renko, line-break, range, Kagi or point-and-figure charts');
   }
 
   private showTab(tab: 'data' | 'objects'): void {
@@ -545,8 +545,8 @@ export class ChartLabView {
 
   private paintChart(): void {
     this.renderer?.paint(this.model);
-    this.rail?.setEnabled(!isDerived(this.model.type), 'Drawings are not available on Renko, line-break or range charts');
-    if (isDerived(this.model.type) && (this.model.indicators.length || this.model.compare)) this.say('Indicators, compare and volume are not drawn on Renko, line-break or range charts; they come back with another chart type.');
+    this.rail?.setEnabled(!isDerived(this.model.type), 'Drawings are not available on Renko, line-break, range, Kagi or point-and-figure charts');
+    if (isDerived(this.model.type) && (this.model.indicators.length || this.model.compare)) this.say('Indicators, compare and volume are not drawn on Renko, line-break, range, Kagi or point-and-figure charts; they come back with another chart type.');
     this.paintLegends();
     this.paintValues();
     this.paintBar();

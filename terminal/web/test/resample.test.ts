@@ -161,10 +161,35 @@ describe('the model with price-move types', () => {
     expect(autoSize(long, 0.5)).toBe(4);
   });
 
+  it('Kagi and point and figure are price-move types, like Renko; high-low and volume candles stay on the calendar with every feature', () => {
+    const m = new ChartModel();
+    m.setBars(bars, '1D');
+    const uid = m.addIndicator('sma', { length: 3 })!;
+    for (const t of ['kagi', 'pnf'] as const) {
+      m.setType(t);
+      expect(m.derived).toBe(true);
+      const shown = m.displayBars();
+      expect(shown.length).toBeGreaterThan(0);
+      expect(shown[0].t).toBe(bars[0].t);
+      if (shown.length > 1) expect(shown[1].t - shown[0].t).toBe(stepSeconds('1D'));
+      expect(m.window(0)!.values[uid]).toBeUndefined();
+    }
+    m.setType('kagi');
+    expect(m.displayBars().every((b) => 'thick' in b)).toBe(true);
+    m.setType('pnf');
+    expect(m.displayBars().every((b) => 'up' in b && 'box' in b)).toBe(true);
+    for (const t of ['highlow', 'volcandles'] as const) {
+      m.setType(t);
+      expect(m.derived).toBe(false);
+      expect(m.displayBars()).toBe(m.bars); // the real bars, one for one
+      expect(m.window(5)!.values[uid]).toBeDefined();
+    }
+  });
+
   it('every type is a state the store accepts', async () => {
     const { deserialize, serialize } = await import('../src/chartlab/store');
     const m = new ChartModel();
-    for (const t of ['baseline', 'columns', 'step', 'renko', 'linebreak', 'range'] as const) {
+    for (const t of ['baseline', 'columns', 'step', 'renko', 'linebreak', 'range', 'highlow', 'volcandles', 'kagi', 'pnf'] as const) {
       m.setType(t);
       expect(deserialize(serialize(m.state())).type).toBe(t);
     }

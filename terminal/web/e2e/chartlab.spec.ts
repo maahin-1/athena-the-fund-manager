@@ -78,7 +78,7 @@ test('log scale, percent scale, chart types, compare and raw prices all keep the
 test('every chart type and interval draws without an error', async ({ page }) => {
   await openLab(page);
   await addIndicator(page, 'rsi');
-  for (const type of ['baseline', 'columns', 'step', 'renko', 'linebreak', 'range', 'heikin', 'candles']) {
+  for (const type of ['baseline', 'columns', 'step', 'renko', 'linebreak', 'range', 'highlow', 'volcandles', 'kagi', 'pnf', 'heikin', 'candles']) {
     await page.locator('.lab-type').selectOption(type);
     await expect(page.locator('.lab-host canvas').first()).toBeVisible();
   }
@@ -201,4 +201,54 @@ test('a renamed company reaches back past its rename: the old symbol is joined f
 
   await openLab(page, 'SHRIRAMFIN');
   await expect(page.locator('.lab-note')).toContainText('SRTRANSFIN');
+});
+
+/** Pixels of a clearly coloured kind (not the greys of the grid and the axes) on the widest canvas under `scope`. */
+async function colourful(page: Page, scope: string): Promise<number> {
+  return page.evaluate((sel) => {
+    const c = [...document.querySelectorAll<HTMLCanvasElement>(`${sel} canvas`)].sort((x, y) => y.width * y.height - x.width * x.height)[0];
+    const ctx = c?.getContext('2d');
+    if (!ctx) return 0;
+    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < data.length; i += 4) if (Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]) > 70) n++;
+    return n;
+  }, scope);
+}
+
+test('high-low, volume candles, Kagi and point and figure draw on any symbol, each differently, and only the price-move two turn the drawing rail off', async ({ page }) => {
+  for (const symbol of ['SBIN', 'RELIANCE', 'SHRIRAMFIN', 'ETERNAL']) {
+    await openLab(page, symbol);
+    await page.locator('.lab [data-range="1Y"]').click();
+    const seen = new Set<number>();
+    for (const type of ['candles', 'highlow', 'volcandles', 'kagi', 'pnf']) {
+      await page.locator('.lab-type').selectOption(type);
+      await page.waitForTimeout(500);
+      expect(await colourful(page, '.lab-host'), `${symbol} ${type} drew something`).toBeGreaterThan(300);
+      const sig = await signature(page, '.lab-host');
+      expect(seen.has(sig), `${symbol} ${type} looks like an earlier type`).toBe(false);
+      seen.add(sig);
+      const off = type === 'kagi' || type === 'pnf';
+      await expect(page.locator('.lab-rail')).toHaveClass(off ? /off/ : /^(?!.*off).*$/);
+    }
+    await page.locator('.lab-type').selectOption('candles'); // the type is kept when another symbol is opened, and the head of a price-move chart is bare
+  }
+});
+
+test('the new types survive an interval change and come back from a saved template', async ({ page }) => {
+  await openLab(page);
+  for (const type of ['volcandles', 'kagi']) {
+    await page.locator('.lab-type').selectOption(type);
+    for (const tf of ['1W', '1M', '1D']) {
+      await page.locator(`[data-interval="${tf}"]`).click();
+      await expect(page.locator(`[data-interval="${tf}"]`)).toHaveClass(/on/);
+      await page.waitForTimeout(250);
+      expect(await colourful(page, '.lab-host')).toBeGreaterThan(100);
+    }
+  }
+  await page.locator('.lab-type').selectOption('pnf');
+  await page.reload();
+  await command(page).fill('LAB SBIN');
+  await command(page).press('Enter');
+  await expect(page.locator('.lab-type')).toHaveValue('pnf');
 });
