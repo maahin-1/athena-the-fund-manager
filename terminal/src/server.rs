@@ -325,6 +325,41 @@ async fn api_indices(State(state): State<AppState>) -> Response {
 
 const WATCHLISTS: &str = "watchlists";
 
+/// The name a symbol's drawings are kept under in the lists folder: `dr-` and the upper-cased symbol, where letters, digits, space and `-` stay and every other character
+/// (including `_`) becomes `_` and two hex digits (`M&M` is `dr-M_26M`). None for a symbol outside `A-Z 0-9 & ^ space -` or one whose name would pass the store's 40 characters.
+pub fn drawing_name(symbol: &str) -> Option<String> {
+    let upper = symbol.trim().to_ascii_uppercase();
+    if upper.is_empty() || upper.chars().count() > 24 {
+        return None;
+    }
+    let mut out = String::from("dr-");
+    for c in upper.chars() {
+        match c {
+            'A'..='Z' | '0'..='9' | ' ' | '-' => out.push(c),
+            '&' | '^' | '_' => out.push_str(&format!("_{:02x}", c as u32)),
+            _ => return None,
+        }
+    }
+    (out.chars().count() <= 40).then_some(out)
+}
+
+async fn drawings_get(State(state): State<AppState>, Path(symbol): Path<String>) -> Response {
+    let Some(name) = drawing_name(&symbol) else { return StatusCode::BAD_REQUEST.into_response() };
+    match state.lists.get(&name) {
+        Ok(body) => ([("content-type", "application/json")], body).into_response(),
+        Err(LayoutError::Missing) => StatusCode::NO_CONTENT.into_response(), // none drawn yet is not an error: the browser would log a 404
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+async fn drawings_put(State(state): State<AppState>, Path(symbol): Path<String>, body: Bytes) -> Response {
+    let Some(name) = drawing_name(&symbol) else { return StatusCode::BAD_REQUEST.into_response() };
+    match state.lists.put(&name, &body) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
 async fn watchlists_get(State(state): State<AppState>) -> Response {
     match state.lists.get(WATCHLISTS) {
         Ok(body) => ([("content-type", "application/json")], body).into_response(),
@@ -428,6 +463,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/indices", get(api_indices))
         .route("/api/search", get(api_search))
         .route("/api/watchlists", get(watchlists_get).put(watchlists_put))
+        .route("/api/drawings/:symbol", get(drawings_get).put(drawings_put))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
         .route("/api/fund-status", get(api_fund_status))
@@ -565,6 +601,47 @@ mod tests {
         let big = format!(r#"{{"x":"{}"}}"#, "a".repeat(250 * 1024));
         assert_eq!(client.put(&url).header("Origin", &origin).body(big).send().await.unwrap().status(), 413);
         assert_eq!(client.put(&url).header("Origin", "http://evil.test").body("{}").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[test]
+    fn a_symbol_becomes_a_safe_file_name() {
+        assert_eq!(drawing_name("SBIN").as_deref(), Some("dr-SBIN"));
+        assert_eq!(drawing_name("sbin").as_deref(), Some("dr-SBIN"));
+        assert_eq!(drawing_name("M&M").as_deref(), Some("dr-M_26M"));
+        assert_eq!(drawing_name("NIFTY 50").as_deref(), Some("dr-NIFTY 50"));
+        assert_eq!(drawing_name("BAJAJ-AUTO").as_deref(), Some("dr-BAJAJ-AUTO"));
+        assert_eq!(drawing_name("A_B").as_deref(), Some("dr-A_5fB")); // an underscore is encoded, so no symbol can collide with an encoded one
+        assert_ne!(drawing_name("A_26B"), drawing_name("A&B"));
+        assert_eq!(drawing_name("../x"), None);
+        assert_eq!(drawing_name("A/B"), None);
+        assert_eq!(drawing_name(""), None);
+        assert_eq!(drawing_name(&"A".repeat(25)), None);
+        assert_eq!(drawing_name(&"&".repeat(24)), None); // 3 + 72 characters
+        for name in ["M&M", "NIFTY 50", "A_B", "BAJAJ-AUTO"] {
+            assert!(crate::layouts::name_ok(&drawing_name(name).unwrap()), "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn drawings_are_one_document_per_symbol_saved_and_loaded_over_http() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = |s: &str| format!("http://127.0.0.1:{port}/api/drawings/{s}");
+        assert_eq!(client.get(url("SBIN")).header("Origin", &origin).send().await.unwrap().status(), 204);
+        let body = r#"{"version":1,"symbol":"SBIN","drawings":[]}"#;
+        assert_eq!(client.put(url("SBIN")).header("Origin", &origin).body(body).send().await.unwrap().status(), 204);
+        assert_eq!(client.get(url("SBIN")).header("Origin", &origin).send().await.unwrap().text().await.unwrap(), body);
+        assert_eq!(client.get(url("TCS")).header("Origin", &origin).send().await.unwrap().status(), 204); // another symbol has its own
+        assert_eq!(client.put(url("M%26M")).header("Origin", &origin).body(body).send().await.unwrap().status(), 204);
+        assert_eq!(client.get(url("M%26M")).header("Origin", &origin).send().await.unwrap().status(), 200);
+        assert_eq!(client.put(url("NIFTY%2050")).header("Origin", &origin).body(body).send().await.unwrap().status(), 204);
+        assert_eq!(client.put(url("A%2FB")).header("Origin", &origin).body(body).send().await.unwrap().status(), 400);
+        assert_eq!(client.put(url("SBIN")).header("Origin", &origin).body("[]").send().await.unwrap().status(), 400);
+        let big = format!(r#"{{"x":"{}"}}"#, "a".repeat(250 * 1024));
+        assert_eq!(client.put(url("SBIN")).header("Origin", &origin).body(big).send().await.unwrap().status(), 413);
+        assert_eq!(client.put(url("SBIN")).header("Origin", "http://evil.test").body(body).send().await.unwrap().status(), 403);
         stop.cancel();
     }
 
