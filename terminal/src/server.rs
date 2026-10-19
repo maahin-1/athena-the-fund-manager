@@ -202,11 +202,14 @@ struct CalendarQuery {
     to: Option<String>,
 }
 
+/// The range asked for, or today (the India date) and the next 30 days for what was not given.
+fn calendar_range(today: chrono::NaiveDate, from: Option<String>, to: Option<String>) -> (String, String) {
+    (from.unwrap_or_else(|| today.to_string()), to.unwrap_or_else(|| (today + chrono::Duration::days(30)).to_string()))
+}
+
 /// Board meetings and corporate actions for a range of dates (default: today and the next 30 days).
 async fn api_calendar(State(state): State<AppState>, Query(q): Query<CalendarQuery>) -> Response {
-    let today = chrono::Utc::now().date_naive();
-    let from = q.from.unwrap_or_else(|| today.to_string());
-    let to = q.to.unwrap_or_else(|| (today + chrono::Duration::days(30)).to_string());
+    let (from, to) = calendar_range(crate::derivs::today_ist(), q.from, q.to);
     let path = state.bars.warehouse.clone();
     match tokio::task::spawn_blocking(move || crate::calendar::calendar(&path, &from, &to)).await {
         Ok(Ok(body)) => Json(body).into_response(),
@@ -696,7 +699,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/pyind", get(pyind_list))
         .route("/api/pyind/enable", axum::routing::put(pyind_enable))
         .route("/api/pyind/disable", axum::routing::put(pyind_disable))
-        .route("/api/pyind/run", axum::routing::post(pyind_run))
+        // the route takes the bars the runner is allowed (4 MB, with room for the file name), not axum's 2 MB default for a JSON body
+        .route("/api/pyind/run", axum::routing::post(pyind_run).layer(axum::extract::DefaultBodyLimit::max(crate::pyind::MAX_BODY + 64 * 1024)))
         .route("/api/drawings/:symbol", get(drawings_get).put(drawings_put))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
@@ -1106,6 +1110,32 @@ mod tests {
         assert_eq!(client.get(format!("{base}?tokens=NFO:x")).send().await.unwrap().status(), 400);
         assert_eq!(client.get(&base).send().await.unwrap().status(), 200); // no tokens: just the status
         assert_eq!(client.get(format!("{base}?tokens=NFO:1")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[test]
+    fn the_calendar_defaults_to_the_india_date_and_thirty_days_and_keeps_what_was_asked_for() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        assert_eq!(calendar_range(today, None, None), ("2026-10-19".to_string(), "2026-11-18".to_string()));
+        assert_eq!(calendar_range(today, Some("2026-01-01".into()), None), ("2026-01-01".to_string(), "2026-11-18".to_string()));
+        assert_eq!(calendar_range(today, None, Some("2026-10-25".into())), ("2026-10-19".to_string(), "2026-10-25".to_string()));
+    }
+
+    #[tokio::test]
+    async fn the_indicator_run_route_takes_a_body_between_two_and_four_megabytes_and_refuses_a_larger_one() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let url = format!("http://127.0.0.1:{port}/api/pyind/run");
+        let origin = format!("http://127.0.0.1:{port}");
+        let post = |bytes: usize| {
+            let bar = r#"{"t":1,"o":1,"h":1,"l":1,"c":1,"v":1},"#;
+            let body = format!(r#"{{"file":"x.py","bars":[{}{{"t":1,"o":1,"h":1,"l":1,"c":1,"v":1}}]}}"#, bar.repeat(bytes / bar.len()));
+            client.post(&url).header("Origin", &origin).header("content-type", "application/json").body(body).send()
+        };
+        // 3 MB is inside the runner's own limit: the engine answers (this test's indicator folder has no such file), the framework does not refuse it
+        assert_ne!(post(3 * 1024 * 1024).await.unwrap().status(), 413);
+        // 5 MB is past it: refused before the handler
+        assert_eq!(post(5 * 1024 * 1024).await.unwrap().status(), 413);
         stop.cancel();
     }
 

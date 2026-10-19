@@ -354,7 +354,12 @@ impl DerivsStore {
 
 /// The date in India now, which is the date a contract's expiry is compared with.
 pub fn today_ist() -> NaiveDate {
-    (chrono::Utc::now() + chrono::Duration::seconds(19_800)).date_naive()
+    ist_date(chrono::Utc::now())
+}
+
+/// The date in India at a moment: between midnight and 05:30 IST the UTC date is still yesterday's.
+pub fn ist_date(now: chrono::DateTime<chrono::Utc>) -> NaiveDate {
+    (now + chrono::Duration::seconds(19_800)).date_naive()
 }
 
 /// Load the table at start and again every twelve hours, so a new day's expiries appear without a restart. A failed refresh keeps the table that is there.
@@ -371,6 +376,14 @@ pub async fn run_loader(store: DerivsStore, client: reqwest::Client, cache: Path
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_india_date_is_ahead_of_utc_between_18_30_and_midnight_utc() {
+        let at = |h, m| chrono::NaiveDate::from_ymd_opt(2026, 10, 18).unwrap().and_hms_opt(h, m, 0).unwrap().and_utc();
+        assert_eq!(ist_date(at(18, 29)), d(2026, 10, 18)); // 23:59 IST
+        assert_eq!(ist_date(at(18, 30)), d(2026, 10, 19)); // midnight IST
+        assert_eq!(ist_date(at(23, 0)), d(2026, 10, 19)); // 04:30 IST
+    }
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
