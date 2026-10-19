@@ -301,6 +301,6 @@ Still true of the Nifty 50 after this: Nestle India has two comparable years bec
 
 **Live prices (added the same day):** the stream subscribes the futures and options a page asks for (`/api/derivs/quotes`), the Options tab shows live prices, with last-session prices labelled as such when the market is shut, and falls back to synthetic ones (labelled) when the server has no stream. Checked against the real stream with the market shut: prices, bid and ask, volume, open interest and its change arrive for NFO, BFO and MCX; open interest and volume are quantities for NFO and BFO and lots for MCX. TRD 2.48.
 
-**Honest limits:** not yet seen in a market session (the exchange time moving, the tick rate, open-interest change against the exchange's own chain); no margin estimate; MCX option Greeks are approximate; continuous futures (`NAME1!`, `NAME2!`) need a futures history fill and are the next piece.
+**Seen in a market session (2026-10-19):** exchange times move with no clock offset, each contract updates about once a second, and the page shows live prices. **Honest limits:** open-interest change not yet compared with the exchange's chain over a longer stretch, MCX not seen in its own hours, no stock chain checked; no margin estimate; MCX option Greeks are approximate; continuous futures (`NAME1!`, `NAME2!`) need a futures history fill and are the next piece.
 
 **Next in this track:** continuous futures (Task H).

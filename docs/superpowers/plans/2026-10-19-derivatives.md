@@ -35,7 +35,7 @@
 
 - [x] `deriv_quotes.rs` (wanted contracts kept 30 s, quotes by exchange type and token, `parse_keys`), the decoder carries the packet's exchange type, the stream subscribes and routes derivative ticks, `/api/derivs/quotes`, `options/livefeed.ts` and the page's refresh loop and badge; unit tests on both sides.
 - [x] Checked on the real stream with the market shut (TRD 2.48): offsets 131 and 139 give sensible values; open interest and volume are quantities for NFO and BFO and lots for MCX.
-- [ ] In a market session: the exchange time moves and the badge says live; tick rate; open-interest change against the exchange's own chain (the list is in `scripts/terminal-market-check.py`).
+- [x] In a market session (2026-10-19, 09:16 to 09:20): exchange times move with no clock offset, about one update a second per contract, median gap 0.5 to 1.0 s; the open-interest table printed for comparison (`scripts/derivs-market-check.py`). Left: open-interest change against the exchange's chain over a longer stretch, MCX in its hours, a stock chain.
 
 ### Task C: Black-76, implied volatility and Greeks (pure) — done
 
