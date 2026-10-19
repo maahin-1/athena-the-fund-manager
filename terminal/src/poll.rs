@@ -122,6 +122,7 @@ pub async fn run_poller(hub: Hub, client: reqwest::Client, shutdown: Cancellatio
         let stale: Vec<String> = hub
             .stale_symbols(now)
             .into_iter()
+            .filter(|s| !crate::bars::is_index_name(s) && s != "INDIA VIX") // the exchange's share-quote page has no index: the stream carries them
             .filter(|s| last_polled.get(s).is_none_or(|t| now.saturating_duration_since(*t) >= gap))
             .collect();
         if stale.is_empty() {

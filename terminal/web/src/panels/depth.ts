@@ -1,6 +1,7 @@
 import type { Quote } from '../feed';
 import { compact, price } from '../format';
 import { marketState } from '../market';
+import { isIndexSymbol } from '../watchlists/model';
 import { el, Panel, type AppContext } from './base';
 
 /** Five bids and five asks with a bar for each size, and the last quote's age. */
@@ -31,6 +32,10 @@ export class DepthPanel extends Panel {
 
   private draw(q: Quote | null): void {
     this.grid.replaceChildren();
+    if (isIndexSymbol(this.symbol)) {
+      this.note.textContent = 'An index has no order book, so there is no depth. Its last price and range are in the Quote panel.';
+      return;
+    }
     if (!q) {
       this.note.textContent = this.symbol ? 'waiting for a quote…' : 'pick a symbol';
       return;

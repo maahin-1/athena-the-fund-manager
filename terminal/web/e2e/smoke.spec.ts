@@ -295,3 +295,10 @@ test('the research page runs a backtest and draws each rule against buy and hold
   await page.locator('.ritem[data-symbol="TCS"]').click();
   await expect(page.locator('.backtest')).toHaveCount(0);
 });
+
+test('an index in the Depth panel says it has no order book instead of waiting for a quote', async ({ page }) => {
+  await page.getByLabel('command line').fill('NIFTY 50');
+  await page.getByLabel('command line').press('Enter');
+  await expect(title(page, 'Depth · NIFTY 50')).toBeVisible();
+  await expect(page.locator('.dv-content, .panel, [role="tabpanel"]', { hasText: 'no order book' }).first()).toBeVisible();
+});

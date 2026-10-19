@@ -139,6 +139,7 @@ class App implements AppContext {
     document.addEventListener('fullscreenchange', fit);
     window.addEventListener('keydown', (e) => this.hotkeys(e));
     this.indices.subscribe(() => this.paintIndexStrip());
+    this.indices.attachLive(this.feed, ['NIFTY 50', 'NIFTY BANK', 'INDIA VIX']);
     this.indices.start();
     window.addEventListener('focus', () => void this.watchlist.sync());
     await this.watchlist.sync();

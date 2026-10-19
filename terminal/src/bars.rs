@@ -30,7 +30,7 @@ pub enum BarsError {
 }
 
 /// The warehouse's table for an index (`Nifty 50`) or a stock (`SBIN`); the page asks with upper-case names.
-fn is_index_name(symbol: &str) -> bool {
+pub fn is_index_name(symbol: &str) -> bool {
     symbol.to_ascii_uppercase().starts_with("NIFTY ")
 }
 

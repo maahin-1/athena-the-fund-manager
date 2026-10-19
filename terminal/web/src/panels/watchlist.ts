@@ -171,8 +171,8 @@ export class WatchlistPanel extends Panel {
       });
     }
     this.body.append(table);
-    const stocks = visible.filter((s) => !isIndexSymbol(s)).slice(0, MAX_FED);
-    this.ctx.feed.need(this.id, stocks);
+    const streamed = visible.slice(0, MAX_FED); // indices too: the stream carries them, and their rows show its prices
+    this.ctx.feed.need(this.id, streamed);
     for (const s of this.rows.keys()) this.paintRow(s, false);
     for (const s of visible.filter(isIndexSymbol)) if (!this.ctx.indices.has(s)) void this.loadClose(s);
     this.select(this.symbol);
