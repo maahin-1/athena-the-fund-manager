@@ -433,7 +433,7 @@ export class OptionsView {
       this.updateBadge();
       void this.paintFutures();
     } catch {
-      /* the next refresh tries again */
+      this.updateBadge(); // the stream may have dropped: the chain keeps the last prices and the badge says so; the next refresh tries again
     } finally {
       this.refreshing = false;
     }
@@ -451,8 +451,14 @@ export class OptionsView {
 
   private async paintFutures(): Promise<void> {
     const [name, list] = [this.underlying, this.futureList];
-    const spot = await this.feed.spot(name);
-    const quotes: Map<string, Quote> = await this.feed.quotes(list.map((f) => ({ underlying: name, expiry: f.expiry, kind: 'future' as const, strike: 0, ref: { segment: f.segment, token: f.token, lot: f.lot } })));
+    let spot: number | null;
+    let quotes: Map<string, Quote>;
+    try {
+      spot = await this.feed.spot(name);
+      quotes = await this.feed.quotes(list.map((f) => ({ underlying: name, expiry: f.expiry, kind: 'future' as const, strike: 0, ref: { segment: f.segment, token: f.token, lot: f.lot } })));
+    } catch {
+      return; // no prices just now (the stream is down): the table stays as it was
+    }
     if (name !== this.underlying || list !== this.futureList) return;
     this.futuresBox.replaceChildren(el('h3', 'opt-h', 'Futures'));
     if (!list.length) return void this.futuresBox.append(el('div', 'note', 'This underlying has no futures.'));

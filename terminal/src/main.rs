@@ -208,6 +208,16 @@ async fn main() {
     let hub = Hub::new();
     let (status, _keep) = watch::channel(if args.fake_feed { FeedStatus::On } else { FeedStatus::Connecting });
     let shutdown = CancellationToken::new();
+    {
+        // one line per change of the broker feed's state, with the time, so a drop can be explained afterwards (the phrases are fixed, never a header or a token)
+        let mut watching = status.subscribe();
+        tokio::spawn(async move {
+            while watching.changed().await.is_ok() {
+                let line = format!("{:?}", *watching.borrow());
+                println!("[{}] feed {line}", chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(19_800).expect("offset")).format("%H:%M:%S"));
+            }
+        });
+    }
     let index_store = indices::IndexStore::new();
     let deriv_quotes = deriv_quotes::DerivQuotes::new();
     if args.fake_feed {

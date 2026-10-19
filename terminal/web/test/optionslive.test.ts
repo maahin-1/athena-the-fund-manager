@@ -28,13 +28,14 @@ function api(): OptionsApi {
 }
 
 /** A server stand-in: answers the quotes route from a price level it can move, and counts the requests. */
-function server(opts: { live?: boolean; at?: number | (() => number); level?: () => number } = {}) {
+function server(opts: { live?: boolean | (() => boolean); at?: number | (() => number); level?: () => number } = {}) {
   const requests: string[] = [];
   const level = opts.level ?? (() => 24_200);
   const fetcher = (async (url: string) => {
     requests.push(url);
     const tokens = decodeURIComponent(url.split('tokens=')[1] ?? '').split(',').filter(Boolean);
     const spot = level();
+    const isLive = typeof opts.live === 'function' ? opts.live() : opts.live ?? true;
     const rows: LiveQuoteRow[] = tokens.map((ref) => {
       const [seg, token] = ref.split(':');
       const kind = token[0];
@@ -43,7 +44,7 @@ function server(opts: { live?: boolean; at?: number | (() => number); level?: ()
       const last = kind === 'F' ? spot + 30 : Math.round((intrinsic + 40 * Math.exp(-Math.abs(spot - strike) / 120)) * 20) / 20;
       return { seg, token, last, bid: last - 0.05, ask: last + 0.05, volume: 1000, oi: 650_000, oip: -2, t: typeof opts.at === 'function' ? opts.at() : opts.at ?? nowMs - 5_000 };
     });
-    return { ok: true, status: 200, json: async () => ({ live: opts.live ?? true, quotes: opts.live === false ? [] : rows }) } as unknown as Response;
+    return { ok: true, status: 200, json: async () => ({ live: isLive, quotes: isLive ? rows : [] }) } as unknown as Response;
   }) as unknown as typeof fetch;
   return { fetcher, requests };
 }
@@ -167,6 +168,28 @@ describe('the Options page on live prices', () => {
     const after = s.requests.length;
     await vi.advanceTimersByTimeAsync(10_000);
     expect(s.requests.length).toBe(after);
+  });
+
+  it('keeps the last prices and says there are no live prices when the stream drops, and recovers when it is back', async () => {
+    let up = true;
+    const { view } = make(server({ live: () => up }));
+    view.show();
+    await flush();
+    await vi.advanceTimersByTimeAsync(3_000);
+    const ltp = () => view.element.querySelector('tr[data-strike="24200"] td[data-side="call"][data-col="ltp"]')!.textContent;
+    const futures = () => view.element.querySelector('.opt-futtable tr[data-expiry]')?.textContent;
+    expect(ltp()).toBe('40.00');
+    const futuresBefore = futures();
+    up = false;
+    await vi.advanceTimersByTimeAsync(4_100);
+    expect(view.element.querySelector('.opt-synth')!.textContent).toBe('no live prices');
+    expect(ltp()).toBe('40.00'); // not blanked
+    expect(futures()).toBe(futuresBefore);
+    up = true;
+    await vi.advanceTimersByTimeAsync(2_100);
+    expect(view.element.querySelector('.opt-synth')!.textContent).toBe('live prices');
+    expect(ltp()).toBe('40.00');
+    view.hide();
   });
 
   it('stays on synthetic prices when the server has no stream', async () => {

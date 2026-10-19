@@ -90,6 +90,8 @@ export function liveFeed(o: LiveOptions): LiveFeed {
       for (let i = 0; i < refs.length; i += MAX_ASKED) {
         const answer = await ask(refs.slice(i, i + MAX_ASKED).join(','));
         live = answer.live;
+        // the server's stream is down (it answers with no quotes): say so and let the page keep the prices it has rather than draw an empty chain
+        if (!live) throw new Error('the server has no stream');
         for (const row of answer.quotes) {
           const key = byRef.get(`${row.seg}:${row.token}`);
           if (!key) continue;
