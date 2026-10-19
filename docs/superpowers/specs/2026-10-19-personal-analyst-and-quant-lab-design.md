@@ -29,7 +29,7 @@ Goal (named, with an amount needed), amount to invest now and per month, horizon
 A plan page: allocation, three outcome bands for the horizon (low, middle, high; the headline is the low-middle), probability of reaching the goal and the monthly amount that would raise it, the worst year seen in history and in simulation, costs, a list of holdings with reasons, and a stress table. A change log when the plan is regenerated.
 
 ### A4. Gates
-- **Regulatory:** personalised stock or ETF recommendations to other people are regulated investment advice in India (SEBI Investment Adviser and Research Analyst rules). **Owner use only until that is decided.** Multi-user is a separate decision with its own wording, consent and record-keeping, not a switch.
+- **Regulatory:** personalised stock or ETF recommendations to other people are regulated investment advice in India (SEBI Investment Adviser and Research Analyst rules). **Owner use only** (decided 2026-10-19: mostly personal). Multi-user would be a separate decision with its own wording, consent and record-keeping, not a switch.
 - **Validation:** before a plan is shown, the engine is back-tested walk-forward: would the method, run at each past date for a typical profile, have produced allocations whose realised outcome fell inside the stated bands at about the stated rate (calibration), and how did it do against a plain index-plus-gold mix.
 
 ## B. Quant lab
@@ -65,8 +65,8 @@ The existing engine (single-instrument, price rules, formula language) stays. Ne
 
 Each step has its own spec and plan, and each ends with tests, a stated limit, and an honest list of what is not known.
 
-## D. Open decisions
-- Regulatory route for anyone but the owner (none, a registered adviser partner, or education-only wording).
-- How long to record before order-flow research is meaningful (suggest two months of regular sessions).
-- Tax and brokerage assumptions to bake in (rates change; keep them as editable inputs).
-- Whether macro scenarios stay hand-written or are fed from a feed (hand-written first).
+## D. Decisions (2026-10-19, owner)
+- **Regulatory route: mostly personal use.** Built for the owner. No multi-user, accounts or sharing features are built; if that ever changes it is a new decision with its own spec (registration, consent, record-keeping). Pages still say "not advice" and show their assumptions.
+- **Tax and brokerage assumptions: included**, as editable inputs with dated defaults, applied everywhere a return or a backtest is shown: brokerage per order and per segment (equity delivery, intraday, F&O), STT, exchange transaction charges, SEBI fee, stamp duty, GST on charges, DP charges, slippage by liquidity; capital gains tax by holding period and instrument (short and long term, the exemption limit, F&O as business income at the user's slab), surcharge and cess, loss set-off and carry-forward. Each rate carries its effective date and source so a change is a data edit, not a code change, and a backtest says which rate set it used. Results always show gross and net.
+- **Recording length: decided by testing, not fixed.** Record from the first session and test different time frames against each other: the same research question (for example "does order-book imbalance predict the next 1, 5 and 15 minutes") run on the first 2, 4, 8 and 12 weeks of recording and on rolling windows, the learning curve of the result (effect size and its confidence interval against weeks recorded) showing when it settles, and an out-of-sample check on later weeks. The rule: an order-flow finding is trusted only when it is stable across windows and holds on data recorded after it was found. The same A/B design compares bar sizes and prediction horizons (1, 5, 15 minute, hourly, daily) so the time frame itself is a tested choice. The number of windows and variants tried is recorded and counted against the result (B5).
+- Macro scenarios stay hand-written first (a feed later, only if it proves useful).
