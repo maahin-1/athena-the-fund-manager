@@ -178,9 +178,14 @@ test('the Terminal chart panel also keeps the earlier bars loaded behind a short
   const area = page.locator('.panel:has(.chart-body) .chart-body').first();
   const box = (await area.boundingBox())!;
   const before = await signature(page, '.panel:has(.chart-body)');
-  await panBack(page, box);
-  await page.waitForTimeout(500);
-  expect(await signature(page, '.panel:has(.chart-body)')).not.toBe(before); // with only 22 bars loaded there is nothing to scroll to and the picture stays put
+  // the earlier bars arrive a moment after the range is chosen (longer when the machine is busy): drag again until the picture moves
+  await expect
+    .poll(async () => {
+      await panBack(page, box);
+      await page.waitForTimeout(300);
+      return (await signature(page, '.panel:has(.chart-body)')) !== before; // with only 22 bars loaded there is nothing to scroll to and the picture stays put
+    }, { timeout: 15_000 })
+    .toBe(true);
   expect(await candlesLeft(page, '.panel:has(.chart-body)')).toBeGreaterThan(200);
 });
 
