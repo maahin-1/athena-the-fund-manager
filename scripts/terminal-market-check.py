@@ -7,7 +7,7 @@ many updates arrived and the median and 95th-percentile gap between them, plus t
 receiving it. It reads no setting and prints no secret; the server must already be running (scripts/terminal.ps1).
 
 Derivatives (Task B2 of docs/superpowers/plans/2026-10-19-derivatives.md): the route /api/derivs/quotes?tokens=NFO:123,... is built and was checked with the market
-shut (TRD 2.48). Still to check in a market session; nothing here does it yet:
+shut (TRD 2.48). Still to check in a market session; run scripts/derivs-market-check.py for the first, second and third of these (it prints the table to compare):
   - the exchange time of a few NFO and MCX contracts moves, so the Options page badge says "live prices";
   - the tick rate of the derivative stream while trading;
   - the change in open interest (percent at offset 139, shown as contracts) against the exchange's own option chain;
