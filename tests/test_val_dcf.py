@@ -88,3 +88,14 @@ def test_the_expected_values_above_are_the_ones_saved_in_the_workbook():
         sheet = openpyxl.load_workbook(GINZU, data_only=True)["Valuation output"]
     assert sheet["B33"].value == pytest.approx(7.18784, abs=1e-5) and sheet["B21"].value == pytest.approx(37517.53077, abs=1e-3)
     assert sheet["B18"].value == pytest.approx(43858.81873, abs=1e-2) and sheet["C9"].value == pytest.approx(1982.69672, abs=1e-4)
+
+
+def test_the_implied_return_is_the_one_rate_at_which_the_cash_flows_are_worth_the_price():
+    price = 9.0
+    rate = dcf.implied_return(price, ALMARAI)
+    assert rate is not None and 0.04 < rate < 0.12
+    roic = dcf.run_fcff(ALMARAI).terminal_roic
+    again = dcf.run_fcff(replace(ALMARAI, cost_of_capital=rate, terminal_cost_of_capital=rate, terminal_roic=roic))
+    assert again.value_per_share == pytest.approx(price, abs=1e-4)
+    assert dcf.implied_return(12.0, ALMARAI) < rate < dcf.implied_return(6.0, ALMARAI)  # a higher price earns a lower return
+    assert dcf.implied_return(1e9, ALMARAI) is None and dcf.implied_return(-5.0, ALMARAI) is None  # outside what any rate can give

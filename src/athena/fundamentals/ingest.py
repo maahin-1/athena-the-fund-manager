@@ -24,6 +24,7 @@ from athena.fundamentals.history import PREDECESSORS, Predecessor, chain
 from athena.fundamentals.integrated import FundamentalsResults, is_block
 from athena.fundamentals import shares as share_counts
 from athena.fundamentals.rows import parse_rows
+from athena.fundamentals.segments import parse_segments
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore, now
 from athena.fundamentals.universe import Member, universe
 from athena.pit.nse_results import CACHE_DIR, FilingRef
@@ -152,6 +153,10 @@ def ingest_symbol(
             store.save_company(member.symbol, member.name, member.isin, member.industry, statements.layout, statements.shares)
             store.save_share_count(ref.url, member.symbol, basis, ref.period_end, ref.filed, statements.shares_declared, statements.shares_from_profit)
             share_counts.refresh(store, member.symbol)
+            if ref.annual:
+                found = parse_segments(text)
+                if found is not None and found.segments:
+                    store.save_segments(ref.url, member.symbol, basis, ref.period_end, ref.filed, found.segments)
         report.fetched += 1
         report.notes.extend(statements.notes)
     return report

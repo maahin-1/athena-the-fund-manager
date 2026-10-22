@@ -18,7 +18,7 @@ from athena.contracts import AthenaError
 from athena.fundamentals.store import DEFAULT_PATH as FUNDAMENTALS, open_read
 from athena.reference.store import DEFAULT_PATH as REFERENCE, ReferenceStore
 from athena.valuation import industry as ind
-from athena.valuation import inputs, scenarios, wacc
+from athena.valuation import inputs, mix, scenarios, wacc
 
 WAREHOUSE = Path(".athena") / "warehouse.duckdb"
 SANE_COST_OF_CAPITAL = (0.06, 0.30)  # a rupee cost of capital outside this is listed for a look, not hidden
@@ -38,7 +38,8 @@ def one(fund, ref: ReferenceStore, symbol: str, price: float | None, basis: str,
         company = inputs.load_company_inputs(fund, symbol, "standalone", price)
     if company is None:
         return None
-    return wacc.company_cost_of_capital(ref, company, ind.lookup(ref, symbol, today), today)
+    prepared = mix.prepare(fund, ref, company, ind.lookup(ref, symbol, today), today)
+    return wacc.company_cost_of_capital(ref, prepared.company, prepared.industry, today)
 
 
 def cmd_cost(args: argparse.Namespace) -> int:
@@ -71,7 +72,8 @@ def value_one(fund, ref: ReferenceStore, symbol: str, price: float | None, basis
         company = inputs.load_company_inputs(fund, symbol, "standalone", price)
     if company is None:
         return None
-    industry = ind.lookup(ref, symbol, today)
+    prepared = mix.prepare(fund, ref, company, ind.lookup(ref, symbol, today), today)
+    company, industry = prepared.company, prepared.industry
     capital = wacc.company_cost_of_capital(ref, company, industry, today)
     return scenarios.value_company(ref, company, industry, capital, today)
 
@@ -89,7 +91,8 @@ def cmd_value(args: argparse.Namespace) -> int:
     if not got.ok:
         print("no value; " + "; ".join(got.missing))
         return 1
-    print(f"value per share: low {got.low:,.1f}  base {got.base:,.1f}  high {got.high:,.1f}   price/base {got.price_to_base:.2f}")
+    ratio = "n/a (the base value is not positive)" if got.price_to_base is None else f"{got.price_to_base:.2f}"
+    print(f"value per share: low {got.low:,.1f}  base {got.base:,.1f}  high {got.high:,.1f}   price/base {ratio}")
     for s in got.scenarios:
         print(f"  {s.name:5} {s.value_per_share:12,.1f}  growth {s.growth}  margin {s.target_margin}  cost {s.cost_of_capital}  roe {s.roe}")
     if got.implied_growth is not None:

@@ -122,6 +122,13 @@ def cmd_input(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_segment(args: argparse.Namespace) -> int:
+    with ReferenceStore(args.store) as store:
+        store.put_segment_industry(args.symbol.upper(), args.segment, args.industry)
+    print(f"{args.symbol.upper()}: segment {args.segment!r} is {args.industry}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m athena.reference", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--store", default=str(DEFAULT_PATH))
@@ -140,6 +147,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     put.add_argument("--source", default="owner")
     put.add_argument("--note", default="")
     put.set_defaults(run=cmd_input)
+    seg = sub.add_parser("segment", help="say which Damodaran industry a company's segment belongs to (or 'ignore')")
+    seg.add_argument("symbol")
+    seg.add_argument("segment")
+    seg.add_argument("industry")
+    seg.set_defaults(run=cmd_segment)
     args = parser.parse_args(argv)
     try:
         return args.run(args)

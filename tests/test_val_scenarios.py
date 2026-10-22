@@ -96,3 +96,28 @@ def test_the_bank_cases_keep_their_order_whether_it_earns_above_or_below_its_cos
     for roe, industry_roe in ((0.30, 0.25), (0.06, 0.05)):
         got = value(layout="bank", roe_3y_average=roe, i=industry(roe=industry_roe))
         assert got.low <= got.base <= got.high, (roe, got.low, got.base, got.high)
+
+
+def test_the_bull_case_alone_lets_excess_returns_last_for_a_company_that_has_earned_them_three_years_running():
+    plain = value()
+    proven = value(pretax_roic_by_year=(0.40, 0.42, 0.41))
+    assert proven.scenarios[0].value_per_share == plain.scenarios[0].value_per_share and proven.scenarios[1].value_per_share == plain.scenarios[1].value_per_share
+    assert proven.scenarios[2].value_per_share > plain.scenarios[2].value_per_share
+    assert any("bull case only" in line for line in proven.assumptions)
+    assert not any("bull case only" in line for line in plain.assumptions)
+
+
+def test_the_excess_returns_rule_needs_all_of_the_latest_years_and_a_margin_over_the_cost_of_capital():
+    plain = value()
+    two_years = value(pretax_roic_by_year=(0.40, 0.41))
+    one_weak = value(pretax_roic_by_year=(0.40, 0.08, 0.41))
+    barely = value(pretax_roic_by_year=(0.16, 0.16, 0.16))  # after tax about 12%, under the cost of capital plus 5 points
+    for got in (two_years, one_weak, barely):
+        assert got.scenarios[2].value_per_share == plain.scenarios[2].value_per_share
+
+
+def test_the_value_range_gives_the_return_the_price_implies_and_a_lender_gives_its_implied_cost_of_equity():
+    got = value()
+    assert got.implied_return is not None and 0.03 < got.implied_return < 0.4
+    lender = value(company(layout="bank", price=250.0, book_value_per_share=300.0, roe_3y_average=0.14, book_growth_3y=0.12), industry(beta=1.0))
+    assert lender.model == "excess_return" and lender.implied_return is not None

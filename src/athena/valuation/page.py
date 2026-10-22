@@ -18,7 +18,7 @@ from athena.contracts import AthenaError
 from athena.fundamentals.store import DEFAULT_PATH as FUNDAMENTALS, open_read
 from athena.reference.store import DEFAULT_PATH as REFERENCE, ReferenceStore
 from athena.valuation import industry as ind
-from athena.valuation import inputs, scenarios, wacc
+from athena.valuation import inputs, mix, scenarios, sensitivity, wacc
 
 
 def _clean(value: Any) -> Any:
@@ -50,19 +50,23 @@ def build_valuation(fund, ref: ReferenceStore, symbol: str, basis: str, price: f
         basis = "standalone" if company is not None else basis
     if company is None:
         return {"symbol": symbol, "basis": basis, "error": "no statements stored"}
-    industry = ind.lookup(ref, symbol, today)
+    prepared = mix.prepare(fund, ref, company, ind.lookup(ref, symbol, today), today)
+    company, industry = prepared.company, prepared.industry
     capital = wacc.company_cost_of_capital(ref, company, industry, today)
     got = scenarios.value_company(ref, company, industry, capital, today)
     doc: dict[str, Any] = {
         "symbol": symbol, "basis": basis, "on_date": today.isoformat(), "price": price, "price_note": price_note, "model": got.model, "ok": got.ok, "missing": list(got.missing),
         "period_end": company.period_end.isoformat(), "flow_basis": company.flow_basis, "industry": industry.industry if industry else None,
+        "business_mix": [{"industry": name, "weight": weight} for name, weight in prepared.mix],
     }
     if got.ok:
         doc.update({
             "low": got.low, "base": got.base, "high": got.high, "price_to_base": got.price_to_base,
             "scenarios": [{"name": s.name, "value": s.value_per_share, "growth": s.growth, "margin": s.target_margin, "cost": s.cost_of_capital, "roe": s.roe, "stable_roe": s.stable_roe} for s in got.scenarios],
             "implied_growth": got.implied_growth, "implied_margin": got.implied_margin, "company_growth": got.company_growth, "industry_growth": got.industry_growth,
-            "justified_price_to_book": got.justified_price_to_book,
+            "justified_price_to_book": got.justified_price_to_book, "implied_return": got.implied_return,
+            "required_return": got.scenarios[1].cost_of_capital if len(got.scenarios) > 1 else None,
+            "sensitivity": sensitivity.sensitivities(ref, company, industry, got.base, today) if got.base else [],
             "grid": {"growth": list(got.grid_growth), "margin": list(got.grid_margin), "values": [list(row) for row in got.grid_values]} if got.grid_values else None,
             "cost_of_capital": capital_block(capital), "assumptions": list(got.assumptions), "flags": list(got.flags),
         })

@@ -189,6 +189,33 @@ def reverse_margin(price: float, x: DcfInputs, low: float = -0.20, high: float =
     return (low + high) / 2
 
 
+def implied_return(price: float, x: DcfInputs, high: float = 0.60, tolerance: float = 1e-7) -> float | None:
+    """The single discount rate, used for all ten years and the terminal, at which the cash flows of `x` are worth the price per share: what an owner earns a year if they come
+    true. The return on new capital after year 10 stays as `x` has it (the terminal rate would otherwise change it, and growth would stop mattering as the rate nears growth).
+    None when no rate between the terminal growth and `high` gives the price."""
+    roic = run_fcff(x).terminal_roic
+    growth = x.riskfree_rate if x.terminal_growth is None else x.terminal_growth
+
+    def value(rate: float) -> float:
+        try:
+            return run_fcff(replace(x, cost_of_capital=rate, terminal_cost_of_capital=rate, terminal_roic=roic)).value_per_share
+        except ValueError:
+            return float("inf")
+
+    low = growth + 0.002
+    if not (value(high) <= price <= value(low)):
+        return None
+    for _ in range(80):
+        mid = (low + high) / 2
+        if value(mid) > price:
+            low = mid
+        else:
+            high = mid
+        if high - low < tolerance:
+            break
+    return (low + high) / 2
+
+
 @dataclass(frozen=True)
 class Scenario:
     name: str

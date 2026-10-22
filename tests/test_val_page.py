@@ -52,3 +52,17 @@ def test_a_company_that_cannot_be_valued_gets_the_reasons_and_an_unknown_symbol_
 
 def test_nan_and_infinity_become_null():
     assert page._clean({"a": float("nan"), "b": [1.0, float("inf")], "c": (2.0,)}) == {"a": None, "b": [1.0, None], "c": [2.0]}
+
+
+def test_the_document_carries_the_return_the_price_implies_beside_the_return_the_model_asks_for_and_the_value_under_the_biggest_alternative_inputs():
+    fund, ref = stores()
+    with fund, ref:
+        doc = page.build_valuation(fund, ref, "TCS", "consolidated", 3200.0, "warehouse close", DAY)
+    assert doc["implied_return"] is not None and doc["required_return"] == doc["scenarios"][1]["cost"]
+    labels = [s["label"] for s in doc["sensitivity"]]
+    assert labels[0].startswith("Equity premium = mature market only") and "Rupee inflation 5% instead of 4%" in labels[1] and labels[2].startswith("No rupee conversion")
+    by = {s["label"].split(":")[0].split(" =")[0]: s for s in doc["sensitivity"]}
+    assert all(s["base"] > 0 for s in doc["sensitivity"])
+    mature, higher_inflation, none = doc["sensitivity"]
+    assert mature["change"] > 0 and none["change"] > 0 and higher_inflation["change"] < 0  # a smaller premium and no conversion raise the value; more inflation lowers it
+    assert none["change"] > mature["change"] and by

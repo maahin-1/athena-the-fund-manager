@@ -46,6 +46,8 @@ class CompanyInputs:
     roe_3y_average: float | None = None  # fraction: the mean of up to the last three financial years
     book_growth_3y: float | None = None  # compound annual growth of book equity over three years
     book_value_per_share: float | None = None  # rupees
+    pretax_roic_by_year: tuple[float, ...] = ()  # EBIT / invested capital at each of the last three financial year-ends held, oldest first
+    equity_jump_years: int = 0  # financial years among the last three in which book equity grew by more than a quarter (a merger or a raise)
 
 
 def _flow(quarters: dict[date, dict[str, float]], fy: dict[date, dict[str, float]], key: str) -> tuple[float | None, str]:
@@ -77,6 +79,44 @@ def _book_growth(equity: dict[date, float], year_ends: list[date]) -> float | No
         return None
     years = round((latest - earlier).days / 365.25)
     return (equity[latest] / equity[earlier]) ** (1 / years) - 1
+
+
+EQUITY_JUMP = 0.25
+
+
+def _average_equity_roes(fy: dict[date, dict[str, float]], equity_by_year: dict[date, float]) -> tuple[list[float], int]:
+    """Return on equity of up to the last three financial years on the average of opening and closing book equity (closing alone when the year before is not held), and the number
+    of those years in which equity grew by more than a quarter. A merger or a raise lifts closing equity without lifting the year's profit, so closing equity understates the return."""
+    roes: list[float] = []
+    jumps = 0
+    for end in sorted(fy)[-3:]:
+        profit, closing = fy[end].get("net_profit"), equity_by_year.get(end)
+        if profit is None or not closing or closing <= 0:
+            continue
+        opening_end = next((d for d in sorted(equity_by_year) if 0.8 < (end - d).days / 365.25 < 1.2), None)
+        opening = equity_by_year[opening_end] if opening_end is not None else None
+        if opening and opening > 0:
+            roes.append(profit / ((opening + closing) / 2))
+            jumps += 1 if closing / opening - 1 > EQUITY_JUMP else 0
+        else:
+            roes.append(profit / closing)
+    return roes, jumps
+
+
+def _pretax_roics(fy: dict[date, dict[str, float]], balance: dict[date, dict[str, float]]) -> tuple[float, ...]:
+    """EBIT over invested capital (book equity + borrowings - cash and bank balances) at the financial year-ends of the last three years held."""
+    out: list[float] = []
+    for end in sorted(fy)[-3:]:
+        got, bal = fy[end], balance.get(end)
+        if bal is None or "equity_capital" not in bal or "reserves" not in bal or bal.get("borrowings") is None:
+            continue
+        if got.get("operating_profit") is None or got.get("depreciation") is None:
+            continue
+        cash = (bal.get("cash", 0.0) or 0.0) + (bal.get("bank_balances", 0.0) or 0.0)
+        invested = bal["equity_capital"] + bal["reserves"] + bal["borrowings"] - cash
+        if invested > 0:
+            out.append((got["operating_profit"] - got["depreciation"]) / invested)
+    return tuple(out)
 
 
 def _crore(value: float | None) -> float | None:
@@ -130,7 +170,7 @@ def load_company_inputs(
     required = {"price": price, "shares": shares, "effective_tax_rate": effective, **{k: figures[k] for k in ("revenue", "ebit", "interest", "book_equity", "borrowings", "cash_and_bank")}}
     missing = tuple(name for name, value in required.items() if value is None)
     equity_by_year = {end: bal["equity_capital"] + bal["reserves"] for end, bal in balance.items() if "equity_capital" in bal and "reserves" in bal}
-    roes = [r for r in (ratios.year_ratios(company.get("layout") or "indas", fy[e], balance.get(e, {}), cash.get(e, {})).get("roe") for e in sorted(fy)[-3:]) if r is not None]
+    roes, jumps = _average_equity_roes(fy, equity_by_year)
     book_growth = _book_growth(equity_by_year, sorted(fy))
     return CompanyInputs(
         symbol=symbol, basis=basis, layout=company.get("layout") or "indas", period_end=latest_period, flow_basis=flow_basis, price=price, shares=shares,
@@ -138,6 +178,7 @@ def load_company_inputs(
         pbt=figures["pbt"], tax=figures["tax"], net_profit=figures["net_profit"], effective_tax_rate=effective, revenue_cagr_3y=_fraction(ratios.compounded(fy, "sales", 3)),
         book_equity=figures["book_equity"], borrowings=figures["borrowings"], cash_and_bank=figures["cash_and_bank"], investments=figures["investments"],
         minority=figures["minority"], capex=figures["capex"], market_cap=market_cap, invested_capital=figures["invested_capital"], missing=missing,
-        roe_3y_average=sum(roes) / len(roes) / 100.0 if roes else None, book_growth_3y=book_growth,
+        roe_3y_average=sum(roes) / len(roes) if roes else None, book_growth_3y=book_growth,
         book_value_per_share=equity / shares if equity is not None and shares else None,
+        pretax_roic_by_year=_pretax_roics(fy, balance), equity_jump_years=jumps,
     )

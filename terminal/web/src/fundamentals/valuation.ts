@@ -28,6 +28,13 @@ export function impliedLine(doc: ValuationDoc): string | null {
   return parts[0] + (against.length ? `; ${against.join(' and ')}.` : '.');
 }
 
+/** The sentence that says what an owner earns at the price if the base case comes true, set against what the model asks for. */
+export function returnLine(doc: ValuationDoc): string | null {
+  if (doc.implied_return === null || doc.implied_return === undefined) return null;
+  const need = doc.required_return !== null && doc.required_return !== undefined ? `; the model asks for ${pct(doc.required_return)}` : '';
+  return `At ${rupees(doc.price)}, if the base-case cash flows come true, an owner earns about ${pct(doc.implied_return)} a year${need}.`;
+}
+
 function table(head: string[], rows: string[][]): HTMLElement {
   const wrap = el('div', 'ftable-wrap');
   const t = el('table', 'ftable');
@@ -78,6 +85,8 @@ export function valuationBlock(doc: ValuationDoc): HTMLElement {
   }
   const implied = impliedLine(doc);
   if (implied) box.append(el('div', 'fval-implied', implied));
+  const earned = returnLine(doc);
+  if (earned) box.append(el('div', 'fval-implied', earned));
   if (doc.justified_price_to_book !== null && doc.justified_price_to_book !== undefined) {
     box.append(el('div', 'fval-implied', `The excess-return model puts the price to book at ${fmtPlain(doc.justified_price_to_book, 2)}x at the base case.`));
   }
@@ -109,6 +118,12 @@ export function valuationBlock(doc: ValuationDoc): HTMLElement {
         doc.grid.values.map((row, i) => [pct(doc.grid!.growth[i]), ...row.map((v) => rupees(v))]),
       ),
     );
+  }
+  if (doc.sensitivity?.length) {
+    const sens = el('div', 'fnotes');
+    sens.append(el('div', 'fg-title', 'What the base value would be if (alternatives to look at, not the live inputs)'));
+    for (const s of doc.sensitivity) sens.append(el('div', 'note', `${s.label}: ${rupees(s.base)} (${s.change >= 0 ? '+' : ''}${fmtPlain(s.change * 100, 0)}%)`));
+    box.append(sens);
   }
   const notes = el('div', 'fnotes');
   for (const line of doc.assumptions ?? []) notes.append(el('div', 'note', line));

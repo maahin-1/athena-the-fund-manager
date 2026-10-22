@@ -10,7 +10,7 @@ returns above the cost of equity.
 When the stable ROE equals the cost of equity the terminal price-to-book is 1: growth after year N adds nothing, which is the conservative case and the default."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 YEARS = 5
 
@@ -45,6 +45,26 @@ class BankResult:
     pv_cash: float
     value_per_share: float
     justified_price_to_book: float
+
+
+def implied_cost_of_equity(price: float, x: BankInputs, high: float = 0.60, tolerance: float = 1e-7) -> float | None:
+    """The cost of equity at which the bank's value per share equals the price, everything else as given: the return an owner earns a year if the returns come true. None when no
+    rate between the stable growth and `high` gives the price."""
+    def value(rate: float) -> float:
+        return run_excess_return(replace(x, cost_of_equity=rate)).value_per_share
+
+    low = x.stable_growth + 0.002
+    if not (value(high) <= price <= value(low)):
+        return None
+    for _ in range(80):
+        mid = (low + high) / 2
+        if value(mid) > price:
+            low = mid
+        else:
+            high = mid
+        if high - low < tolerance:
+            break
+    return (low + high) / 2
 
 
 def run_excess_return(x: BankInputs) -> BankResult:

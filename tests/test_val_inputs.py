@@ -51,3 +51,13 @@ def test_an_effective_tax_rate_outside_a_sensible_range_is_not_used_as_a_rate():
 def test_no_statements_gives_none():
     with FundamentalsStore(":memory:") as store:
         assert inputs.load_company_inputs(store, "NOPE", "consolidated") is None
+
+
+def test_return_on_equity_is_worked_on_the_average_of_opening_and_closing_equity_and_a_jump_in_equity_is_counted():
+    from datetime import date
+
+    fy = {date(2023, 3, 31): {"net_profit": 10.0}, date(2024, 3, 31): {"net_profit": 20.0}, date(2025, 3, 31): {"net_profit": 24.0}}
+    equity = {date(2022, 3, 31): 100.0, date(2023, 3, 31): 110.0, date(2024, 3, 31): 200.0, date(2025, 3, 31): 220.0}
+    roes, jumps = inputs._average_equity_roes(fy, equity)
+    assert roes == pytest.approx([10 / 105, 20 / 155, 24 / 210]) and jumps == 1  # FY2024: equity grew 82%
+    assert inputs._average_equity_roes({date(2025, 3, 31): {"net_profit": 24.0}}, {date(2025, 3, 31): 220.0})[0] == pytest.approx([24 / 220])  # no opening year held: closing equity

@@ -34,3 +34,15 @@ def test_a_cost_of_equity_at_or_below_the_stable_growth_or_a_non_positive_book_i
         e.run_excess_return(e.BankInputs(100.0, 0.15, 0.1, 0.06, 0.12, 0.06))
     with pytest.raises(ValueError, match="book value"):
         e.run_excess_return(e.BankInputs(-1.0, 0.15, 0.1, 0.12, 0.12, 0.06))
+
+
+def test_the_implied_cost_of_equity_is_the_return_at_which_the_bank_is_worth_the_price():
+    from dataclasses import replace
+
+    x = e.BankInputs(100.0, roe=0.15, book_growth=0.10, cost_of_equity=0.12, stable_roe=0.14, stable_growth=0.06)
+    price = 130.0
+    rate = e.implied_cost_of_equity(price, x)
+    assert rate is not None
+    assert e.run_excess_return(replace(x, cost_of_equity=rate)).value_per_share == pytest.approx(price, abs=1e-4)
+    assert e.implied_cost_of_equity(150.0, x) < rate < e.implied_cost_of_equity(110.0, x)
+    assert e.implied_cost_of_equity(1e9, x) is None

@@ -27,6 +27,8 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS documents (symbol TEXT, kind TEXT, title TEXT, category TEXT, published TIMESTAMP, url TEXT, size TEXT)",
     "CREATE TABLE IF NOT EXISTS ingest_runs (symbol TEXT PRIMARY KEY, status TEXT, finished TIMESTAMP, filings INTEGER, error TEXT,"
     " blocked_until TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS segments (url TEXT, symbol TEXT, basis TEXT, period_end DATE, filed TIMESTAMP, idx INTEGER, name TEXT, revenue DOUBLE, profit DOUBLE,"
+    " assets DOUBLE, liabilities DOUBLE)",
     "CREATE TABLE IF NOT EXISTS share_counts (url TEXT PRIMARY KEY, symbol TEXT, basis TEXT, period_end DATE, filed TIMESTAMP, declared DOUBLE, from_profit DOUBLE)",
 )
 KEY = "symbol = ? AND basis = ? AND statement = ? AND period_start = ? AND period_end = ? AND key = ?"
@@ -96,6 +98,25 @@ class FundamentalsStore:
             "SELECT url, basis, period_end, filed, declared, from_profit FROM share_counts WHERE symbol = ? ORDER BY period_end DESC, filed DESC", [symbol]
         ).fetchall()
         return [dict(zip(cols, r)) for r in rows]
+
+    def save_segments(self, url: str, symbol: str, basis: str, period_end: date, filed: datetime, segments: Sequence[Any]) -> None:
+        """A filing's reportable segments (replacing any held for the same filing). `segments` are `athena.fundamentals.segments.Segment`."""
+        self._con.execute("DELETE FROM segments WHERE url = ?", [url])
+        self._con.executemany(
+            "INSERT INTO segments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(url, symbol, basis, period_end, _utc(filed), s.index, s.name, s.revenue, s.profit, s.assets, s.liabilities) for s in segments],
+        )
+
+    def segments(self, symbol: str, basis: str) -> tuple[date | None, list[dict[str, Any]]]:
+        """The segments of the company's newest annual filing that reports several, as `(period end, rows)`; `(None, [])` when none does."""
+        got = self._con.execute(
+            "SELECT url, period_end FROM segments WHERE symbol = ? AND basis = ? ORDER BY period_end DESC, filed DESC LIMIT 1", [symbol, basis]
+        ).fetchone()
+        if got is None:
+            return None, []
+        cols = ("idx", "name", "revenue", "profit", "assets", "liabilities")
+        rows = self._con.execute("SELECT idx, name, revenue, profit, assets, liabilities FROM segments WHERE url = ? ORDER BY idx", [got[0]]).fetchall()
+        return got[1], [dict(zip(cols, r)) for r in rows]
 
     def set_shares(self, symbol: str, shares: float | None) -> None:
         self._con.execute("UPDATE companies SET shares = ? WHERE symbol = ?", [shares, symbol])

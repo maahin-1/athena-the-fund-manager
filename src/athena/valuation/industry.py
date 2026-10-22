@@ -96,6 +96,11 @@ def lookup(store: ReferenceStore, symbol: str, on_or_before: date) -> IndustryCo
     if mapped is None:
         return None
     industry, method, confidence = mapped
+    return for_industry(store, industry, method, confidence, on_or_before)
+
+
+def for_industry(store: ReferenceStore, industry: str, method: str, confidence: float, on_or_before: date) -> IndustryContext | None:
+    """The benchmarks of a named industry as they stood on a date, or None when no table was published by then."""
     stats = store.industry_stats(industry, on_or_before=on_or_before)
     if not stats:
         return None

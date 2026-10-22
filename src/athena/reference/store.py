@@ -24,6 +24,7 @@ SCHEMA = (
     " PRIMARY KEY (country, as_of))",
     "CREATE TABLE IF NOT EXISTS ref_rating_spread (rating TEXT, spread DOUBLE, as_of DATE, PRIMARY KEY (rating, as_of))",
     "CREATE TABLE IF NOT EXISTS ref_input (key TEXT, as_of DATE, value DOUBLE, source TEXT, note TEXT, PRIMARY KEY (key, as_of))",
+    "CREATE TABLE IF NOT EXISTS ref_segment_industry (symbol TEXT, segment TEXT, industry TEXT, source TEXT, PRIMARY KEY (symbol, segment))",
 )
 
 
@@ -135,6 +136,17 @@ class ReferenceStore:
 
     def company_industry_counts(self) -> dict[str, int]:
         return dict(self._con.execute("SELECT method, count(*) FROM ref_company_industry GROUP BY 1").fetchall())
+
+    # ---- the owner's reading of a company's segment names
+    def put_segment_industry(self, symbol: str, segment: str, industry: str, source: str = "owner") -> None:
+        """Say which industry a company's segment belongs to (or `ignore` to leave it out of the mix). The segment name is matched without regard to case."""
+        self._con.execute("INSERT OR REPLACE INTO ref_segment_industry VALUES (?, ?, ?, ?)", [symbol, segment.strip().lower(), industry, source])
+
+    def segment_industries(self, symbol: str) -> dict[str, str]:
+        try:
+            return dict(self._con.execute("SELECT segment, industry FROM ref_segment_industry WHERE symbol = ?", [symbol]).fetchall())
+        except duckdb.CatalogException:  # a store written before segment readings existed, opened read-only
+            return {}
 
     # ---- country premiums
     def put_country_premiums(self, rows: Sequence[tuple[str, str, str, float, float, float, date]]) -> int:

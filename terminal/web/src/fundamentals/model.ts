@@ -81,6 +81,10 @@ export interface ValuationDoc {
   company_growth?: number | null;
   industry_growth?: number | null;
   justified_price_to_book?: number | null;
+  /** The yearly return at the price if the base case comes true, and the return the model asks for (cost of capital, or of equity for a lender). */
+  implied_return?: number | null;
+  required_return?: number | null;
+  sensitivity?: { label: string; base: number; change: number }[];
   grid?: { growth: number[]; margin: number[]; values: (number | null)[][] } | null;
   cost_of_capital?: {
     firm_kind: string;

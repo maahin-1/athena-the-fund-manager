@@ -43,6 +43,9 @@ class Policy:
     terminal_growth: float | None = None  # None = the rupee risk-free rate
     minority_at_industry_pb: bool = False  # value minority interests at book x the industry's price to book instead of at book
     lender_stable_roe: str = "industry"  # "industry", "company" or "blend" (their mean)
+    bull_moat_share: float = 0.5  # in the bull case only: the share of excess return on capital that lasts, for a company that has earned it (see moat_margin, moat_years)
+    moat_margin: float = 0.05  # after-tax return on capital must beat the base cost of capital by this much ...
+    moat_years: int = 3  # ... in each of this many latest financial years
     detail: bool = True  # False skips the implied growth and the grid (the calibration needs neither)
 
 
@@ -78,6 +81,7 @@ class ValuationRange:
     company_growth: float | None = None
     industry_growth: float | None = None
     justified_price_to_book: float | None = None
+    implied_return: float | None = None  # the yearly return at the price if the base case comes true (cost of equity for a lender)
     grid_growth: tuple[float, ...] = ()
     grid_margin: tuple[float, ...] = ()
     grid_values: tuple[tuple[float, ...], ...] = ()
@@ -180,15 +184,20 @@ def _value_operating(
         minority *= industry.get("pb")  # type: ignore[operator]
         flags.append("minority interests valued at book x the industry price to book")
     terminal_growth = policy.terminal_growth
-    terminal_roic = None
-    if policy.terminal_excess_share > 0:
-        roic_own = company.ebit * (1 - (effective if effective is not None else tax_marginal.value)) / company.invested_capital if company.invested_capital and company.invested_capital > 0 else None
-        if roic_own is not None:
-            terminal_roic_floor = rf_inr + erp_mature.value  # the terminal cost of capital
-            terminal_roic = terminal_roic_floor + policy.terminal_excess_share * max(0.0, min(roic_own, ROIC_CAP) - terminal_roic_floor)
+    roic_own = company.ebit * (1 - (effective if effective is not None else tax_marginal.value)) / company.invested_capital if company.invested_capital and company.invested_capital > 0 else None
+    terminal_floor = rf_inr + erp_mature.value  # the terminal cost of capital
+    history = [r * (1 - tax_marginal.value) for r in company.pretax_roic_by_year]
+    moat = len(history) >= policy.moat_years and all(r >= coc["base"] + policy.moat_margin for r in history[-policy.moat_years :])
+    moat_share = {"bear": policy.terminal_excess_share, "base": policy.terminal_excess_share, "bull": max(policy.terminal_excess_share, policy.bull_moat_share if moat else 0.0)}
+
+    def terminal_roic_for(name: str) -> float | None:
+        share = moat_share[name]
+        if share <= 0 or roic_own is None:
+            return None
+        return terminal_floor + share * max(0.0, min(roic_own, ROIC_CAP) - terminal_floor)
     flags += [
         "debt, minority interests and investments are at book value; employee options are not modelled; lease liabilities are not in debt",
-        "the benchmarks are one industry's: a company in several businesses is not weighted by its business mix",
+        *(() if industry.mapping_method == "segment mix" else ("the benchmarks are one industry's: a company in several businesses is not weighted by its business mix",)),
         "the industry growth, margin and capital figures are Damodaran's India tables, in dollars; growth is turned into rupees by the inflation gap",
     ]
 
@@ -199,7 +208,7 @@ def _value_operating(
             revenue=company.revenue, growth_year1=g, growth_years_2_5=g, margin_year1=own_margin, target_margin=m, margin_convergence_year=convergence[name],
             sales_to_capital_1_5=s2c, sales_to_capital_6_10=s2c, effective_tax_rate=effective, marginal_tax_rate=tax_marginal.value, cost_of_capital=coc[name],
             riskfree_rate=rf_inr, mature_equity_premium=erp_mature.value, debt=company.borrowings, cash=company.cash_and_bank, shares=share_crore,
-            minority_interests=minority, non_operating_assets=company.investments or 0.0, terminal_growth=terminal_growth, terminal_roic=terminal_roic,
+            minority_interests=minority, non_operating_assets=company.investments or 0.0, terminal_growth=terminal_growth, terminal_roic=terminal_roic_for(name),
         )
 
     try:
@@ -209,12 +218,13 @@ def _value_operating(
     values = {name: r.value_per_share for name, r in results.items()}
     scenarios = tuple(ScenarioValue(n, values[n], growth[n], margins[n], coc[n]) for n in ("bear", "base", "bull"))
     base_inputs = inputs_for("base")
-    implied_g = implied_m = None
+    implied_g = implied_m = implied_r = None
     grid_g = grid_m = ()
     grid = []
     if policy.detail:
         implied_g = dcf.reverse_growth(company.price, base_inputs)
         implied_m = dcf.reverse_margin(company.price, base_inputs)
+        implied_r = dcf.implied_return(company.price, base_inputs)
         grid_g = tuple(g0 + s for s in GRID_STEPS)
         grid_m = tuple(margins["base"] + s for s in GRID_STEPS)
         for g in grid_g:
@@ -232,10 +242,15 @@ def _value_operating(
         f"cost of capital {coc['base']:.1%} for years 1 to 5 (range {coc['bull']:.1%} to {coc['bear']:.1%}), fading to {rf_inr + erp_mature.value:.1%}; terminal growth {rf_inr:.1%}, return on capital equal to the cost of capital",
         *capital.assumptions,
     )
+    if moat and terminal_roic_for("bull") is not None:
+        assumptions += (
+            f"bull case only: {policy.bull_moat_share:.0%} of the return on capital above the cost of capital lasts for ever (after-tax return on capital {min(roic_own, ROIC_CAP):.1%}), because it beat the cost of capital "  # type: ignore[type-var]
+            f"by {policy.moat_margin:.0%} in each of the last {policy.moat_years} financial years",
+        )
     ordered = sorted(values.values())
     return ValuationRange(
         company.symbol, on_date, "fcff", True, (), company.price, ordered[0], values["base"], ordered[-1], scenarios, implied_g, implied_m, company.revenue_cagr_3y, industry_growth, None,
-        grid_g, grid_m, tuple(grid), assumptions, tuple(flags),
+        implied_r, grid_g, grid_m, tuple(grid), assumptions, tuple(flags),
     )
 
 
@@ -305,9 +320,17 @@ def _value_lender(store: ReferenceStore, company: CompanyInputs, industry: Indus
         f"industry {industry.industry}: table dated {industry.data_as_of}, {industry.n_firms} firms",
     )
     flags.append("a lender's debt is its raw material, so no free cash flow or cost of capital is used; provisions and loan-book quality are not modelled")
+    implied_r = None
+    if policy.detail:
+        base_plan = plan["base"]
+        implied_r = excess_return.implied_cost_of_equity(
+            company.price, excess_return.BankInputs(company.book_value_per_share, base_plan["roe"], base_plan["growth"], coe["base"], base_plan["stable_roe"], stable_growth)
+        )
+    if company.equity_jump_years:
+        flags.append(f"book equity grew by more than a quarter in {company.equity_jump_years} of the last three years (a merger or a raise): the return on equity is worked on average equity")
     return ValuationRange(
         company.symbol, on_date, "excess_return", True, (), company.price, ordered[0], values["base"], ordered[-1], scenarios, None, None, company.book_growth_3y, industry_growth,
-        results["base"].justified_price_to_book, (), (), (), assumptions, tuple(flags),
+        results["base"].justified_price_to_book, implied_r, (), (), (), assumptions, tuple(flags),
     )
 
 

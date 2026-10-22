@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PriceChart } from '../src/fundamentals/chartbox';
 import type { FundPage, ValuationDoc } from '../src/fundamentals/model';
-import { barPositions, impliedLine, valuationBlock } from '../src/fundamentals/valuation';
+import { barPositions, impliedLine, returnLine, valuationBlock } from '../src/fundamentals/valuation';
 import { FundamentalsView } from '../src/fundamentals/view';
 import type { AppContext } from '../src/panels/base';
 
@@ -12,6 +12,11 @@ const doc: ValuationDoc = {
     { name: 'bear', value: 1172.4, growth: 0.0329, margin: 0.1674, cost: 0.142, roe: null, stable_roe: null },
     { name: 'base', value: 1692.3, growth: 0.0658, margin: 0.2066, cost: 0.1218, roe: null, stable_roe: null },
     { name: 'bull', value: 2695.2, growth: 0.1187, margin: 0.2458, cost: 0.1031, roe: null, stable_roe: null },
+  ],
+  implied_return: 0.095, required_return: 0.1218,
+  sensitivity: [
+    { label: 'Equity premium = mature market only, no India country premium', base: 1900, change: 0.123 },
+    { label: 'Rupee inflation 5% instead of 4%', base: 1470, change: -0.131 },
   ],
   implied_growth: 0.165, implied_margin: 0.3, company_growth: 0.058, industry_growth: 0.0736, justified_price_to_book: null,
   grid: { growth: [0.02, 0.04, 0.0658, 0.08, 0.1], margin: [0.16, 0.18, 0.2066, 0.22, 0.24], values: Array.from({ length: 5 }, (_, i) => Array.from({ length: 5 }, (_, j) => 1000 + i * 100 + j * 50)) },
@@ -54,6 +59,21 @@ describe('the valuation section', () => {
   it('says what the price is paying for, against the company and the industry', () => {
     expect(impliedLine(doc)).toBe("At the price of ₹ 2,529 the market is paying for revenue growth of 16.5% a year for five years; the company's last three years were 5.8% and its industry is expected to grow 7.4%.");
     expect(impliedLine({ ...doc, implied_growth: null })).toBeNull();
+  });
+
+  it('says what an owner earns at the price if the base case comes true, against what the model asks for', () => {
+    expect(returnLine(doc)).toBe('At ₹ 2,529, if the base-case cash flows come true, an owner earns about 9.5% a year; the model asks for 12.2%.');
+    expect(returnLine({ ...doc, required_return: null })).toBe('At ₹ 2,529, if the base-case cash flows come true, an owner earns about 9.5% a year.');
+    expect(returnLine({ ...doc, implied_return: null })).toBeNull();
+    expect(valuationBlock(doc).textContent).toContain('an owner earns about 9.5% a year');
+  });
+
+  it('lists the base value under the alternative inputs, marked as alternatives and not the live inputs', () => {
+    const text = valuationBlock(doc).textContent ?? '';
+    expect(text).toContain('not the live inputs');
+    expect(text).toContain('Equity premium = mature market only, no India country premium: ₹ 1,900 (+12%)');
+    expect(text).toContain('Rupee inflation 5% instead of 4%: ₹ 1,470 (-13%)');
+    expect(valuationBlock({ ...doc, sensitivity: [] }).textContent).not.toContain('not the live inputs');
   });
 
   it('draws a five by five grid of values and a lender in terms of returns on equity', () => {
