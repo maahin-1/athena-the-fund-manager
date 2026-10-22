@@ -22,6 +22,7 @@ from typing import Any, TextIO
 from athena.contracts import AthenaError
 from athena.fundamentals.history import PREDECESSORS, Predecessor, chain
 from athena.fundamentals.integrated import FundamentalsResults, is_block
+from athena.fundamentals import shares as share_counts
 from athena.fundamentals.rows import parse_rows
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore, now
 from athena.fundamentals.universe import Member, universe
@@ -149,6 +150,8 @@ def ingest_symbol(
             store.save_statements(statements, ref.url, ref.filed)
             store.record_filing(ref.url, member.symbol, basis, ref.period_end, ref.annual, ref.filed, "ok")
             store.save_company(member.symbol, member.name, member.isin, member.industry, statements.layout, statements.shares)
+            store.save_share_count(ref.url, member.symbol, basis, ref.period_end, ref.filed, statements.shares_declared, statements.shares_from_profit)
+            share_counts.refresh(store, member.symbol)
         report.fetched += 1
         report.notes.extend(statements.notes)
     return report

@@ -33,6 +33,24 @@ BANK_ROE_BOUNDS = (0.0, 0.30)
 
 
 @dataclass(frozen=True)
+class Policy:
+    """The written rules that turn a company's figures and its industry's into assumptions, as switches. The defaults are the rules in the module note above; the calibration study
+    (`calibrate.py`) runs the alternatives side by side to see which hold up against what happened afterwards. Nothing here is a price or a forecast."""
+
+    growth_company_weight: float = 0.5  # growth = weight x company three-year + (1 - weight) x industry expected
+    margin_rule: str = "mean"  # "mean" of company and industry; "own" holds the company's; "industry"; "persist" never pulls an above-industry company down
+    terminal_excess_share: float = 0.0  # share of the company's return on capital above its cost of capital that lasts for ever (0 = Damodaran's default)
+    terminal_growth: float | None = None  # None = the rupee risk-free rate
+    minority_at_industry_pb: bool = False  # value minority interests at book x the industry's price to book instead of at book
+    lender_stable_roe: str = "industry"  # "industry", "company" or "blend" (their mean)
+    detail: bool = True  # False skips the implied growth and the grid (the calibration needs neither)
+
+
+DEFAULT_POLICY = Policy()
+ROIC_CAP = 0.30  # a company's own return on capital counts for the terminal rule only up to this
+
+
+@dataclass(frozen=True)
 class ScenarioValue:
     name: str
     value_per_share: float
@@ -88,18 +106,22 @@ def _unsupported(company: CompanyInputs, on_date: date, model: str, missing: tup
     return ValuationRange(company.symbol, on_date, model, False, missing, price=company.price, flags=flags)
 
 
-def value_company(store: ReferenceStore, company: CompanyInputs, industry: IndustryContext | None, capital: CompanyCapital, on_date: date) -> ValuationRange:
+def value_company(
+    store: ReferenceStore, company: CompanyInputs, industry: IndustryContext | None, capital: CompanyCapital, on_date: date, policy: Policy = DEFAULT_POLICY
+) -> ValuationRange:
     """The value range for a company on a date. `ok` is False, with the reasons in `missing`, when it cannot be valued."""
     if company.layout == "insurer":
         return _unsupported(company, on_date, "unsupported", ("insurers file in a layout with no revenue or cost of capital lines this model reads",))
     if company.layout in LENDER_LAYOUTS:
-        return _value_lender(store, company, industry, on_date)
-    return _value_operating(store, company, industry, capital, on_date)
+        return _value_lender(store, company, industry, on_date, policy)
+    return _value_operating(store, company, industry, capital, on_date, policy)
 
 
 # ---- operating companies: free cash flow to the firm
 
-def _value_operating(store: ReferenceStore, company: CompanyInputs, industry: IndustryContext | None, capital: CompanyCapital, on_date: date) -> ValuationRange:
+def _value_operating(
+    store: ReferenceStore, company: CompanyInputs, industry: IndustryContext | None, capital: CompanyCapital, on_date: date, policy: Policy = DEFAULT_POLICY
+) -> ValuationRange:
     if not capital.ok:
         return _unsupported(company, on_date, "fcff", tuple(capital.missing))
     need = {
@@ -122,7 +144,11 @@ def _value_operating(store: ReferenceStore, company: CompanyInputs, industry: In
     industry_margin = industry.get("operating_margin")
     industry_growth_usd = industry.get("expected_revenue_growth_5y")
     industry_growth = _to_inr(industry_growth_usd, inflation_inr.value, inflation_usd.value)
-    g_basis = _mean([company.revenue_cagr_3y, industry_growth])
+    w = policy.growth_company_weight
+    if company.revenue_cagr_3y is not None and industry_growth is not None:
+        g_basis = w * company.revenue_cagr_3y + (1 - w) * industry_growth
+    else:
+        g_basis = _mean([company.revenue_cagr_3y, industry_growth])
     if g_basis is None:
         return _unsupported(company, on_date, "fcff", ("no revenue growth to start from: neither the company's three-year growth nor the industry's expected growth is available",))
     g0 = _clamp(g_basis, GROWTH_BOUNDS)
@@ -135,10 +161,10 @@ def _value_operating(store: ReferenceStore, company: CompanyInputs, industry: In
     if industry_margin is None:
         flags.append("the industry table gives no operating margin: the company's own is held")
         industry_margin = own_margin
-    margin_base = (own_margin + industry_margin) / 2 if own_margin > 0 else industry_margin
+    margin_base = _target_margin(policy.margin_rule, own_margin, industry_margin)
     if own_margin <= 0:
         flags.append("an operating loss: the margin is assumed to move to the industry's")
-    margins = {"bear": min(own_margin, industry_margin) if own_margin > 0 else industry_margin * 0.75, "base": margin_base, "bull": max(own_margin, industry_margin, margin_base)}
+    margins = {"bear": min(own_margin, industry_margin, margin_base) if own_margin > 0 else industry_margin * 0.75, "base": margin_base, "bull": max(own_margin, industry_margin, margin_base)}
     growth = {"bear": g0 * 0.5 if g0 > 0 else g0 - 0.03, "base": g0, "bull": min(g0 * 1.5 + 0.02, BULL_GROWTH_CAP)}
     coc = {"bear": capital.high_inr.cost_of_capital, "base": capital.inr.cost_of_capital, "bull": capital.low_inr.cost_of_capital}  # type: ignore[union-attr]
     convergence = {"bear": 7, "base": 5, "bull": 5} if own_margin <= 0 else {"bear": 5, "base": 5, "bull": 5}
@@ -149,6 +175,17 @@ def _value_operating(store: ReferenceStore, company: CompanyInputs, industry: In
     rf_inr = capital.riskfree_inr
     assert rf_inr is not None
     share_crore = company.shares / SHARES_PER_CRORE
+    minority = company.minority or 0.0
+    if policy.minority_at_industry_pb and minority and industry.get("pb") is not None:
+        minority *= industry.get("pb")  # type: ignore[operator]
+        flags.append("minority interests valued at book x the industry price to book")
+    terminal_growth = policy.terminal_growth
+    terminal_roic = None
+    if policy.terminal_excess_share > 0:
+        roic_own = company.ebit * (1 - (effective if effective is not None else tax_marginal.value)) / company.invested_capital if company.invested_capital and company.invested_capital > 0 else None
+        if roic_own is not None:
+            terminal_roic_floor = rf_inr + erp_mature.value  # the terminal cost of capital
+            terminal_roic = terminal_roic_floor + policy.terminal_excess_share * max(0.0, min(roic_own, ROIC_CAP) - terminal_roic_floor)
     flags += [
         "debt, minority interests and investments are at book value; employee options are not modelled; lease liabilities are not in debt",
         "the benchmarks are one industry's: a company in several businesses is not weighted by its business mix",
@@ -162,7 +199,7 @@ def _value_operating(store: ReferenceStore, company: CompanyInputs, industry: In
             revenue=company.revenue, growth_year1=g, growth_years_2_5=g, margin_year1=own_margin, target_margin=m, margin_convergence_year=convergence[name],
             sales_to_capital_1_5=s2c, sales_to_capital_6_10=s2c, effective_tax_rate=effective, marginal_tax_rate=tax_marginal.value, cost_of_capital=coc[name],
             riskfree_rate=rf_inr, mature_equity_premium=erp_mature.value, debt=company.borrowings, cash=company.cash_and_bank, shares=share_crore,
-            minority_interests=company.minority or 0.0, non_operating_assets=company.investments or 0.0,
+            minority_interests=minority, non_operating_assets=company.investments or 0.0, terminal_growth=terminal_growth, terminal_roic=terminal_roic,
         )
 
     try:
@@ -172,19 +209,22 @@ def _value_operating(store: ReferenceStore, company: CompanyInputs, industry: In
     values = {name: r.value_per_share for name, r in results.items()}
     scenarios = tuple(ScenarioValue(n, values[n], growth[n], margins[n], coc[n]) for n in ("bear", "base", "bull"))
     base_inputs = inputs_for("base")
-    implied_g = dcf.reverse_growth(company.price, base_inputs)
-    implied_m = dcf.reverse_margin(company.price, base_inputs)
-    grid_g = tuple(g0 + s for s in GRID_STEPS)
-    grid_m = tuple(margins["base"] + s for s in GRID_STEPS)
+    implied_g = implied_m = None
+    grid_g = grid_m = ()
     grid = []
-    for g in grid_g:
-        row = []
-        for m in grid_m:
-            try:
-                row.append(dcf.run_fcff(inputs_for("base", g, m)).value_per_share)
-            except ValueError:
-                row.append(float("nan"))
-        grid.append(tuple(row))
+    if policy.detail:
+        implied_g = dcf.reverse_growth(company.price, base_inputs)
+        implied_m = dcf.reverse_margin(company.price, base_inputs)
+        grid_g = tuple(g0 + s for s in GRID_STEPS)
+        grid_m = tuple(margins["base"] + s for s in GRID_STEPS)
+        for g in grid_g:
+            row = []
+            for m in grid_m:
+                try:
+                    row.append(dcf.run_fcff(inputs_for("base", g, m)).value_per_share)
+                except ValueError:
+                    row.append(float("nan"))
+            grid.append(tuple(row))
     assumptions = (
         f"revenue growth {g0:.1%} a year for years 1 to 5 (company three-year {_pct(company.revenue_cagr_3y)}, industry expected {_pct(industry_growth)}), fading to {rf_inr:.1%} by year 10",
         f"operating margin {own_margin:.1%} now, moving to {margins['base']:.1%} (industry {industry_margin:.1%}) by year {convergence['base']}",
@@ -201,7 +241,7 @@ def _value_operating(store: ReferenceStore, company: CompanyInputs, industry: In
 
 # ---- banks and finance companies: excess return on equity
 
-def _value_lender(store: ReferenceStore, company: CompanyInputs, industry: IndustryContext | None, on_date: date) -> ValuationRange:
+def _value_lender(store: ReferenceStore, company: CompanyInputs, industry: IndustryContext | None, on_date: date, policy: Policy = DEFAULT_POLICY) -> ValuationRange:
     missing: list[str] = []
     for name in ("book_value_per_share", "roe_3y_average", "price"):
         if getattr(company, name) is None:
@@ -237,6 +277,10 @@ def _value_lender(store: ReferenceStore, company: CompanyInputs, industry: Indus
         flags.append("no book-value growth to start from: 10% assumed")
     stable_growth = rf_inr
     stable = industry_roe if industry_roe is not None else coe["base"]
+    if policy.lender_stable_roe == "company":
+        stable = roe
+    elif policy.lender_stable_roe == "blend" and industry_roe is not None:
+        stable = (roe + industry_roe) / 2
     # the cases move the return on equity, the stable return and the cost of equity together and hold book growth, so the ordering is the same whatever the sign of the excess return
     plan = {
         "bear": dict(roe=roe * 0.9, stable_roe=stable * 0.9, growth=book_growth),
@@ -265,6 +309,19 @@ def _value_lender(store: ReferenceStore, company: CompanyInputs, industry: Indus
         company.symbol, on_date, "excess_return", True, (), company.price, ordered[0], values["base"], ordered[-1], scenarios, None, None, company.book_growth_3y, industry_growth,
         results["base"].justified_price_to_book, (), (), (), assumptions, tuple(flags),
     )
+
+
+def _target_margin(rule: str, own: float, industry: float) -> float:
+    if own <= 0:
+        return industry
+    if rule == "own":
+        return own
+    if rule == "industry":
+        return industry
+    mean = (own + industry) / 2
+    if rule == "persist":
+        return max(own, mean)
+    return mean
 
 
 def _optional(store: ReferenceStore, key: str, on_date: date, default: float) -> float:

@@ -27,6 +27,8 @@ class Statements:
     cashflow: dict[tuple[date, date], dict[str, float]]
     banking: dict[tuple[date, date], dict[str, float]]
     notes: tuple[str, ...]
+    shares_declared: float | None = None  # paid-up equity capital over face value, as this filing states them
+    shares_from_profit: float | None = None  # this filing's net profit over its earnings per share: an independent, approximate check on the count
 
 
 def _number(text: str | None) -> float | None:
@@ -218,6 +220,8 @@ def parse_rows(text: str) -> Statements:
     nature = (current.get("NatureOfReportStandaloneConsolidated") or "").strip().lower()
     audited = current.get("WhetherResultsAreAuditedOrUnaudited")
     paid_up, face_value = _number(current.get("PaidUpValueOfEquityShareCapital")), _number(current.get("FaceValueOfEquityShareCapital"))
+    declared = paid_up / face_value if paid_up and face_value else None
+    from_profit = _implied_shares(income, quarter) or _implied_shares(income, year)
     return Statements(
         symbol=(current.get("Symbol") or "").strip(),
         basis=nature if nature in ("consolidated", "standalone") else "",
@@ -229,4 +233,6 @@ def parse_rows(text: str) -> Statements:
         cashflow=cashflow,
         banking=banking,
         notes=(*date_notes, *(() if layout == spec.INSURER else reconcile(income))),  # an insurer's profit is not total income less expenses (the policyholders' share)
+        shares_declared=declared,
+        shares_from_profit=from_profit,
     )

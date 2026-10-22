@@ -27,6 +27,7 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS documents (symbol TEXT, kind TEXT, title TEXT, category TEXT, published TIMESTAMP, url TEXT, size TEXT)",
     "CREATE TABLE IF NOT EXISTS ingest_runs (symbol TEXT PRIMARY KEY, status TEXT, finished TIMESTAMP, filings INTEGER, error TEXT,"
     " blocked_until TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS share_counts (url TEXT PRIMARY KEY, symbol TEXT, basis TEXT, period_end DATE, filed TIMESTAMP, declared DOUBLE, from_profit DOUBLE)",
 )
 KEY = "symbol = ? AND basis = ? AND statement = ? AND period_start = ? AND period_end = ? AND key = ?"
 
@@ -77,7 +78,27 @@ class FundamentalsStore:
 
     # ---- writes
     def save_company(self, symbol: str, name: str, isin: str, industry: str, layout: str, shares: float | None) -> None:
-        self._con.execute("INSERT OR REPLACE INTO companies VALUES (?, ?, ?, ?, ?, ?, ?)", [symbol, name, isin, industry, layout, shares, now()])
+        """Add or refresh a company. `shares` is only the first guess for a company not held yet: afterwards the count is chosen from the share counts of its filings
+        (`athena.fundamentals.shares`), never overwritten by whichever filing happened to be read last."""
+        self._con.execute(
+            "INSERT INTO companies VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (symbol) DO UPDATE SET name = excluded.name, isin = excluded.isin, industry = excluded.industry,"
+            " layout = excluded.layout, updated = excluded.updated, shares = COALESCE(companies.shares, excluded.shares)",
+            [symbol, name, isin, industry, layout, shares, now()],
+        )
+
+    def save_share_count(self, url: str, symbol: str, basis: str, period_end: date, filed: datetime, declared: float | None, from_profit: float | None) -> None:
+        self._con.execute("INSERT OR REPLACE INTO share_counts VALUES (?, ?, ?, ?, ?, ?, ?)", [url, symbol, basis, period_end, _utc(filed), declared, from_profit])
+
+    def share_counts(self, symbol: str) -> list[dict[str, Any]]:
+        """The share counts each of the company's filings states, newest period first."""
+        cols = ("url", "basis", "period_end", "filed", "declared", "from_profit")
+        rows = self._con.execute(
+            "SELECT url, basis, period_end, filed, declared, from_profit FROM share_counts WHERE symbol = ? ORDER BY period_end DESC, filed DESC", [symbol]
+        ).fetchall()
+        return [dict(zip(cols, r)) for r in rows]
+
+    def set_shares(self, symbol: str, shares: float | None) -> None:
+        self._con.execute("UPDATE companies SET shares = ? WHERE symbol = ?", [shares, symbol])
 
     def save_statements(self, st: Statements, url: str, filed: datetime, source: str = "nse-xbrl") -> int:
         """Store a filing's rows. A row already held from a filing made later is kept; one from an earlier filing is replaced. Returns the number of rows offered."""
