@@ -132,10 +132,16 @@ Defuse XML parsing for downloaded filings (use `defusedxml`); independent code r
 - Annual-report extraction (1.3) can be wrong; every extracted year is cross-checked against the following year's comparatives, and an unmatched year is left out.
 - NSE can throttle or block long fetches; jobs are throttled, resumable and stop after repeated refusals.
 
-## 5. Decisions the owner still owes
+## 5. Decisions (22 Oct 2026)
 
-1. When to start the price and quarter backfills (now, alongside looking at the app, or after).
-2. Where the financials before Dec 2018 come from (1.3).
-3. Whether to schedule nightly refresh jobs (warehouse build, verdict refresh for changed stocks, fundamentals refresh).
-4. The model spend and provider policy for the debate and judge.
+Settled by the owner:
+
+1. **Backfills start only after the owner confirms the build** (the app stays free of "busy" messages while he looks around).
+2. **Financials before Dec 2018 come from annual-report PDFs for the whole universe**, each year cross-checked against the next year's comparatives. This is the most expensive item in the plan: roughly 2,300 companies x 3 older years of reports read by a model. Work in rank order of market cap, report the model cost and the share of years that pass the cross-check after the first 500, and let the owner stop or narrow it from there.
+3. **Nothing is scheduled.** Jobs are run by hand; the monthly valuation snapshot task stays unregistered until the owner runs its one command (`scripts/athena-valuation-snapshot-task.xml`).
+4. **The judge uses the best available model, paid if need be**; everything else stays on the free tiers. The router's strong tier today ends at `gpt-5.4-mini`; before the judge is built, the owner names the model he wants and a monthly ceiling, and the judge is called only on demand and on conflicts.
+
+Still open:
+
 5. Brokerage and statutory charges from a contract note (3.4); not blocking.
+6. The owner's go on the build, and which workstream he wants first (the plan suggests W1 backfills in the background with W2 and W3 in front).
