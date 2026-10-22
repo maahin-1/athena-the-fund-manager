@@ -18,7 +18,7 @@ from athena.contracts import AthenaError
 from athena.fundamentals.store import DEFAULT_PATH as FUNDAMENTALS, open_read
 from athena.reference.store import DEFAULT_PATH as REFERENCE, ReferenceStore
 from athena.valuation import industry as ind
-from athena.valuation import inputs, mix, scenarios, wacc
+from athena.valuation import inputs, ledger, mix, scenarios, wacc
 
 WAREHOUSE = Path(".athena") / "warehouse.duckdb"
 SANE_COST_OF_CAPITAL = (0.06, 0.30)  # a rupee cost of capital outside this is listed for a look, not hidden
@@ -166,11 +166,52 @@ def cmd_audit_value(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    snap = date.fromisoformat(args.date) if args.date else date.today()
+    prices = ledger.stored_prices(Path(args.warehouse))
+    with open_read(args.fundamentals) as fund, ReferenceStore(args.reference, read_only=True) as ref, ledger.Ledger(args.ledger) as book:
+        if book.has(snap):
+            print(f"a snapshot for {snap} is already recorded; nothing done")
+            return 0
+        symbols = [r[0] for r in fund._con.execute("SELECT symbol FROM companies ORDER BY symbol").fetchall()]
+
+        def value(symbol: str, price: float):
+            company = inputs.load_company_inputs(fund, symbol, args.basis, price)
+            basis = args.basis
+            if company is None and args.basis == "consolidated":
+                company, basis = inputs.load_company_inputs(fund, symbol, "standalone", price), "standalone"
+            if company is None:
+                return None
+            prepared = mix.prepare(fund, ref, company, ind.lookup(ref, symbol, snap), snap)
+            capital = wacc.company_cost_of_capital(ref, prepared.company, prepared.industry, snap)
+            got = scenarios.value_company(ref, prepared.company, prepared.industry, capital, snap)
+            return got, (prepared.industry.industry if prepared.industry else None), len(got.flags), basis
+
+        recorded, total, stale = ledger.take_snapshot(book, value, symbols, prices, snap, note="monthly" if not args.date else "dated")
+    print(f"snapshot {snap}: {recorded} value ranges recorded of {total} companies ({stale} left out for a missing or stale price)")
+    return 0
+
+
+def cmd_ledger_score(args: argparse.Namespace) -> int:
+    with ledger.Ledger(args.ledger, read_only=True) as book:
+        scores = ledger.score(book, Path(args.warehouse), args.months)
+        held = book.snapshot_dates()
+    if not scores:
+        print(f"no snapshot is {args.months} months old yet ({len(held)} held: {', '.join(d.isoformat() for d in held) or 'none'})")
+        return 0
+    f = lambda v, p=3: "-" if v is None else f"{v:.{p}f}"  # noqa: E731
+    print(f"{'snapshot':12} {'n':>5} {'rank IC':>8} {'inside':>7} {'above':>6} {'below':>6} {'gap then':>9} {'gap now':>8}")
+    for s in scores:
+        print(f"{s.snap_date.isoformat():12} {s.n:5d} {f(s.ic):>8} {f(s.inside, 2):>7} {f(s.above, 2):>6} {f(s.below, 2):>6} {f(s.median_gap_before, 2):>9} {f(s.median_gap_after, 2):>8}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m athena.valuation", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fundamentals", default=str(FUNDAMENTALS))
     parser.add_argument("--reference", default=str(REFERENCE))
     parser.add_argument("--warehouse", default=str(WAREHOUSE))
+    parser.add_argument("--ledger", default=str(ledger.DEFAULT_PATH))
     parser.add_argument("--basis", default="consolidated", choices=("consolidated", "standalone"))
     sub = parser.add_subparsers(dest="command", required=True)
     cost = sub.add_parser("cost")
@@ -183,6 +224,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     value.set_defaults(run=cmd_value)
     sub.add_parser("audit").set_defaults(run=cmd_audit)
     sub.add_parser("audit-value").set_defaults(run=cmd_audit_value)
+    snap = sub.add_parser("snapshot", help="record every company's value range in the ledger")
+    snap.add_argument("--date", default=None, help="YYYY-MM-DD (default today)")
+    snap.set_defaults(run=cmd_snapshot)
+    scored = sub.add_parser("ledger-score", help="score the ledger's snapshots that are old enough")
+    scored.add_argument("--months", type=int, default=12)
+    scored.set_defaults(run=cmd_ledger_score)
     args = parser.parse_args(argv)
     try:
         return args.run(args)

@@ -68,14 +68,14 @@ Large Indian companies are priced to return about 8–10% a year if the model's 
 | Limit | Handling | Status |
 |---|---|---|
 | Wrong share counts | Chosen from filings, checked against profit/EPS | Done |
-| Equity premium, beta, rupee conversion | Keep Damodaran's method as the strict case; do not tune to price. Make each an owner-editable dated input with a visible sensitivity line; show the implied return beside the required one | Proposed |
-| Quality companies valued at 8× EBIT | Put "excess returns last halfway" in the bull case only, and only for a company whose return on capital beat its cost of capital by 5 points in each of the last three years | Proposed |
-| Banks below book | Compute return on equity on average equity (a merger or raise depresses it on closing equity); flag a year with equity growth over 25% | Proposed, test first |
-| Reliance, L&T, conglomerates benchmarked as one industry | NSE filings carry segment revenue and profit; parse them, map each segment to an industry (rules, then owner-editable), weight the benchmarks by segment; value a financial arm by book separately | Proposed (Phase 4) |
-| Minorities, investments at book | Minorities at book × industry P/B (no effect on the median in the study); listed investments at market need a holdings table | Proposed |
+| Equity premium, beta, rupee conversion | Keep Damodaran's method as the strict case; do not tune to price. Make each an owner-editable dated input with a visible sensitivity line; show the implied return beside the required one | Done: implied return and a sensitivity block on the Valuation section; the inputs stay as dated, editable reference inputs |
+| Quality companies valued at 8× EBIT | Put "excess returns last halfway" in the bull case only, and only for a company whose return on capital beat its cost of capital by 5 points in each of the last three years | Done: bull case only, gated on three years (TRD 2.55) |
+| Banks below book | Compute return on equity on average equity (a merger or raise depresses it on closing equity); flag a year with equity growth over 25% | Done: average-equity return on equity (HDFC Bank 13.4% to 14.0%: the model's cost of equity against a 14% return is the real driver) |
+| Reliance, L&T, conglomerates benchmarked as one industry | NSE filings carry segment revenue and profit; parse them, map each segment to an industry (rules, then owner-editable), weight the benchmarks by segment; value a financial arm by book separately | Done: segment parsing, business-mix benchmarks, financial-arm carve-out (TRD 2.56); approximate |
+| Minorities, investments at book | Minorities at book × industry P/B (no effect on the median in the study); listed investments at market need a holdings table | Open: minorities at book x price to book is a policy switch, off; listed investments at market need a holdings table |
 | Leases, employee options | Lease liabilities are not in the stored lines (parse them from the filings); option count is an owner input, default 0 and flagged | Phase 5 |
 | Tax 25.17%, inflation 4% and 2% | Owner to confirm; the inflation gap is the biggest single lever | Owner |
-| No way to validate | Record each month's range as a point-in-time ledger and score it after 12 and 24 months (needs approval to schedule) | Proposed |
+| No way to validate | Record each month's range as a point-in-time ledger and score it after 12 and 24 months (needs approval to schedule) | Done: ledger and first snapshot 2026-10-22; the monthly scheduled task is saved in scripts/ and needs the owner to register it (TRD 2.57) |
 
 ## 6. What this study cannot say
 
