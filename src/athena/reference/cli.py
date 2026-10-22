@@ -2,6 +2,7 @@
 
     load    read the Damodaran mirror (industry workbooks, country files, company list) into the reference store, build the company map, seed the dated inputs
     audit   how far the data reaches: dataset dates, industries, small samples, company-map coverage by pass
+    rates   fetch the US 10-year Treasury yield and store it as a dated input
     input   set a dated input (risk-free rate, tax rate, ...) by hand; the newest value on or before a date is the one used"""
 from __future__ import annotations
 
@@ -15,15 +16,23 @@ import duckdb
 
 from athena.contracts import AthenaError
 from athena.reference import company_map as cm
-from athena.reference import country, damodaran
+from athena.reference import country, damodaran, rates
 from athena.reference.store import DEFAULT_PATH, ReferenceStore
 
 MIRROR = Path(".athena") / "damodaran"
 WAREHOUSE = Path(".athena") / "warehouse.duckdb"
 FUNDAMENTALS = Path(".athena") / "fundamentals.duckdb"
 SMALL_SAMPLE = 10
+ASSUMED = "assumption seeded 2026-10-22, to be reviewed"
 SEEDS = (
     ("tax_marginal", date(2026, 4, 1), 0.2517, "owner decision 2026-10-22", "concessional-regime statutory rate (22% + surcharge + cess); to be confirmed against an official source. Damodaran's file uses 0.30"),
+    ("inflation_inr", date(2026, 4, 1), 0.04, ASSUMED, "expected long-run rupee inflation: the RBI's target; turns dollar rates into rupee rates"),
+    ("inflation_usd", date(2026, 4, 1), 0.02, ASSUMED, "expected long-run dollar inflation: the Federal Reserve's target"),
+    ("large_firm_cap_crore", date(2026, 4, 1), 42000.0, ASSUMED, "market value from which a company is rated on the large-firm interest-cover table: about US$5 billion at Rs 84 to the dollar"),
+    ("debt_maturity_years", date(2026, 4, 1), 3.0, ASSUMED, "average maturity used to value debt as one coupon bond (his sample uses 3)"),
+    ("band_erp", date(2026, 4, 1), 0.005, ASSUMED, "equity risk premium moved by this much in the low and high cases"),
+    ("band_rf", date(2026, 4, 1), 0.005, ASSUMED, "risk-free rate moved by this much in the low and high cases"),
+    ("band_beta", date(2026, 4, 1), 0.15, ASSUMED, "unlevered beta moved by this much in the low and high cases"),
 )
 
 
@@ -65,7 +74,23 @@ def cmd_load(args: argparse.Namespace) -> int:
             if store.input(key, date.today()) is None:
                 store.put_input(key, day, value, source, note)
                 print(f"seeded input {key} = {value}")
+        _rates(store)
     return 1 if report.skipped else 0
+
+
+def _rates(store: ReferenceStore) -> int:
+    try:
+        day, value = rates.store_us_10y(store)
+    except (AthenaError, OSError, ValueError) as exc:  # a failed fetch leaves the last stored yield in place
+        print(f"US 10-year yield not updated: {exc}")
+        return 1
+    print(f"US 10-year yield {value:.4f} on {day}")
+    return 0
+
+
+def cmd_rates(args: argparse.Namespace) -> int:
+    with ReferenceStore(args.store) as store:
+        return _rates(store)
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
@@ -107,6 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     load.add_argument("--mirror", default=str(MIRROR))
     load.set_defaults(run=cmd_load)
     sub.add_parser("audit").set_defaults(run=cmd_audit)
+    sub.add_parser("rates").set_defaults(run=cmd_rates)
     put = sub.add_parser("input")
     put.add_argument("key")
     put.add_argument("value", type=float)
