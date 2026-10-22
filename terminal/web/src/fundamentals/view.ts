@@ -5,11 +5,12 @@ import { el, type AppContext } from '../panels/base';
 import { makePriceChart, type PriceChart } from './chartbox';
 import { periodLabel } from './format';
 import type { DocLink, FundPage } from './model';
+import { industryNotes, industryTable } from './industry';
 import { PeerBox } from './peerbox';
 import { growthBlocks, keyBlocks, tableFrom, type Table } from './tables';
 
 const LINK_GROUP = 'blue' as const; // the page follows the blue link group, like the Research page
-const SECTIONS = ['Peers', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents'] as const;
+const SECTIONS = ['Peers', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Industry', 'Shareholding', 'Documents'] as const;
 type Basis = 'consolidated' | 'standalone';
 
 export interface ViewOptions {
@@ -290,7 +291,7 @@ export class FundamentalsView {
     this.page = page;
     this.basis = page.basis;
     this.symbol = page.symbol;
-    this.head.replaceChildren(this.headerRow(page), this.navRow());
+    this.head.replaceChildren(this.headerRow(page), this.navRow(page));
     this.body.replaceChildren();
     if (note) this.body.append(el('div', 'note', note));
     this.peerBox.show(page.symbol);
@@ -301,6 +302,7 @@ export class FundamentalsView {
       this.section('Balance Sheet', drawTable(tableFrom(page.annual.ends, page.annual.balance)), page.annual.balance.length > 0),
       this.section('Cash Flows', drawTable(tableFrom(page.annual.ends, page.annual.cashflow)), page.annual.cashflow.length > 0),
       this.section('Ratios', drawTable(tableFrom(page.ratios.ends, [...page.ratios.rows, ...page.annual.banking])), page.ratios.rows.length + page.annual.banking.length > 0),
+      ...(page.industry?.rows.length ? [this.section('Industry', this.industryBlock(page), true)] : []),
       this.section('Shareholding', drawTable(tableFrom(page.shareholding?.ends ?? [], page.shareholding?.rows ?? [])), (page.shareholding?.rows.length ?? 0) > 0),
     );
     this.body.append(this.section('Documents', this.documents(page), docCount(page) > 0), this.footer(page));
@@ -336,9 +338,10 @@ export class FundamentalsView {
     return row;
   }
 
-  private navRow(): HTMLElement {
+  private navRow(page: FundPage): HTMLElement {
     const nav = el('div', 'fnav');
     for (const name of SECTIONS) {
+      if (name === 'Industry' && !page.industry?.rows.length) continue;
       const b = el('button', 'fnavbtn', name);
       b.addEventListener('click', () => this.body.querySelector(`[data-section="${name}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
       nav.append(b);
@@ -388,6 +391,15 @@ export class FundamentalsView {
     card.dataset.section = name;
     card.append(el('h3', '', name), present ? content : el('div', 'note', `No ${name.toLowerCase()} are stored for this company yet.`));
     return card;
+  }
+
+  private industryBlock(page: FundPage): HTMLElement {
+    const box = el('div', 'findustry');
+    if (!page.industry) return box;
+    box.append(drawTable(industryTable(page.industry)));
+    for (const line of industryNotes(page.industry)) box.append(el('div', 'note', line));
+    box.append(el('div', 'note', 'Industry figures are totals across the industry (market value over earnings, not an average of company ratios), so a few near-zero earnings do not distort them.'));
+    return box;
   }
 
   private documents(page: FundPage): HTMLElement {

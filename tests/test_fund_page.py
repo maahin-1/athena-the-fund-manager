@@ -237,3 +237,30 @@ def test_the_page_a_server_reads_is_plain_ascii_whatever_the_titles_hold(tmp_pat
     assert out.isascii()
     titles = [d["title"] for d in json.loads(out)["documents"]["announcements"]]
     assert titles == ["Ministry of Railways\xa0has submitted ₹ 5,000 crore plan – notice"]
+
+
+INDUSTRY = {
+    "industry": "Computer Services", "mapping_method": "nse_ticker", "mapping_confidence": 1.0, "n_firms": 68, "data_as_of": "2026-01-05",
+    "values": {"pe": 28.0, "pb": 6.0, "ev_ebitda": 18.0, "roe": 0.22, "ebitda_margin": 0.20}, "flags": [],
+}
+
+
+def test_the_industry_block_sets_the_company_against_its_industry_with_ratio_or_gap():
+    with stored("tcs_fy2020", "tcs_fy2024") as store:
+        doc = page.build_page(store, "TCS", "consolidated", 3200.0, industry=INDUSTRY)
+    block = doc["industry"]
+    assert (block["name"], block["n_firms"], block["data_as_of"]) == ("Computer Services", 68, "2026-01-05")
+    by = {r["label"]: r for r in block["rows"]}
+    pe = by["P/E"]
+    assert pe["relation"] == "ratio" and pe["compare"] == pytest.approx(pe["company"] / 28.0) and pe["industry"] == 28.0
+    roe = by["ROE %"]
+    assert roe["relation"] == "gap" and roe["industry"] == pytest.approx(22.0) and roe["compare"] == pytest.approx(roe["company"] - 22.0)
+    assert all(r["company"] is not None and r["industry"] is not None for r in block["rows"])  # a measure either side lacks is left out, not zero
+
+
+def test_there_is_no_industry_block_without_industry_figures_and_a_lender_gets_no_margin_row():
+    with stored("tcs_fy2024") as store:
+        assert page.build_page(store, "TCS", "consolidated", 3200.0)["industry"] is None
+    lender = page._industry_block(INDUSTRY, "bank", {"pe": 12.0, "pb": 2.0, "ev_ebitda": 9.0}, {"roe": 15.0}, {"opm": 30.0})
+    assert [r["label"] for r in lender["rows"]] == ["P/E", "P/B", "ROE %"]  # EV/EBITDA and an operating margin do not describe a lender
+    assert page._industry_block(dict(INDUSTRY, values={"pe": -4.0}), "indas", {"pe": 12.0}, {}, {})["rows"] == []  # a non-positive industry multiple is no benchmark

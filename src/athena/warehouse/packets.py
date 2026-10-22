@@ -27,10 +27,14 @@ def _close(day: date) -> datetime:
 
 
 def build_packets(
-    warehouse: Warehouse, now: datetime, on_progress: Callable[[str], None] = lambda text: None, symbols: list[str] | None = None
+    warehouse: Warehouse,
+    now: datetime,
+    on_progress: Callable[[str], None] = lambda text: None,
+    symbols: list[str] | None = None,
+    industry: Callable[[str, date], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     """Technical packets for every stock and ETF with enough recent prices; fundamentals packets for every stock whose statements
-    are held. Returns what was built and why anything was left out."""
+    are held. `industry(symbol, day)` (optional) gives a stock's industry benchmarks for its fundamentals packet. Returns what was built and why anything was left out."""
     last = warehouse.last_loaded_day()
     summary: dict[str, Any] = {"technical": 0, "fundamentals": 0, "no_prices": 0, "inactive": 0, "no_statements": 0, "failed": []}
     if last is None:
@@ -67,7 +71,9 @@ def build_packets(
                     age = (now - fetched).days
                     if age > STALE_OK_DAYS:
                         notes.append(f"statements fetched {age} days ago")
-                    fundamentals = build_fundamentals_packet(symbol, _close(day), payload, bars[-1].close, _close(day), index_pe)
+                    fundamentals = build_fundamentals_packet(
+                        symbol, _close(day), payload, bars[-1].close, _close(day), index_pe, industry=industry(symbol, day) if industry else None
+                    )
                     rows.append((symbol, FUNDAMENTALS, day, notes, fundamentals))
                     summary["fundamentals"] += 1
             screen.append(screen_row(symbol, kind, entry["name"] or symbol, day, bars, technical, fundamentals, len(notes), age))

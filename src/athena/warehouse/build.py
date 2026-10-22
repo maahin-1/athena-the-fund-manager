@@ -21,6 +21,7 @@ from athena.warehouse.members import refresh_members
 from athena.warehouse.renames import refresh_renames
 from athena.warehouse.indices import ingest_indices
 from athena.warehouse.ingest import ingest_prices, ingest_universe, ready_through
+from athena.valuation.industry import packet_lookup
 from athena.warehouse.packets import build_packets
 from athena.warehouse.statements import refresh_statements
 from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse
@@ -105,7 +106,7 @@ def run_build(
     step("universe", lambda: ingest_universe(warehouse, *lists(), now))
     if statements_budget and statements_fetch is not None:
         step("statements", lambda: refresh_statements(warehouse, statements_fetch, now, statements_budget), lambda r: not r["stopped"])
-    step("packets", lambda: build_packets(warehouse, now), lambda r: not r["failed"])
+    step("packets", lambda: build_packets(warehouse, now, industry=packet_lookup()), lambda r: not r["failed"])
     return {"ok": all(s["ok"] for s in steps), "steps": steps, "last_loaded_day": str(warehouse.last_loaded_day())}
 
 

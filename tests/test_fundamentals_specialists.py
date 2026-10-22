@@ -16,6 +16,10 @@ from athena.metrics.fundamentals import build_fundamentals_packet
 
 SPECS = {"valuation": VALUATION, "moat_quality": MOAT_QUALITY, "earnings_intelligence": EARNINGS_INTELLIGENCE}
 FULL = build_fundamentals_packet("ACME", NOW, ACME, PRICE, NOW, index_history())
+WITH_INDUSTRY = build_fundamentals_packet(
+    "ACME", NOW, ACME, PRICE, NOW, index_history(),
+    industry={"industry": "Steel", "n_firms": 185, "data_as_of": "2026-01-05", "values": {"pe": 25.0, "pb": 2.5, "roe": 0.09, "operating_margin": 0.09}},
+)
 
 
 def bank_payload():
@@ -53,7 +57,8 @@ def run(spec, packet):
 def test_every_declared_figure_exists_in_a_full_packet_and_critical_and_optional_are_shown():
     for name, spec in SPECS.items():
         declared = set(spec.critical) | set(spec.optional) | set(spec.shows)
-        assert declared <= set(FULL["metrics"]), (name, declared - set(FULL["metrics"]))
+        assert declared <= set(WITH_INDUSTRY["metrics"]), (name, declared - set(WITH_INDUSTRY["metrics"]))  # the industry figures exist once the reference tables are loaded
+        assert not (set(spec.critical) | set(spec.optional)) - set(FULL["metrics"]), name  # but nothing required depends on them
         assert set(spec.critical) | set(spec.optional) <= set(spec.shows), name
         assert spec.critical and not set(spec.critical) & set(spec.optional), name
 

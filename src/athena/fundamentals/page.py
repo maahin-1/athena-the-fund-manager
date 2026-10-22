@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
@@ -148,6 +148,33 @@ def _key_figures(layout: str, price: float | None, shares: float | None, quarter
     return out
 
 
+def _industry_block(industry: Mapping[str, Any], layout: str, market: dict[str, Any], last_year: dict[str, float], ttm_values: dict[str, float | None]) -> dict[str, Any]:
+    """The company set against its Damodaran industry: the same measures worked out the same way on both sides, each row saying whether it is a ratio of the two
+    or a gap in percentage points. A measure the industry table or the company does not give is left out, not zero."""
+    values = industry.get("values", {})
+    lender = layout in ("bank", "finance", "insurer")
+    candidates = [
+        ("P/E", market.get("pe"), values.get("pe"), "x", "ratio", "market cap / TTM net profit, against the industry's total market value over total earnings"),
+        ("P/B", market.get("pb"), values.get("pb"), "x", "ratio", "price / book value"),
+        ("EV/EBITDA", None if lender else market.get("ev_ebitda"), values.get("ev_ebitda"), "x", "ratio", "enterprise value / operating profit before depreciation"),
+        ("ROE %", last_year.get("roe"), None if values.get("roe") is None else values["roe"] * 100, "%", "gap", "net profit / (equity capital + reserves), latest financial year"),
+        ("Operating margin % (before depreciation)", None if lender else ttm_values.get("opm"), None if values.get("ebitda_margin") is None else values["ebitda_margin"] * 100,
+         "%", "gap", "TTM operating profit / sales, against the industry's EBITDA / sales"),
+    ]
+    rows = []
+    for label, mine, theirs, unit, how, note in candidates:
+        if mine is None or theirs is None:
+            continue
+        if how == "ratio" and theirs <= 0:
+            continue
+        rows.append({"label": label, "company": mine, "industry": theirs, "unit": unit, "relation": how, "compare": mine / theirs if how == "ratio" else mine - theirs, "how": note})
+    return {
+        "name": industry.get("industry"), "method": industry.get("mapping_method"), "confidence": industry.get("mapping_confidence"), "n_firms": industry.get("n_firms"),
+        "data_as_of": industry.get("data_as_of"), "flags": list(industry.get("flags", [])), "rows": rows,
+        "source": "Damodaran Online (pages.stern.nyu.edu/~adamodar), India industry tables",
+    }
+
+
 def _shareholding(held: dict[date, dict[str, tuple[float, float | None]]]) -> dict[str, Any]:
     """Each holder group's share of the company in percent, by quarter (oldest first), and the number of shareholders. A group a quarter does not
     report is None."""
@@ -182,7 +209,13 @@ def _documents(store: FundamentalsStore, symbol: str, table: dict[str, tuple[his
 
 
 def build_page(
-    store: FundamentalsStore, symbol: str, basis: str, price: float | None, price_note: str = "", table: dict[str, tuple[history.Predecessor, ...]] | None = None
+    store: FundamentalsStore,
+    symbol: str,
+    basis: str,
+    price: float | None,
+    price_note: str = "",
+    table: dict[str, tuple[history.Predecessor, ...]] | None = None,
+    industry: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     table = history.PREDECESSORS if table is None else table
     income = history.lines(store, symbol, basis, "income", table)
@@ -233,6 +266,7 @@ def build_page(
     held = sorted({*income, *balance_raw})
     coverage = {"periods": len(held), "first": held[0][1], "last": held[-1][1]} if held else None
     last_year = year_ratio[years[-1]] if years else {}
+    market = ratios.market_ratios(price, company.get("shares"), quarters, fy_income, balance[max(balance)]) if price is not None and balance else {}
     return {
         "symbol": symbol, "name": company.get("name") or symbol, "layout": layout, "basis": basis, "bases": history.bases(store, symbol, table), "history": history.used(store, symbol, basis, table),
         "as_of": _iso(max([*quarters, *fy_income])) if (quarters or fy_income) else None,
@@ -245,11 +279,23 @@ def build_page(
         },
         "ratios": {"ends": [_iso(e) for e in years], "rows": ratio_rows},
         "growth": growth,
+        "industry": _industry_block(industry, layout, market, last_year, ttm_values) if industry else None,
         "documents": _documents(store, symbol, table),
         "shareholding": _shareholding(history.holdings(store, symbol, table)),
         "coverage": {"periods": coverage["periods"], "first": _iso(coverage["first"]), "last": _iso(coverage["last"])} if coverage else None,
         "gaps": gaps,
     }
+
+
+def _industry_for(symbol: str, path: str | None) -> dict[str, Any] | None:
+    """The company's industry benchmarks from the reference store, or None when there is no store, no mapping or the store cannot be read (the page then has no industry block)."""
+    from athena.valuation.industry import packet_lookup
+
+    try:
+        find = packet_lookup(path) if path else packet_lookup()
+        return find(symbol, date.today()) if find else None
+    except Exception:  # a locked or half-written reference file must not take the page down
+        return None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -259,10 +305,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--price", type=float, default=None)
     parser.add_argument("--price-note", default="")
     parser.add_argument("--store", default=str(DEFAULT_PATH))
+    parser.add_argument("--reference", default=None, help="the reference store with the industry tables (default .athena/reference.duckdb; left out when absent)")
     args = parser.parse_args(argv)
+    symbol = args.symbol.upper()
     try:
+        industry = _industry_for(symbol, args.reference)
         with open_read(args.store) as store:
-            doc = build_page(store, args.symbol.upper(), args.basis, args.price, args.price_note)
+            doc = build_page(store, symbol, args.basis, args.price, args.price_note, industry=industry)
     except AthenaError as exc:
         doc = {"symbol": args.symbol.upper(), "basis": args.basis, "error": str(exc), "busy": True}
     sys.stdout.write(json.dumps(doc, allow_nan=False))  # ASCII with escapes: a Windows pipe uses a legacy code page, and raw non-ASCII text is then not valid UTF-8 for the server

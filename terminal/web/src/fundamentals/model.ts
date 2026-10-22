@@ -27,6 +27,29 @@ export interface DocLink {
   size: string;
 }
 
+export interface IndustryRow {
+  label: string;
+  company: number;
+  industry: number;
+  unit: string;
+  /** `ratio`: compare = company / industry; `gap`: compare = company - industry, in percentage points. */
+  relation: 'ratio' | 'gap';
+  compare: number;
+  how: string;
+}
+
+/** The company set against its Damodaran industry (see `athena.fundamentals.page`). */
+export interface IndustryBlock {
+  name: string;
+  method: string | null;
+  confidence: number | null;
+  n_firms: number | null;
+  data_as_of: string | null;
+  flags: string[];
+  rows: IndustryRow[];
+  source: string;
+}
+
 export interface FundPage {
   symbol: string;
   name: string;
@@ -41,6 +64,8 @@ export interface FundPage {
   annual: { ends: string[]; income: Row[]; balance: Row[]; cashflow: Row[]; banking: Row[] };
   ratios: { ends: string[]; rows: Row[] };
   growth: GrowthTable[];
+  /** Absent when the reference tables are not loaded or the company has no industry in them. */
+  industry?: IndustryBlock | null;
   /** Links to the exchange's own copies: annual reports, investor-call items and other announcements. */
   documents: { annual_reports: DocLink[]; concalls: DocLink[]; announcements: DocLink[] };
   /** Each holder group's share in percent by quarter, and the number of shareholders. */

@@ -65,6 +65,50 @@ class Statements:
         return _periods(self.quarterly.get("income", {}).get(line, {}))
 
 
+# (industry key, own metric, name of the industry figure, name of the comparison, "ratio" = own / industry or "gap" = own - industry, unit, lenders too)
+INDUSTRY_COMPARISONS = (
+    ("pe", "pe_trailing", "industry_pe", "pe_vs_industry", "ratio", "ratio", True),
+    ("pb", "pb", "industry_pb", "pb_vs_industry", "ratio", "ratio", True),
+    ("roe", "roe_latest", "industry_roe", "roe_vs_industry", "gap", "fraction", True),
+    ("operating_margin", "operating_margin_latest", "industry_operating_margin", "operating_margin_vs_industry", "gap", "fraction", False),
+)
+
+
+def _industry_metrics(metrics: dict[str, dict[str, Any]], reasons: dict[str, str], groups: dict[str, str], industry: Mapping[str, Any], lender: bool) -> None:
+    """Add the industry's figure and the stock against it. Each is computed in code from the benchmark table and the stock's own figure; one that cannot be is listed
+    in `missing` with the reason."""
+    values = industry.get("values", {})
+    source = f"Damodaran India industry table for {industry.get('industry')} ({industry.get('n_firms')} firms, dated {industry.get('data_as_of')})"
+    for key, own, industry_name, compare_name, how, unit, lenders_too in INDUSTRY_COMPARISONS:
+        groups[industry_name] = groups[compare_name] = VALUATION if key in ("pe", "pb") else QUALITY
+        if lender and not lenders_too:
+            reasons[industry_name] = reasons[compare_name] = LENDER_REASON
+            continue
+        benchmark = values.get(key)
+        if benchmark is None:
+            reasons[industry_name] = reasons[compare_name] = f"the industry table gives no {key} for {industry.get('industry')}"
+            continue
+        metrics[industry_name] = {
+            "value": round(float(benchmark), 4), "unit": unit if how == "ratio" else "fraction", "inputs": [key], "window": str(industry.get("data_as_of")),
+            "source": source, "group": groups[industry_name],
+        }
+        if own not in metrics:
+            reasons[compare_name] = f"{own} is not available"
+            continue
+        mine = float(metrics[own]["value"])
+        if how == "ratio":
+            if benchmark <= 0:
+                reasons[compare_name] = "the industry figure is not positive"
+                continue
+            value, note = mine / benchmark, f"{own} over the industry figure: above 1 is dearer than the industry"
+        else:
+            value, note = mine - float(benchmark), f"{own} minus the industry figure: above 0 is better than the industry"
+        metrics[compare_name] = {
+            "value": round(value, 4), "unit": unit, "inputs": [own, industry_name], "window": str(industry.get("data_as_of")), "source": source,
+            "group": groups[compare_name], "note": note,
+        }
+
+
 def _need(condition: bool, message: str) -> None:
     if not condition:
         raise InsufficientData(message)
@@ -109,8 +153,12 @@ def build_fundamentals_packet(
     price: float | None,
     now: datetime,
     index_history: Mapping[date, Mapping[str, float]] | None = None,
+    industry: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Valuation, quality and earnings figures for one stock, in the metrics-packet shape (TRD section 3).
+
+    `industry` (optional) is the industry benchmarks of the stock as `IndustryContext.as_packet()` gives them; the packet then also holds the industry figure and the
+    stock against it for P/E, P/B, return on equity and operating margin.
 
     Every figure is computed here from the stored statements; one that cannot be computed (too few periods, a
     lender where the ratio has no meaning, a missing price) is listed in `missing` with the reason."""
@@ -420,6 +468,9 @@ def build_fundamentals_packet(
 
     attempt("days_to_next_earnings", EARNINGS, "days", ["earnings calendar"], days_to_next)
 
+    if industry is not None:
+        _industry_metrics(metrics, reasons, groups, industry, st.is_financial)
+
     annual_dates = [day for day, _ in st.annual_series("income", "Total Revenue")]
     quarter_dates = [day for day, _ in st.quarterly_series("Total Revenue")]
     flags = list(payload.get("quality_flags", [])) + stale_statement_flags(annual_dates, quarter_dates, ist_date(now))
@@ -431,6 +482,7 @@ def build_fundamentals_packet(
         "latest_annual_period": annual_dates[-1].isoformat() if annual_dates else None,
         "latest_quarter": quarter_dates[-1].isoformat() if quarter_dates else None,
         "data_quality_flags": flags,
+        "industry": dict(industry) if industry is not None else None,
         "metrics": metrics,
         "missing": list(reasons),
         "missing_reasons": reasons,

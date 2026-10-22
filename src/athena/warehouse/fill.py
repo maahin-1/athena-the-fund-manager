@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from athena.clock import utc_now
+from athena.valuation.industry import packet_lookup
 from athena.warehouse.packets import build_packets
 from athena.warehouse.statements import GAP_SECONDS, has_statements, queue
 from athena.warehouse.warehouse import DEFAULT_PATH, STATEMENT_EMPTY, STATEMENT_ERROR, STATEMENT_OK, Warehouse
@@ -158,7 +159,7 @@ def run_fill(
     if build_after:
         try:
             with Warehouse(db_path, wait_seconds=DB_WAIT_SECONDS, sleep=sleep) as warehouse:
-                packets = build_packets(warehouse, clock())
+                packets = build_packets(warehouse, clock(), industry=packet_lookup())
         except Exception as exc:  # the statements are saved; the nightly build makes the packets
             on_progress(f"packets not rebuilt: {_message(exc)}")
     ended = clock()
