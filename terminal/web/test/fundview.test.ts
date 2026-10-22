@@ -67,7 +67,7 @@ describe('fundamentals page', () => {
     expect(text).toContain('Tata Consultancy Services');
     expect(text).toContain('₹ 11,58,400 Cr');
     const sections = [...v.element.querySelectorAll('[data-section]')].map((s) => (s as HTMLElement).dataset.section);
-    expect(sections).toEqual(['Peers', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents']);
+    expect(sections).toEqual(['Peers', 'Valuation', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Shareholding', 'Documents']);
     const pl = v.element.querySelector('[data-section="Profit & Loss"]')!;
     expect(pl.textContent).toContain('2,67,021');
     expect(pl.textContent).toContain('2,83,248'); // the TTM column

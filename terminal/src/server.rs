@@ -349,6 +349,15 @@ async fn api_fund(State(state): State<AppState>, Path(symbol): Path<String>, Que
     }
 }
 
+/// One company's value range, cost of capital and assumptions (see `athena.valuation.page`).
+async fn api_valuation(State(state): State<AppState>, Path(symbol): Path<String>, Query(q): Query<FundQuery>) -> Response {
+    let basis = q.basis.unwrap_or_else(|| "consolidated".to_string());
+    match state.fundamentals.valuation(&symbol.to_ascii_uppercase(), &basis).await {
+        Ok(doc) => Json(doc).into_response(),
+        Err(e) => fund_error(e),
+    }
+}
+
 /// The same company as an Excel workbook.
 async fn api_fund_export(State(state): State<AppState>, Path(symbol): Path<String>, Query(q): Query<FundQuery>) -> Response {
     let basis = q.basis.unwrap_or_else(|| "consolidated".to_string());
@@ -708,6 +717,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/fund-fetch", get(fund_fetch_status))
         .route("/api/fund-fetch/:symbol", axum::routing::post(fund_fetch_start))
         .route("/api/fund/:symbol", get(api_fund))
+        .route("/api/valuation/:symbol", get(api_valuation))
         .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
@@ -1150,6 +1160,10 @@ mod tests {
         assert_eq!(client.get(format!("{base}/fund/TCS")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         assert_eq!(client.get(format!("{base}/fund/TCS")).send().await.unwrap().status(), 502); // the stand-in program does not exist
         assert_eq!(client.get(format!("{base}/fund-status")).send().await.unwrap().status(), 404); // no store in this test
+        assert_eq!(client.get(format!("{base}/valuation/a;b")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/valuation/TCS?basis=both")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/valuation/TCS")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        assert_eq!(client.get(format!("{base}/valuation/TCS")).send().await.unwrap().status(), 502); // no valuation module is configured in this test
         stop.cancel();
     }
 

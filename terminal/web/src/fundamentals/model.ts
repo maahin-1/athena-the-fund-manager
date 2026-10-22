@@ -50,6 +50,52 @@ export interface IndustryBlock {
   source: string;
 }
 
+/** One case of the value range. A lender's case carries its returns on equity; an operating company's its growth and margin. */
+export interface ValuationCase {
+  name: string;
+  value: number;
+  growth: number | null;
+  margin: number | null;
+  cost: number | null;
+  roe: number | null;
+  stable_roe: number | null;
+}
+
+/** The document `/api/valuation/:symbol` returns (see `athena.valuation.page`). Money is rupees per share; rates are fractions. */
+export interface ValuationDoc {
+  symbol: string;
+  basis: string;
+  ok: boolean;
+  model: 'fcff' | 'excess_return' | 'unsupported';
+  missing: string[];
+  price: number | null;
+  price_note?: string;
+  industry: string | null;
+  low?: number;
+  base?: number;
+  high?: number;
+  price_to_base?: number | null;
+  scenarios: ValuationCase[];
+  implied_growth?: number | null;
+  implied_margin?: number | null;
+  company_growth?: number | null;
+  industry_growth?: number | null;
+  justified_price_to_book?: number | null;
+  grid?: { growth: number[]; margin: number[]; values: (number | null)[][] } | null;
+  cost_of_capital?: {
+    firm_kind: string;
+    rating: string | null;
+    unlevered_beta: number;
+    levered_beta: number;
+    riskfree_inr: number;
+    inr: { cost_of_equity: number; pre_tax_cost_of_debt: number; cost_of_capital: number };
+    low: number | null;
+    high: number | null;
+  } | null;
+  assumptions?: string[];
+  flags?: string[];
+}
+
 export interface FundPage {
   symbol: string;
   name: string;

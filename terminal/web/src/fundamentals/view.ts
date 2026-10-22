@@ -4,17 +4,25 @@ import { pct, price, signed } from '../format';
 import { el, type AppContext } from '../panels/base';
 import { makePriceChart, type PriceChart } from './chartbox';
 import { periodLabel } from './format';
-import type { DocLink, FundPage } from './model';
+import type { DocLink, FundPage, ValuationDoc } from './model';
 import { industryNotes, industryTable } from './industry';
 import { PeerBox } from './peerbox';
 import { growthBlocks, keyBlocks, tableFrom, type Table } from './tables';
+import { valuationBlock } from './valuation';
 
 const LINK_GROUP = 'blue' as const; // the page follows the blue link group, like the Research page
-const SECTIONS = ['Peers', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Industry', 'Shareholding', 'Documents'] as const;
+const SECTIONS = ['Peers', 'Valuation', 'Quarterly Results', 'Profit & Loss', 'Balance Sheet', 'Cash Flows', 'Ratios', 'Industry', 'Shareholding', 'Documents'] as const;
 type Basis = 'consolidated' | 'standalone';
 
 export interface ViewOptions {
   makeChart?: () => PriceChart;
+  /** Fetch the valuation document; tests give their own. Null is "no document" (the section then says so). */
+  fetchValuation?: (symbol: string, basis: string) => Promise<ValuationDoc | null>;
+}
+
+async function fetchValuationDoc(symbol: string, basis: string): Promise<ValuationDoc | null> {
+  const r = await fetch(`/api/valuation/${encodeURIComponent(symbol)}?basis=${basis}`);
+  return r.ok ? ((await r.json()) as ValuationDoc) : null;
 }
 
 const ARCHIVE = 'https://nsearchives.nseindia.com/';
@@ -98,8 +106,10 @@ export class FundamentalsView {
   private offQuotes: (() => void) | null = null;
   private offLink: (() => void) | null = null;
   private offList: (() => void) | null = null;
+  private fetchValuation: (symbol: string, basis: string) => Promise<ValuationDoc | null>;
 
   constructor(private ctx: AppContext, options: ViewOptions = {}) {
+    this.fetchValuation = options.fetchValuation ?? fetchValuationDoc;
     this.element.hidden = true;
     this.chart = (options.makeChart ?? makePriceChart)();
     this.peerBox = new PeerBox(ctx);
@@ -296,6 +306,9 @@ export class FundamentalsView {
     if (note) this.body.append(el('div', 'note', note));
     this.peerBox.show(page.symbol);
     this.body.append(this.keyGrid(page), this.chartCard(page), this.peerBox.element);
+    const valuation = this.section('Valuation', el('div', 'note', 'Working out the value range…'), true);
+    this.body.append(valuation);
+    void this.loadValuation(page, valuation);
     this.body.append(
       this.section('Quarterly Results', drawTable(tableFrom(page.quarters.ends, page.quarters.rows)), page.quarters.rows.length > 0),
       this.section('Profit & Loss', this.plBlock(page), page.annual.income.length > 0),
@@ -391,6 +404,18 @@ export class FundamentalsView {
     card.dataset.section = name;
     card.append(el('h3', '', name), present ? content : el('div', 'note', `No ${name.toLowerCase()} are stored for this company yet.`));
     return card;
+  }
+
+  /** Fill the Valuation section once its document arrives, unless the person has moved to another company or basis meanwhile. */
+  private async loadValuation(page: FundPage, card: HTMLElement): Promise<void> {
+    const content = card.querySelector('.note, .fvaluation');
+    try {
+      const doc = await this.fetchValuation(page.symbol, page.basis);
+      if (this.symbol !== page.symbol || this.basis !== page.basis) return;
+      content?.replaceWith(doc ? valuationBlock(doc) : el('div', 'note', 'The valuation could not be worked out for this company just now.'));
+    } catch {
+      if (this.symbol === page.symbol) content?.replaceWith(el('div', 'note', 'The valuation could not be loaded.'));
+    }
   }
 
   private industryBlock(page: FundPage): HTMLElement {

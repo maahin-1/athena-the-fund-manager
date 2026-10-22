@@ -18,7 +18,7 @@ from athena.contracts import AthenaError
 from athena.fundamentals.store import DEFAULT_PATH as FUNDAMENTALS, open_read
 from athena.reference.store import DEFAULT_PATH as REFERENCE, ReferenceStore
 from athena.valuation import industry as ind
-from athena.valuation import inputs, wacc
+from athena.valuation import inputs, scenarios, wacc
 
 WAREHOUSE = Path(".athena") / "warehouse.duckdb"
 SANE_COST_OF_CAPITAL = (0.06, 0.30)  # a rupee cost of capital outside this is listed for a look, not hidden
@@ -65,6 +65,42 @@ def cmd_cost(args: argparse.Namespace) -> int:
     return 0
 
 
+def value_one(fund, ref: ReferenceStore, symbol: str, price: float | None, basis: str, today: date) -> scenarios.ValuationRange | None:
+    company = inputs.load_company_inputs(fund, symbol, basis, price)
+    if company is None and basis == "consolidated":
+        company = inputs.load_company_inputs(fund, symbol, "standalone", price)
+    if company is None:
+        return None
+    industry = ind.lookup(ref, symbol, today)
+    capital = wacc.company_cost_of_capital(ref, company, industry, today)
+    return scenarios.value_company(ref, company, industry, capital, today)
+
+
+def cmd_value(args: argparse.Namespace) -> int:
+    symbol = args.symbol.upper()
+    today = date.today()
+    price = args.price if args.price is not None else prices(Path(args.warehouse)).get(symbol)
+    with open_read(args.fundamentals) as fund, ReferenceStore(args.reference, read_only=True) as ref:
+        got = value_one(fund, ref, symbol, price, args.basis, today)
+    if got is None:
+        print(f"{symbol}: no statements stored", file=sys.stderr)
+        return 2
+    print(f"{symbol} on {today}: price {price}; model {got.model}")
+    if not got.ok:
+        print("no value; " + "; ".join(got.missing))
+        return 1
+    print(f"value per share: low {got.low:,.1f}  base {got.base:,.1f}  high {got.high:,.1f}   price/base {got.price_to_base:.2f}")
+    for s in got.scenarios:
+        print(f"  {s.name:5} {s.value_per_share:12,.1f}  growth {s.growth}  margin {s.target_margin}  cost {s.cost_of_capital}  roe {s.roe}")
+    if got.implied_growth is not None:
+        print(f"the price implies revenue growth of {got.implied_growth:.1%} a year for 5 years (company {got.company_growth}, industry {got.industry_growth})")
+    if got.justified_price_to_book is not None:
+        print(f"justified price to book {got.justified_price_to_book:.2f}")
+    for line in (*got.assumptions, *got.flags):
+        print("  - " + line)
+    return 0
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     today = date.today()
     close = prices(Path(args.warehouse))
@@ -95,6 +131,38 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audit_value(args: argparse.Namespace) -> int:
+    today = date.today()
+    close = prices(Path(args.warehouse))
+    models: Counter[str] = Counter()
+    why: Counter[str] = Counter()
+    ratios_: list[float] = []
+    wide: list[tuple[str, float]] = []
+    with open_read(args.fundamentals) as fund, ReferenceStore(args.reference, read_only=True) as ref:
+        symbols = [r[0] for r in fund._con.execute("SELECT symbol FROM companies ORDER BY symbol").fetchall()]
+        for symbol in symbols:
+            got = value_one(fund, ref, symbol, close.get(symbol), args.basis, today)
+            if got is None:
+                why["no statements"] += 1
+            elif not got.ok:
+                why[(got.missing[0] if got.missing else "unknown")[:90]] += 1
+            else:
+                models[got.model] += 1
+                if got.price_to_base is not None:
+                    ratios_.append(got.price_to_base)
+                if got.high and got.low and got.base and got.base > 0 and (got.high - got.low) / got.base > 3.0:
+                    wide.append((symbol, (got.high - got.low) / got.base))
+    print(f"companies {len(symbols)}; valued {sum(models.values())} {dict(models)}")
+    if ratios_:
+        q = statistics.quantiles(ratios_, n=10)
+        print(f"price / base value: 10% {q[0]:.2f}  25% {statistics.quantiles(ratios_, n=4)[0]:.2f}  median {statistics.median(ratios_):.2f}  75% {statistics.quantiles(ratios_, n=4)[2]:.2f}  90% {q[8]:.2f}")
+    print(f"range wider than three times the base value: {len(wide)}")
+    print("why not valued:")
+    for reason, count in why.most_common(10):
+        print(f"  {count:5d}  {reason}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m athena.valuation", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--fundamentals", default=str(FUNDAMENTALS))
@@ -106,7 +174,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     cost.add_argument("symbol")
     cost.add_argument("--price", type=float, default=None)
     cost.set_defaults(run=cmd_cost)
+    value = sub.add_parser("value")
+    value.add_argument("symbol")
+    value.add_argument("--price", type=float, default=None)
+    value.set_defaults(run=cmd_value)
     sub.add_parser("audit").set_defaults(run=cmd_audit)
+    sub.add_parser("audit-value").set_defaults(run=cmd_audit_value)
     args = parser.parse_args(argv)
     try:
         return args.run(args)

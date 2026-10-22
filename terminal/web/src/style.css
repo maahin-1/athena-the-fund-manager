@@ -653,3 +653,12 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 .obj-btn { background: none; color: var(--fg-dim); border: none; font: inherit; cursor: pointer; padding: 2px; }
 .obj-btn.on { color: var(--label); }
 .obj-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* the Valuation section: a range bar with the base value and the price on it */
+.fvaluation { display: flex; flex-direction: column; gap: 8px; }
+.fval-head { font-size: 16px; font-weight: 600; }
+.fval-bar { position: relative; height: 22px; margin: 6px 0; background: var(--panel-2, #1b2230); border-radius: 4px; }
+.fval-span { position: absolute; top: 7px; height: 8px; background: var(--accent, #3b82f6); opacity: 0.55; border-radius: 4px; }
+.fval-base { position: absolute; top: 3px; width: 2px; height: 16px; background: var(--fg, #e5e7eb); }
+.fval-price { position: absolute; top: 0; width: 3px; height: 22px; background: #f59e0b; }
+.fval-implied { color: var(--muted, #9ca3af); }

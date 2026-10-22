@@ -27,6 +27,7 @@ FIELDS: dict[str, str] = {
     "net_margin": "margin.net_margin",
     "fundamental_growth": "fundgr.fundamental_growth",
     "revenue_cagr_5y": "histgr.cagr_in_revenues_last_5_years",
+    "expected_revenue_growth_5y": "histgr.expected_growth_in_revenues_next_5_years",
     "sales_to_capital": "capex.sales_invested_capital_ltm",
     "reinvestment_rate": "fundgrEB.reinvestment_rate",
     "tax_rate": "taxrate.aggregate_tax_rate",

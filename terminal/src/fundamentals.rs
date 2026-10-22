@@ -38,6 +38,8 @@ pub struct FundamentalsJobs {
     /// Program and leading arguments; the symbol and options follow.
     page: Vec<String>,
     export: Vec<String>,
+    /// The valuation module (`athena.valuation.page`); empty when it is not configured.
+    valuation: Vec<String>,
     warehouse: PathBuf,
     store: PathBuf,
     slots: Semaphore,
@@ -46,12 +48,17 @@ pub struct FundamentalsJobs {
 
 impl FundamentalsJobs {
     pub fn new(page: Vec<String>, export: Vec<String>, warehouse: PathBuf, store: PathBuf) -> Self {
-        FundamentalsJobs { page, export, warehouse, store, slots: Semaphore::new(AT_ONCE), counter: AtomicU64::new(0) }
+        FundamentalsJobs { page, export, valuation: Vec::new(), warehouse, store, slots: Semaphore::new(AT_ONCE), counter: AtomicU64::new(0) }
+    }
+
+    pub fn with_valuation(mut self, valuation: Vec<String>) -> Self {
+        self.valuation = valuation;
+        self
     }
 
     pub fn standard(python: &str, warehouse: PathBuf, store: PathBuf) -> Self {
         let module = |m: &str| vec![python.to_string(), "-m".into(), m.into()];
-        Self::new(module("athena.fundamentals.page"), module("athena.fundamentals.export"), warehouse, store)
+        Self::new(module("athena.fundamentals.page"), module("athena.fundamentals.export"), warehouse, store).with_valuation(module("athena.valuation.page"))
     }
 
     /// The last close the warehouse holds for a stock and a note saying which day it is from; `None` for an index or an unknown symbol.
@@ -100,6 +107,32 @@ impl FundamentalsJobs {
             return Err(FundError::Failed("the page builder failed".into()));
         }
         let doc: Value = serde_json::from_slice(&output.stdout).map_err(|_| FundError::Failed("the page builder gave an unreadable answer".into()))?;
+        if doc["busy"] == true {
+            return Err(FundError::Busy);
+        }
+        if doc["error"] == "no statements stored" {
+            return Err(FundError::NoData);
+        }
+        Ok(doc)
+    }
+
+    /// The valuation document for one company (`athena.valuation.page`): a value range, the cost of capital and the assumptions behind them.
+    pub async fn valuation(&self, symbol: &str, basis: &str) -> Result<Value, FundError> {
+        Self::check(symbol, basis)?;
+        if self.valuation.is_empty() {
+            return Err(FundError::Failed("the valuation module is not configured".into()));
+        }
+        let _slot = self.slots.acquire().await.map_err(|_| FundError::Busy)?;
+        let mut cmd = self.command(&self.valuation, symbol, basis);
+        cmd.stdout(Stdio::piped());
+        let output = tokio::time::timeout(LIMIT, async { cmd.spawn()?.wait_with_output().await })
+            .await
+            .map_err(|_| FundError::Failed("the valuation took longer than 30 seconds and was stopped".into()))?
+            .map_err(|_| FundError::Failed("could not start the valuation".into()))?;
+        if !output.status.success() {
+            return Err(FundError::Failed("the valuation failed".into()));
+        }
+        let doc: Value = serde_json::from_slice(&output.stdout).map_err(|_| FundError::Failed("the valuation gave an unreadable answer".into()))?;
         if doc["busy"] == true {
             return Err(FundError::Busy);
         }
@@ -256,6 +289,21 @@ else:
         assert_eq!(jobs.page("LOCKED", "consolidated").await, Err(FundError::Busy));
         assert_eq!(jobs.page("BROKEN", "consolidated").await, Err(FundError::Failed("the page builder failed".into())));
         assert_eq!(jobs.page("GARBAGE", "consolidated").await, Err(FundError::Failed("the page builder gave an unreadable answer".into())));
+    }
+
+    #[tokio::test]
+    async fn the_valuation_runs_its_own_module_with_the_same_arguments_and_is_refused_when_not_configured() {
+        let Some(jobs) = fake(ECHO, warehouse("valuation")) else { return };
+        assert_eq!(jobs.valuation("TCS", "consolidated").await, Err(FundError::Failed("the valuation module is not configured".into())));
+        let prefix = vec![python().unwrap(), "-c".into(), ECHO.into()];
+        let jobs = jobs.with_valuation(prefix);
+        let doc = jobs.valuation("TCS", "standalone").await.unwrap();
+        let args: Vec<String> = doc["args"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+        assert_eq!(&args[..3], ["TCS", "--basis", "standalone"]);
+        assert!(args.windows(2).any(|w| w == ["--price", "3200.5"]));
+        assert_eq!(jobs.valuation("MISSING", "consolidated").await, Err(FundError::NoData));
+        assert_eq!(jobs.valuation("a;b", "consolidated").await, Err(FundError::BadSymbol));
+        assert_eq!(jobs.valuation("BROKEN", "consolidated").await, Err(FundError::Failed("the valuation failed".into())));
     }
 
     #[tokio::test]

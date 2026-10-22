@@ -43,6 +43,9 @@ class CompanyInputs:
     market_cap: float | None  # crore
     invested_capital: float | None  # book equity + borrowings - cash and bank balances
     missing: tuple[str, ...] = field(default_factory=tuple)
+    roe_3y_average: float | None = None  # fraction: the mean of up to the last three financial years
+    book_growth_3y: float | None = None  # compound annual growth of book equity over three years
+    book_value_per_share: float | None = None  # rupees
 
 
 def _flow(quarters: dict[date, dict[str, float]], fy: dict[date, dict[str, float]], key: str) -> tuple[float | None, str]:
@@ -53,6 +56,27 @@ def _flow(quarters: dict[date, dict[str, float]], fy: dict[date, dict[str, float
         latest = max(fy)
         return fy[latest].get(key), f"FY{latest.year}"
     return None, ""
+
+
+def _fraction(percent: float | None) -> float | None:
+    """`ratios.compounded` gives percent; the inputs keep fractions."""
+    return None if percent is None else percent / 100.0
+
+
+def _book_growth(equity: dict[date, float], year_ends: list[date]) -> float | None:
+    """Compound annual growth of book equity between the latest financial year-end that has a balance sheet and the one up to three years before it (fewer when the older
+    ones are not held). Banks file half-yearly balance sheets, so only financial year-ends are compared."""
+    held = [e for e in year_ends if e in equity and equity[e] > 0]
+    if len(held) < 2:
+        return None
+    latest = held[-1]
+    earlier = next((e for e in held if 2.5 < (latest - e).days / 365.25 <= 3.1), None) or next((e for e in held if 1.5 < (latest - e).days / 365.25 <= 2.1), None) or next(
+        (e for e in held if 0.5 < (latest - e).days / 365.25 <= 1.1), None
+    )
+    if earlier is None:
+        return None
+    years = round((latest - earlier).days / 365.25)
+    return (equity[latest] / equity[earlier]) ** (1 / years) - 1
 
 
 def _crore(value: float | None) -> float | None:
@@ -105,10 +129,15 @@ def load_company_inputs(
     }
     required = {"price": price, "shares": shares, "effective_tax_rate": effective, **{k: figures[k] for k in ("revenue", "ebit", "interest", "book_equity", "borrowings", "cash_and_bank")}}
     missing = tuple(name for name, value in required.items() if value is None)
+    equity_by_year = {end: bal["equity_capital"] + bal["reserves"] for end, bal in balance.items() if "equity_capital" in bal and "reserves" in bal}
+    roes = [r for r in (ratios.year_ratios(company.get("layout") or "indas", fy[e], balance.get(e, {}), cash.get(e, {})).get("roe") for e in sorted(fy)[-3:]) if r is not None]
+    book_growth = _book_growth(equity_by_year, sorted(fy))
     return CompanyInputs(
         symbol=symbol, basis=basis, layout=company.get("layout") or "indas", period_end=latest_period, flow_basis=flow_basis, price=price, shares=shares,
         revenue=figures["revenue"], operating_profit=figures["operating_profit"], depreciation=figures["depreciation"], ebit=figures["ebit"], interest=figures["interest"],
-        pbt=figures["pbt"], tax=figures["tax"], net_profit=figures["net_profit"], effective_tax_rate=effective, revenue_cagr_3y=ratios.compounded(fy, "sales", 3),
+        pbt=figures["pbt"], tax=figures["tax"], net_profit=figures["net_profit"], effective_tax_rate=effective, revenue_cagr_3y=_fraction(ratios.compounded(fy, "sales", 3)),
         book_equity=figures["book_equity"], borrowings=figures["borrowings"], cash_and_bank=figures["cash_and_bank"], investments=figures["investments"],
         minority=figures["minority"], capex=figures["capex"], market_cap=market_cap, invested_capital=figures["invested_capital"], missing=missing,
+        roe_3y_average=sum(roes) / len(roes) / 100.0 if roes else None, book_growth_3y=book_growth,
+        book_value_per_share=equity / shares if equity is not None and shares else None,
     )
