@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from xml.etree import ElementTree
+from defusedxml import ElementTree
 
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore, open_read
 from athena.pit.nse_results import CACHE_DIR
