@@ -116,7 +116,7 @@ class VerdictRunner:
         if self._news is not None:
             with self._warehouse() as warehouse:
                 events = tuple((a.day, a.kind, a.text) for a in joined_actions(warehouse, symbol))
-            builders["news_sentiment"] = news_packet_builder(self._news, lambda _: events, lambda _: None)
+            builders["news_sentiment"] = news_packet_builder(self._news, lambda _: events, lambda _: None, lambda: facts.data_as_of)
         seen: dict[str, Any] = {}
         kinds = {"quant_technical": "technical", "valuation": "fundamentals", "news_sentiment": "news"}
 

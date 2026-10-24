@@ -108,7 +108,10 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE, warehouse: Path | str 
     """Everything wired to real sources: NSE master lists, holidays and index valuation, jugaad-data then Yahoo for
     prices, Yahoo for statements, and whichever LLM providers have keys. Loads into a fresh in-memory store on every
     call."""
-    llm_router = build_router(env_file=env_file)
+    from athena.llm.budget import Meter
+    from athena.llm.cache import ReplyCache
+
+    llm_router = build_router(env_file=env_file, meter=Meter(), cache=ReplyCache())  # every caller shares the monthly ceiling, usage log and cache
     store = DataStore()
     loader = NseMasterLoader(store)
     loader.refresh(EQUITY_DATASET)
