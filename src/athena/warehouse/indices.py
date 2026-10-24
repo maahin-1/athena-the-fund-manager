@@ -33,15 +33,16 @@ def parse_index_file(text: str) -> list[tuple[str, float | None, float | None, f
     missing = [column for column in COLUMNS.values() if column not in header]
     if missing:
         raise SchemaChangedError(f"index file is missing columns {missing}")
-    out = []
+    out: dict[str, tuple] = {}
     for raw in reader:
         row = {key.strip(): (value or "").strip() for key, value in raw.items() if key}
         if not row.get(COLUMNS["name"]):
             continue
-        out.append(
-            (row[COLUMNS["name"]], *(_number(row[COLUMNS[key]]) for key in ("open", "high", "low", "close", "pe", "pb", "div_yield")))
-        )
-    return out
+        entry = (row[COLUMNS["name"]], *(_number(row[COLUMNS[key]]) for key in ("open", "high", "low", "close", "pe", "pb", "div_yield")))
+        held = out.get(entry[0])
+        if held is None or entry[4] is not None or held[4] is None:  # an index listed twice keeps the row with a close, the later one on a tie
+            out[entry[0]] = entry
+    return list(out.values())
 
 
 def ingest_indices(

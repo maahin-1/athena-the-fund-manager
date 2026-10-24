@@ -66,3 +66,11 @@ def test_three_refusals_in_a_row_stop_the_run():
 
 def test_nothing_is_fetched_before_any_price_day_is_loaded():
     assert ingest_indices(Warehouse(":memory:"), lambda url: FILE.encode(), date(2026, 10, 1), NOW)["loaded"] == 0
+
+
+def test_an_index_listed_twice_in_one_file_keeps_the_row_with_a_close():
+    text = FILE + "Nifty 50,09-10-2026,-,-,-,-,0,0,0,0,-,-,-\n" + "Nifty Midcap 150,09-10-2026,1,2,0,1.5,0,0,0,0,10,2,1\n"
+    rows = {r[0]: r for r in parse_index_file(text)}
+    assert len(rows) == 2
+    assert rows["Nifty 50"][4] == 22520.45
+    assert rows["Nifty Midcap 150"][4] == 1.5
