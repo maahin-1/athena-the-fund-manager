@@ -53,7 +53,10 @@ TIERS: dict[str, tuple[tuple[str, str], ...]] = {
         ("openai", "gpt-5.4-mini"),
     ),
 }
-ROLE_TIERS = {"resolver": "cheap", "specialist": "mid", "judge": "strong"}
+# The judge reads one evidence sheet and a debate and writes a decision, so it is worth a paid model; the owner's OpenAI credits pay for it (23 Oct 2026: gpt-5.4 is below the pro models),
+# with the free strong tier behind it if OpenAI refuses. Its calls are counted and capped by `athena.llm.budget`.
+TIERS["judge"] = (("openai", "gpt-5.4"), ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"), ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"))
+ROLE_TIERS = {"resolver": "cheap", "specialist": "mid", "judge": "judge"}
 DEFAULT_TIER = "mid"
 
 
@@ -82,6 +85,12 @@ class FallbackLLM:
                 raise
 
         return call
+
+    @property
+    def last_usage(self) -> dict[str, int]:
+        """Tokens used by the reply that answered last (empty when the provider did not say)."""
+        answered = next((c for c in self.clients if c.name == self.last_source), None)
+        return dict(getattr(answered, "last_usage", {}) or {})
 
     def complete(self, system: str, user: str) -> str:
         result = self._chain.run(system, user, health=self.health)

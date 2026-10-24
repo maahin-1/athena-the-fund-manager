@@ -42,6 +42,7 @@ class OpenAICompatibleClient:
         self._post = post
         self._sleep = sleep
         self.calls = 0
+        self.last_usage: dict[str, int] = {}  # tokens the provider says the last reply used: prompt, completion (reasoning included) and total
 
     @property
     def name(self) -> str:
@@ -110,4 +111,6 @@ class OpenAICompatibleClient:
                 status=status,
                 retryable=status is None or status in RETRYABLE_STATUSES,
             )
+        usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
+        self.last_usage = {k: int(usage[k]) for k in ("prompt_tokens", "completion_tokens", "total_tokens") if isinstance(usage.get(k), (int, float))}
         return choices[0]["message"].get("content") or ""

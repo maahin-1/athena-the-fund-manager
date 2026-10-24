@@ -57,21 +57,23 @@ class Meter:
         if isinstance(limit, int) and self.calls_this_month(tier) >= limit:
             raise BudgetExceeded(f"the {tier} tier has made {self.calls_this_month(tier)} calls this month; your ceiling in {self._budget} is {limit}")
 
-    def record(self, tier: str, source: str, chars_in: int, chars_out: int) -> None:
+    def record(self, tier: str, source: str, chars_in: int, chars_out: int, usage: dict[str, int] | None = None) -> None:
         self._usage.parent.mkdir(parents=True, exist_ok=True)
-        row = {"at": self._clock().isoformat(), "tier": tier, "model": source, "chars_in": chars_in, "chars_out": chars_out}
+        row = {"at": self._clock().isoformat(), "tier": tier, "model": source, "chars_in": chars_in, "chars_out": chars_out, **(usage or {})}
         with self._usage.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row) + "\n")
 
     def summary(self) -> dict[str, dict[str, Any]]:
         month = _month(self._clock())
-        out: dict[str, dict[str, Any]] = defaultdict(lambda: {"calls": 0, "chars_in": 0, "chars_out": 0, "models": defaultdict(int)})
+        out: dict[str, dict[str, Any]] = defaultdict(lambda: {"calls": 0, "chars_in": 0, "chars_out": 0, "prompt_tokens": 0, "completion_tokens": 0, "models": defaultdict(int)})
         for r in self.rows():
             if str(r.get("at", "")).startswith(month):
                 t = out[r["tier"]]
                 t["calls"] += 1
                 t["chars_in"] += int(r.get("chars_in", 0))
                 t["chars_out"] += int(r.get("chars_out", 0))
+                t["prompt_tokens"] += int(r.get("prompt_tokens", 0))
+                t["completion_tokens"] += int(r.get("completion_tokens", 0))
                 t["models"][r.get("model", "")] += 1
         return {tier: {**v, "models": dict(v["models"]), "ceiling": (self.ceilings().get(tier) or {}).get("calls_per_month")} for tier, v in out.items()}
 
@@ -90,10 +92,14 @@ class MeteredLLM:
     def last_source(self) -> str:
         return str(getattr(self._inner, "last_source", ""))
 
+    @property
+    def last_usage(self) -> dict[str, int]:
+        return dict(getattr(self._inner, "last_usage", {}) or {})
+
     def complete(self, system: str, user: str) -> str:
         self._meter.check(self._tier)
         reply = self._inner.complete(system, user)
-        self._meter.record(self._tier, self.last_source, len(system) + len(user), len(reply))
+        self._meter.record(self._tier, self.last_source, len(system) + len(user), len(reply), self.last_usage)
         return reply
 
 
@@ -104,7 +110,8 @@ def main() -> int:
         print("no calls recorded this month")
     for tier, v in sorted(summary.items()):
         limit = "no ceiling" if v["ceiling"] is None else f"ceiling {v['ceiling']}"
-        print(f"{tier}: {v['calls']} calls ({limit}), {v['chars_in']:,} characters sent, {v['chars_out']:,} received; " + ", ".join(f"{m or 'unknown'} x{n}" for m, n in v["models"].items()))
+        tokens = f", {v['prompt_tokens']:,} prompt and {v['completion_tokens']:,} completion tokens" if v["prompt_tokens"] or v["completion_tokens"] else ""
+        print(f"{tier}: {v['calls']} calls ({limit}), {v['chars_in']:,} characters sent, {v['chars_out']:,} received{tokens}; " + ", ".join(f"{m or 'unknown'} x{n}" for m, n in v["models"].items()))
     return 0
 
 

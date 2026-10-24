@@ -48,11 +48,11 @@ def test_when_every_model_fails_the_error_names_each_one():
 
 
 def test_static_router_maps_roles_to_tiers_with_a_default():
-    tiers = {name: FallbackLLM([client(name, FakePost(FakeResponse()))]) for name in ("cheap", "mid", "strong")}
+    tiers = {name: FallbackLLM([client(name, FakePost(FakeResponse()))]) for name in ("cheap", "mid", "strong", "judge")}
     router = StaticRouter(tiers)
     assert router.client_for("resolver") is tiers["cheap"]
     assert router.client_for("specialist") is tiers["mid"]
-    assert router.client_for("judge") is tiers["strong"]
+    assert router.client_for("judge") is tiers["judge"]
     assert router.client_for("something-new") is tiers["mid"]
     with pytest.raises(AthenaError):
         StaticRouter({"cheap": tiers["cheap"]}).client_for("judge")

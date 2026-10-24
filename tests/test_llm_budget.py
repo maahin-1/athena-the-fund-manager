@@ -72,3 +72,15 @@ def test_the_router_hands_out_metered_clients_only_when_given_a_meter(tmp_path):
     inner = Fake()
     assert StaticRouter({"strong": inner}).client_for("judge") is inner
     assert isinstance(StaticRouter({"strong": inner}, meter=meter(tmp_path)).client_for("judge"), MeteredLLM)
+
+
+def test_tokens_the_provider_reports_are_kept_with_each_call_and_summed(tmp_path):
+    class WithUsage(Fake):
+        last_usage = {"prompt_tokens": 3000, "completion_tokens": 300, "total_tokens": 3300}
+
+    m = meter(tmp_path)
+    MeteredLLM(WithUsage(), "judge", m).complete("a", "b")
+    MeteredLLM(WithUsage(), "judge", m).complete("a", "b")
+    MeteredLLM(Fake(), "judge", m).complete("a", "b")  # a provider that does not say adds nothing
+    got = m.summary()["judge"]
+    assert got["calls"] == 3 and got["prompt_tokens"] == 6000 and got["completion_tokens"] == 600
