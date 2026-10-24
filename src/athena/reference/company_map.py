@@ -6,6 +6,8 @@ first, and every row says which pass made it and how sure it is:
   nse_ticker  the NSE symbol is in his list                                   confidence 1.0
   name        the company's name, once written the same way, is in his list    confidence 0.9 (only when it names one industry)
   crosswalk   the company has an NSE industry label and most of the matched companies with that label sit in one of his industries; confidence = that share x 0.8
+  similar     the company's name, with the exchange's abbreviations spelled out ("(I)" is India), shares at least 80% of its words with exactly one name in his list  confidence 0.7
+  owner       the owner said so (`python -m athena.reference company SYMBOL "Industry"`); a reload of the map never replaces it                                     confidence 1.0
 
 A company none of the passes reaches is left out of the map and shows up in the audit. Nothing here is written by hand for a single company."""
 from __future__ import annotations
@@ -21,6 +23,8 @@ from athena.reference.sheets import read_rows
 
 CROSSWALK_MIN_MATCHED = 5  # an NSE industry label needs this many matched companies before it is trusted
 CROSSWALK_MIN_SHARE = 0.5
+SIMILAR_MIN_SHARE = 0.8  # of the words in the longer name that the two names share
+ABBREVIATIONS = {"i": "india", "intl": "international", "inds": "industries", "ind": "industries", "mfg": "manufacturing", "engg": "engineering", "pharm": "pharma", "chem": "chemicals", "tech": "technologies", "fin": "finance", "infra": "infrastructure"}
 NAME_WORDS_DROPPED = {"limited", "ltd", "the", "company", "co", "corporation", "corp", "pvt", "private", "plc", "inc"}
 
 
@@ -53,6 +57,11 @@ def normal_name(name: str) -> str:
     text = text.lower().replace("&", " and ")
     words = [w for w in re.sub(r"[^a-z0-9]+", " ", text).split() if w not in NAME_WORDS_DROPPED]
     return " ".join(words)
+
+
+def name_words(name: str) -> frozenset[str]:
+    """The words of a name with the exchange's usual abbreviations spelled out, as a set."""
+    return frozenset(ABBREVIATIONS.get(w, w) for w in normal_name(name).split())
 
 
 def read_industry_rows(path: str | Path, country: str = "India") -> list[IndustryRow]:
@@ -107,6 +116,17 @@ def build_company_map(damodaran: Iterable[IndustryRow], companies: Sequence[Comp
         if c.symbol not in mapped and c.nse_industry in crosswalk:
             industry, confidence = crosswalk[c.nse_industry]
             mapped[c.symbol] = MapRow(c.symbol, industry, "crosswalk", confidence)
+
+    listed = [(name_words(r.name), r.industry) for r in rows]
+    for c in companies:
+        if c.symbol in mapped:
+            continue
+        mine = name_words(c.name)
+        if len(mine) < 2:  # one word is no basis for calling two names the same
+            continue
+        found = {industry for words, industry in listed if len(words) >= 2 and len(mine & words) / max(len(mine), len(words)) >= SIMILAR_MIN_SHARE}
+        if len(found) == 1:
+            mapped[c.symbol] = MapRow(c.symbol, next(iter(found)), "similar", 0.7)
     return [mapped[c.symbol] for c in companies if c.symbol in mapped]
 
 

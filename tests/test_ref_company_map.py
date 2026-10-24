@@ -64,3 +64,27 @@ def test_the_industry_rows_are_read_for_one_country(tmp_path):
     book.save(path)
     assert m.read_industry_rows(path) == [m.IndustryRow("Tata Consultancy Services Limited (NSEI:TCS)", "NSEI:TCS", "Computer Services", "India")]
     assert m.as_rows([m.MapRow("TCS", "Computer Services", "nse_ticker", 1.0)], date(2026, 1, 5)) == [("TCS", "Computer Services", "nse_ticker", 1.0, date(2026, 1, 5))]
+
+
+def test_a_name_the_exchange_abbreviates_is_matched_to_exactly_one_listed_name_and_never_to_two():
+    damodaran = [
+        row("Berger Paints India Limited (BSE:509480)", "BSE:509480", "Chemical (Basic)"),
+        row("Banco Products India Limited (BSE:1)", "BSE:1", "Auto Parts"),
+        row("Shared Name India Limited (BSE:2)", "BSE:2", "Steel"),
+        row("Shared Name India Ltd (BSE:3)", "BSE:3", "Retail"),
+    ]
+    companies = [
+        m.Company("BERGEPAINT", "Berger Paints (I) Limited", ""), m.Company("BANCOINDIA", "Banco Products (I) Limited", ""), m.Company("SHARED", "Shared Name (I) Limited", ""),
+        m.Company("ONEWORD", "Berger", ""), m.Company("OTHER", "Berger Textiles Limited", ""),
+    ]
+    mapped = {r.symbol: r for r in m.build_company_map(damodaran, companies)}
+    assert (mapped["BERGEPAINT"].industry, mapped["BERGEPAINT"].method, mapped["BERGEPAINT"].confidence) == ("Chemical (Basic)", "similar", 0.7)
+    assert mapped["BANCOINDIA"].industry == "Auto Parts"
+    assert "SHARED" not in mapped  # two industries share the name
+    assert "ONEWORD" not in mapped  # one word is no basis
+    assert "OTHER" not in mapped  # half the words match, not four fifths
+
+
+def test_abbreviations_are_spelled_out_when_names_are_compared():
+    assert m.name_words("Banco Products (I) Limited") == frozenset({"banco", "products", "india"})
+    assert m.name_words("Black Rose Inds. Limited") == frozenset({"black", "rose", "industries"})

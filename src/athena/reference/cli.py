@@ -67,8 +67,10 @@ def cmd_load(args: argparse.Namespace) -> int:
         as_of = store.latest_stat_date("damodaran", "India") or date.today()
         india = cm.read_industry_rows(datasets / "indname.xlsx")
         people = universe(Path(args.warehouse), Path(args.fundamentals))
-        mapped = cm.build_company_map(india, people)
+        kept = {s: v for s, v in store.company_industries().items() if v[1] == "owner"}  # the owner's word stands over every pass
+        mapped = [m for m in cm.build_company_map(india, people) if m.symbol not in kept]
         store.put_company_industries(cm.as_rows(mapped, as_of))
+        mapped += [cm.MapRow(s, v[0], "owner", 1.0) for s, v in kept.items()]
         print(f"company map: {len(mapped)} of {len(people)} stocks ({cm.audit(people, mapped)['by_method']})")
         for key, day, value, source, note in SEEDS:
             if store.input(key, date.today()) is None:
@@ -122,6 +124,16 @@ def cmd_input(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_company(args: argparse.Namespace) -> int:
+    with ReferenceStore(args.store) as store:
+        if args.industry not in store.industries():
+            print(f"{args.industry!r} is not one of the {len(store.industries())} industries in the tables; for example: {', '.join(store.industries()[:5])}")
+            return 1
+        store.put_company_industries([(args.symbol.upper(), args.industry, "owner", 1.0, date.today())])
+    print(f"{args.symbol.upper()} is read as {args.industry}")
+    return 0
+
+
 def cmd_segment(args: argparse.Namespace) -> int:
     with ReferenceStore(args.store) as store:
         store.put_segment_industry(args.symbol.upper(), args.segment, args.industry)
@@ -147,6 +159,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     put.add_argument("--source", default="owner")
     put.add_argument("--note", default="")
     put.set_defaults(run=cmd_input)
+    comp = sub.add_parser("company", help="say which Damodaran industry a company belongs to; a reload of the company map keeps it")
+    comp.add_argument("symbol")
+    comp.add_argument("industry")
+    comp.set_defaults(run=cmd_company)
     seg = sub.add_parser("segment", help="say which Damodaran industry a company's segment belongs to (or 'ignore')")
     seg.add_argument("symbol")
     seg.add_argument("segment")
