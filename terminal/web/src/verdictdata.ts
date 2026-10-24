@@ -12,7 +12,41 @@ export interface Analyst {
   missing: string[];
 }
 
+/** What to do with the verdict: BUY, SELL, HOLD, or REVIEW when it should not be acted on without a person looking. */
+export interface Decision {
+  type: string;
+  tone: Tone;
+  reason: string;
+}
+
+/** One side of the debate: the case, the facts it relies on and its own weakest point, or why it could not be made. */
+export interface DebateSide {
+  side: string;
+  case: string;
+  evidence: string[];
+  weakest: string;
+  failed: string | null;
+}
+
+/** The council's answer beside the blend: the judge's stance (held to one step from the blend), why, and the debate when the analysts conflicted. */
+export interface Council {
+  stance: string;
+  tone: Tone;
+  blendRating: string;
+  conviction: number | null;
+  why: string;
+  reliedOn: string[];
+  wouldChange: string;
+  lookAgainDays: number | null;
+  limited: string | null;
+  model: string;
+  debate: DebateSide[];
+  failed: string | null;
+}
+
 export interface VerdictFacts {
+  decision: Decision | null;
+  council: Council | null;
   band: string;
   tone: Tone;
   conviction: number | null;
@@ -48,6 +82,46 @@ function skippedList(v: unknown): { name: string; reason: string }[] {
   if (typeof v === 'object' && v !== null) return Object.entries(v).map(([name, reason]) => ({ name: words(name), reason: String(reason) }));
   return [];
 }
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+const DECISION: Record<string, Tone> = { BUY: 'up', SELL: 'dn', HOLD: 'flat', REVIEW: 'flat' };
+
+function readDecision(v: unknown): Decision | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const d = v as Record<string, unknown>;
+  const type = text(d.type);
+  return type ? { type, tone: DECISION[type] ?? 'flat', reason: text(d.reason) } : null;
+}
+
+function readSide(side: string, v: unknown): DebateSide | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const d = v as Record<string, unknown>;
+  return { side, case: text(d.case), evidence: strings(d.evidence), weakest: text(d.weakest_point), failed: typeof d.failed === 'string' ? d.failed : null };
+}
+
+function readCouncil(v: unknown): Council | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const c = v as Record<string, unknown>;
+  const judge = (c.judge ?? {}) as Record<string, unknown>;
+  const debate = (typeof c.debate === 'object' && c.debate !== null ? c.debate : {}) as Record<string, unknown>;
+  const failed = typeof c.failed === 'string' ? c.failed : typeof judge.failed === 'string' ? judge.failed : null;
+  const stance = text(judge.stance);
+  if (!stance && !failed) return null;
+  return {
+    stance,
+    tone: BAND[stance] ?? 'flat',
+    blendRating: text(judge.blend_rating),
+    conviction: numberOrNull(judge.conviction),
+    why: text(judge.why),
+    reliedOn: strings(judge.relied_on),
+    wouldChange: text(judge.would_change_my_mind),
+    lookAgainDays: numberOrNull(judge.look_again_days),
+    limited: typeof judge.limited === 'string' ? judge.limited : null,
+    model: text(c.judge_model),
+    debate: [readSide('bull', debate.bull), readSide('bear', debate.bear)].filter((s): s is DebateSide => s !== null),
+    failed,
+  };
+}
+
 const numberOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 export function daysBetween(a: string, b: string): number {
@@ -75,6 +149,8 @@ export function readVerdict(d: AnalysisData): VerdictFacts | null {
     };
   });
   return {
+    decision: readDecision(payload.decision),
+    council: readCouncil(payload.council),
     band,
     tone: BAND[band] ?? 'flat',
     conviction: numberOrNull(inner.conviction),

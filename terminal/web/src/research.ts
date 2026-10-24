@@ -8,6 +8,7 @@ import { analyseLive, renderLive, type LiveView } from './live';
 import { loadAnalysis, overviewView, packetView, type AnalysisData } from './panels/analysis';
 import { el, type AppContext } from './panels/base';
 import { readVerdict, type Analyst, type VerdictFacts } from './verdictdata';
+import { decisionAndCouncil } from './verdictview';
 import { startVerdict, watchVerdictJob } from './verdictjob';
 
 const SECTIONS = ['Verdict', 'Analysts', 'Overview', 'Fundamentals', 'Technicals'] as const;
@@ -226,6 +227,7 @@ export class ResearchView {
       if (v.calibration) box.append(el('div', 'note', `${v.calibration}${v.trust !== null ? ` · trust ${v.trust}` : ''}. Conviction is scaled down until the analysts beat a plain baseline in tests.`));
       box.append(el('div', 'note', `Made ${v.madeAt.slice(0, 16)} from data as of ${v.dataAsOf}${v.newerDays > 0 ? ` (${v.newerDays} days of newer prices exist)` : ''}.`));
       if (v.disagree.length) box.append(el('div', 'flagline', `The analysts disagree — ${v.disagree.join(' · ')}.`));
+      box.append(...decisionAndCouncil(v));
       for (const r of v.risks) box.append(el('div', 'flagline', `⚠ ${r}`));
       for (const n of v.notes) box.append(el('div', 'note', n));
       for (const s of v.skipped) box.append(el('div', 'note', `${s.name} was not run${s.reason ? `: ${s.reason}` : ''}.`));

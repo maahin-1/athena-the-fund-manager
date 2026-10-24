@@ -1,4 +1,5 @@
 import { readVerdict } from '../verdictdata';
+import { decisionAndCouncil } from '../verdictview';
 import { startVerdict, watchVerdictJob } from '../verdictjob';
 import { loadAnalysis, type AnalysisData } from './analysis';
 import { el, Panel, type AppContext } from './base';
@@ -58,6 +59,7 @@ export class VerdictPanel extends Panel {
         list.append(row);
       }
       this.content.append(list);
+      this.content.append(...decisionAndCouncil(v));
       for (const r of v.risks) this.content.append(el('div', 'flagline', `⚠ ${r}`));
       for (const s of v.skipped) this.content.append(el('div', 'note', `${s.name} was not run${s.reason ? `: ${s.reason}` : ''}`));
     }
