@@ -36,8 +36,9 @@ def live_runner(
     from athena.llm.router import build_router
 
     from athena.llm.budget import Meter
+    from athena.llm.cache import ReplyCache
 
-    router = router or build_router(env_file=env_file, meter=Meter())
+    router = router or build_router(env_file=env_file, meter=Meter(), cache=ReplyCache())
     client = router.client_for("specialist")
     specialists = {
         "quant_technical": Specialist(QUANT_TECHNICAL, client), **{n: Specialist(spec, client) for n, spec in FUNDAMENTAL_SPECIALISTS.items()},

@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from athena.agents.base import LLMClient
 from athena.contracts import AthenaError
 from athena.fallback import FallbackChain, HealthRegistry
 from athena.llm.budget import Meter, MeteredLLM
+from athena.llm.cache import CachedLLM, ReplyCache
 from athena.llm.client import OpenAICompatibleClient
 from athena.llm.envfile import DEFAULT_ENV_FILE, read_setting
 from athena.llm.errors import ProviderError
@@ -105,8 +106,9 @@ class Router(Protocol):
 class StaticRouter:
     """Role -> tier -> fallback chain, from static config (TRD section 5). A decision-model router can replace it."""
 
-    def __init__(self, tiers: Mapping[str, FallbackLLM], role_tiers: Mapping[str, str] = ROLE_TIERS, meter: Meter | None = None):
+    def __init__(self, tiers: Mapping[str, FallbackLLM], role_tiers: Mapping[str, str] = ROLE_TIERS, meter: Meter | None = None, cache: ReplyCache | None = None):
         self._tiers = dict(tiers)
+        self._cache = cache  # when given, an identical prompt to the same tier within a week is answered from disk, before the meter, so a hit costs and counts nothing
         self._role_tiers = dict(role_tiers)
         self._meter = meter  # when given, every client it hands out counts its calls and stops at the owner's ceiling (`athena.llm.budget`)
 
@@ -114,7 +116,8 @@ class StaticRouter:
         tier = self._role_tiers.get(role, DEFAULT_TIER)
         if tier not in self._tiers:
             raise AthenaError(f"no models configured for tier {tier!r}")
-        return MeteredLLM(self._tiers[tier], tier, self._meter) if self._meter is not None else self._tiers[tier]  # type: ignore[return-value]
+        client: Any = MeteredLLM(self._tiers[tier], tier, self._meter) if self._meter is not None else self._tiers[tier]
+        return CachedLLM(client, tier, self._cache) if self._cache is not None else client  # type: ignore[no-any-return]
 
 
 def build_router(
@@ -122,6 +125,7 @@ def build_router(
     environ: Mapping[str, str] | None = None,
     tiers: Mapping[str, Sequence[tuple[str, str]]] = TIERS,
     meter: Meter | None = None,
+    cache: ReplyCache | None = None,
     **client_options: object,
 ) -> StaticRouter:
     """Build every tier from the providers whose keys are set. Raises if no key is set at all."""
@@ -144,4 +148,4 @@ def build_router(
             )
         if clients:
             built[tier] = FallbackLLM(clients)
-    return StaticRouter(built, meter=meter)
+    return StaticRouter(built, meter=meter, cache=cache)
