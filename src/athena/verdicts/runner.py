@@ -21,6 +21,7 @@ from athena.news.hub import NewsHub
 from athena.news.packet import news_packet_builder
 from athena.valuation.facts import with_model
 from athena.verdicts.changes import Facts, change_reasons, facts_from
+from athena.verdicts.decisions import decide
 from athena.warehouse.history import joined_actions
 from athena.warehouse.packets import FUNDAMENTALS, TECHNICAL
 from athena.warehouse.warehouse import ETF, STOCK, Warehouse
@@ -126,10 +127,11 @@ class VerdictRunner:
             raise NoVerdictPossible(f"no analyst formed a view on {symbol} ({why_not[:300]})")
         verdict = dampen(result.verdict, taking_part, self._calibration)
         now = self._clock()
+        conflict = {"bullish": list(result.conflict.bullish), "bearish": list(result.conflict.bearish)} if result.conflict else None
         payload = {
             "status": result.status, "verdict": verdict, "specialists": result.specialists, "skipped": result.skipped,
             "net": result.net, "notes": list(result.notes), "taking_part": list(taking_part), "model": self._model, "why": why,
-            "conflict": {"bullish": list(result.conflict.bullish), "bearish": list(result.conflict.bearish)} if result.conflict else None,
+            "conflict": conflict, "decision": decide(verdict, taking_part, conflict),
         }
         with self._warehouse(write=True) as warehouse:
             warehouse.put_verdict(symbol, now, facts.data_as_of, facts.close, facts.annual_period, facts.quarter, payload)

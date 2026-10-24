@@ -61,6 +61,9 @@ def describe(stored: dict[str, Any]) -> str:
         f"{stored['symbol']}: {verdict['verdict']}, conviction {verdict['conviction']} ({verdict['calibration']}; raw {verdict['raw_conviction']})",
         f"  made {stored['made_at']:%Y-%m-%d %H:%M} UTC from prices to {stored['data_as_of']}; {payload['why']}",
     ]
+    decision = payload.get("decision")
+    if decision:
+        lines.append(f"  decision: {decision['type']} ({decision['reason']})")
     for name, out in payload["specialists"].items():
         lines.append(f"  {name}: {out['signal']} {out['confidence']} ({out['data_coverage']})")
     for name, why in payload["skipped"].items():
