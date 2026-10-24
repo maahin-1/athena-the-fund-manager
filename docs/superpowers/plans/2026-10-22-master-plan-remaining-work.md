@@ -164,3 +164,18 @@ Started on the owner's go.
 | 4.4 council against the blend | Waiting for the judge model and ceiling, then a run on a set of stocks. |
 | W11 defusedxml | Done (fcef39c). |
 | Not started | 3.3 walk-forward (needs the 2010 prices), 3.4 cost model (needs charges), 3.5 call budget (needs the ceiling), 1.4 shareholding and documents (after the quarters backfill, to keep NSE traffic apart), W5, W6, W7 to W10. |
+
+### Added on 24 Oct (evening)
+
+| Item | State |
+|---|---|
+| 3.3 walk-forward harness | Code done (momentum, reversal, low volatility; costs applied). Run after the 2010 prices load. |
+| 3.4 cost model | Done; rates unverified until the owner checks a contract note. |
+| 3.5 call budget and cache | Done. Ceiling set to 100 judge calls a month. |
+| Judge tier | OpenAI gpt-5.4 with the free tier behind it; one council run done on a warehouse copy. |
+| 5.1, 5.2, 5.3 flow | Loader, detectors and analyst written and tested on fixtures; waiting to load the derivatives history. |
+| 5.6 alerts | Engine, storage and delivery done; the screen to make and list alerts is not built and needs a browser check. |
+| 6.2 market regime | Done. |
+| 7.2, 7.3 retrieval and review | Engine and red-flag review done on synthetic documents; no document text loaded yet. |
+| 1.3 annual-report extraction | Core done (find pages, copy figures, convert, check, prove on the overlap year). Needs a PDF reader (pypdf is not installed), the documents stage for the links, and a first run on 500 companies to measure the pass rate and cost. |
+| 8 verdict panel | Shows decision and council; browser check pending. |
