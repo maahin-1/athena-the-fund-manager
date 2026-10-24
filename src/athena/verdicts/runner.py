@@ -17,6 +17,8 @@ from athena.orchestrator.orchestrator import OK, Orchestrator
 from athena.resolver import Resolution
 from athena.routing import route
 from athena.verdicts.calibration import Calibration, dampen
+from athena.council.evidence import build_sheet
+from athena.council.run import Council, convene
 from athena.news.hub import NewsHub
 from athena.news.packet import news_packet_builder
 from athena.valuation.facts import with_model
@@ -44,7 +46,7 @@ class VerdictRunner:
     def __init__(
         self, db_path: Path | str, specialists: Specialists, calibration: Calibration, clock: Callable[[], datetime] = utc_now,
         model: str = "", wait_seconds: float = DB_WAIT_SECONDS, model_facts: ModelFacts | None = None,
-        news: NewsHub | None = None,
+        news: NewsHub | None = None, council: Council | None = None,
     ):
         self._path = Path(db_path)
         self._specialists = dict(specialists)
@@ -53,6 +55,7 @@ class VerdictRunner:
         self._model = model
         self._wait = wait_seconds
         self._news = news  # the exchange's announcements and the press for the news analyst; None leaves that analyst out
+        self._council = council  # debate and judge beside the blend (stored with the verdict, never replacing it); None leaves them out
         self._model_facts = model_facts  # symbol, close -> the valuation model's document, the market's median gap and its date
 
     @contextmanager
@@ -114,6 +117,19 @@ class VerdictRunner:
             with self._warehouse() as warehouse:
                 events = tuple((a.day, a.kind, a.text) for a in joined_actions(warehouse, symbol))
             builders["news_sentiment"] = news_packet_builder(self._news, lambda _: events, lambda _: None)
+        seen: dict[str, Any] = {}
+        kinds = {"quant_technical": "technical", "valuation": "fundamentals", "news_sentiment": "news"}
+
+        def recorded(name: str, build: Callable[[Resolution], dict[str, Any]]) -> Callable[[Resolution], dict[str, Any]]:
+            def build_and_keep(resolution: Resolution) -> dict[str, Any]:
+                packet = build(resolution)
+                if name in kinds:
+                    seen[kinds[name]] = packet
+                return packet
+
+            return build_and_keep
+
+        builders = {name: recorded(name, build) for name, build in builders.items()}
         orchestrator = Orchestrator(None, self._specialists, builders, price_flags=lambda _: flags)  # type: ignore[arg-type]
         asset_class = CLASS_OF[entry["kind"]]
         resolution = Resolution(
@@ -133,6 +149,12 @@ class VerdictRunner:
             "net": result.net, "notes": list(result.notes), "taking_part": list(taking_part), "model": self._model, "why": why,
             "conflict": conflict, "decision": decide(verdict, taking_part, conflict),
         }
+        if self._council is not None:
+            sheet = build_sheet(symbol, str(facts.data_as_of), seen, result.specialists, verdict, payload["decision"], conflict, result.net)
+            try:
+                payload["council"] = convene(self._council, sheet)
+            except Exception as exc:  # the blend stands; a council that fell over is recorded, not fatal
+                payload["council"] = {"failed": f"{type(exc).__name__}: {str(exc)[:160]}"}
         with self._warehouse(write=True) as warehouse:
             warehouse.put_verdict(symbol, now, facts.data_as_of, facts.close, facts.annual_period, facts.quarter, payload)
             stored = warehouse.latest_verdict(symbol)
