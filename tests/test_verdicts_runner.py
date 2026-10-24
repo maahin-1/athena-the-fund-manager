@@ -133,3 +133,29 @@ def test_a_failing_stock_is_recorded_and_repeated_failures_stop_the_run(tmp_path
     broken = analysts(error=AthenaError("provider down"))
     summary = runner(path, broken, minutes=60).refresh_changed(budget=10)
     assert summary["made"] == [] and len(summary["failed"]) == 3 and summary["stopped"] == "3 failures in a row" and summary["left"] == 1
+
+
+class FakeHub:
+    def __init__(self):
+        self.asked = []
+
+    def fetch(self, symbol, name, since, until):
+        from types import SimpleNamespace
+
+        from athena.news.model import NewsItem
+
+        self.asked.append((symbol, name))
+        items = [NewsItem(f"{name} wins order {i}", "NSE", datetime.now(timezone.utc), f"https://x/{i}", "nse") for i in range(3)]
+        return SimpleNamespace(items=items, notes=["fake hub"])
+
+
+def test_the_news_analyst_joins_a_stored_verdict_when_a_news_hub_is_given(tmp_path):
+    path = database(tmp_path)
+    people = {**analysts(), "news_sentiment": Analyst()}
+    hub = FakeHub()
+    stored = VerdictRunner(path, people, Calibration(), lambda: NOW, model="fake", news=hub).make("TCS")
+    assert hub.asked == [("TCS", "TCS Ltd")] and len(people["news_sentiment"].packets) == 1
+    assert people["news_sentiment"].packets[0]["instrument"] == "TCS" and "news_sentiment" in stored["payload"]["taking_part"]
+    without = {**analysts(), "news_sentiment": Analyst()}
+    VerdictRunner(path, without, Calibration(), lambda: NOW, model="fake").make("TCS")
+    assert without["news_sentiment"].packets == []  # no hub, no news analyst

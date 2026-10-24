@@ -31,15 +31,27 @@ def live_runner(
     built a router passes it."""
     from athena.agents.base import Specialist
     from athena.agents.quant_technical import QUANT_TECHNICAL
-    from athena.cli import FUNDAMENTAL_SPECIALISTS
+    from athena.agents.news_sentiment import NEWS_SENTIMENT
+    from athena.cli import FUNDAMENTAL_SPECIALISTS, GOOGLE_NEWS_SETTING
     from athena.llm.router import build_router
 
     client = (router or build_router(env_file=env_file)).client_for("specialist")
-    specialists = {"quant_technical": Specialist(QUANT_TECHNICAL, client), **{n: Specialist(spec, client) for n, spec in FUNDAMENTAL_SPECIALISTS.items()}}
+    specialists = {
+        "quant_technical": Specialist(QUANT_TECHNICAL, client), **{n: Specialist(spec, client) for n, spec in FUNDAMENTAL_SPECIALISTS.items()},
+        "news_sentiment": Specialist(NEWS_SENTIMENT, client),
+    }
     model = ", ".join(getattr(client, "names", [])) or "unknown"
+    from athena.llm.envfile import read_setting
+    from athena.news.google_news import GoogleNews
+    from athena.news.hub import NewsHub, default_sources
+    from athena.news.nse_announcements import NseAnnouncements
+    from athena.news.publisher_feeds import PublisherFeeds
     from athena.valuation.facts import live_facts
 
-    return VerdictRunner(db_path, specialists, calibration if calibration is not None else Calibration.load(), utc_now, model=model, model_facts=live_facts())
+    google_on = read_setting(GOOGLE_NEWS_SETTING, env_file).strip() == "1"  # off unless the owner switches it on
+    news = NewsHub(default_sources(NseAnnouncements(), PublisherFeeds(), GoogleNews(enabled=google_on)))
+
+    return VerdictRunner(db_path, specialists, calibration if calibration is not None else Calibration.load(), utc_now, model=model, model_facts=live_facts(), news=news)
 
 
 def describe(stored: dict[str, Any]) -> str:

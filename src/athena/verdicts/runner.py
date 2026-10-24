@@ -17,8 +17,11 @@ from athena.orchestrator.orchestrator import OK, Orchestrator
 from athena.resolver import Resolution
 from athena.routing import route
 from athena.verdicts.calibration import Calibration, dampen
+from athena.news.hub import NewsHub
+from athena.news.packet import news_packet_builder
 from athena.valuation.facts import with_model
 from athena.verdicts.changes import Facts, change_reasons, facts_from
+from athena.warehouse.history import joined_actions
 from athena.warehouse.packets import FUNDAMENTALS, TECHNICAL
 from athena.warehouse.warehouse import ETF, STOCK, Warehouse
 
@@ -40,6 +43,7 @@ class VerdictRunner:
     def __init__(
         self, db_path: Path | str, specialists: Specialists, calibration: Calibration, clock: Callable[[], datetime] = utc_now,
         model: str = "", wait_seconds: float = DB_WAIT_SECONDS, model_facts: ModelFacts | None = None,
+        news: NewsHub | None = None,
     ):
         self._path = Path(db_path)
         self._specialists = dict(specialists)
@@ -47,6 +51,7 @@ class VerdictRunner:
         self._clock = clock
         self._model = model
         self._wait = wait_seconds
+        self._news = news  # the exchange's announcements and the press for the news analyst; None leaves that analyst out
         self._model_facts = model_facts  # symbol, close -> the valuation model's document, the market's median gap and its date
 
     @contextmanager
@@ -104,6 +109,10 @@ class VerdictRunner:
             return with_model(packet, doc, gap, gap_date)
 
         builders = {"quant_technical": lambda _: technical["packet"], **{name: statements for name in FUNDAMENTAL_ANALYSTS}, "valuation": valuation}
+        if self._news is not None:
+            with self._warehouse() as warehouse:
+                events = tuple((a.day, a.kind, a.text) for a in joined_actions(warehouse, symbol))
+            builders["news_sentiment"] = news_packet_builder(self._news, lambda _: events, lambda _: None)
         orchestrator = Orchestrator(None, self._specialists, builders, price_flags=lambda _: flags)  # type: ignore[arg-type]
         asset_class = CLASS_OF[entry["kind"]]
         resolution = Resolution(
