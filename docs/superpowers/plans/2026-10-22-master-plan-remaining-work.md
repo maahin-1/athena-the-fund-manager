@@ -145,3 +145,22 @@ Still open:
 
 5. Brokerage and statutory charges from a contract note (3.4); not blocking.
 6. The owner's go on the build, and which workstream he wants first (the plan suggests W1 backfills in the background with W2 and W3 in front).
+
+## 6. Progress (24 Oct 2026)
+
+Started on the owner's go.
+
+| Item | State |
+|---|---|
+| 1.1 prices to 2010 | Running in the background since 16:27 (`logs/prices-2010.log`, buffered until it ends). The download is in 2013 by 16:50; the cache `.athena/bhavcopy` shows it. Backup of the warehouse: `.athena/warehouse.before-2010.duckdb`. |
+| 1.2 quarters to Dec 2018 | Running (`logs/quarters-backfill.log`, buffered). Backup of the store: `.athena/fundamentals.before-quarters.duckdb`. Companies finish in minutes, not hours; the store reaches Dec 2018 for the ones done. |
+| 2.1 packets from the filings | Done (b713867). The stored packets change at the next packets step of the build. |
+| 2.2 model figures for the valuation analyst | Done (a30f1e4). |
+| 2.3 news in the stored path | Done (2ec7d6a). |
+| 2.5 re-score | Dropped as stated: a point-in-time run with the valuation model would use today's industry tables at every date. The ledger is the honest test. The filings-based analysts were already scored in `nse_unblinded_v1.jsonl`. |
+| 3.1 scorecard | Done (ae09b98). On the logs held, no analyst shows skill. |
+| 3.2 typed decisions and settlement | Done (c9e3cf5). Settlement needs the warehouse free; run `python -m athena.verdicts.decisions` once the price backfill ends. |
+| 4.1 to 4.3 council | Done in code (a853541, 2d131fc, c87c37e), off unless `--council` is given. |
+| 4.4 council against the blend | Waiting for the judge model and ceiling, then a run on a set of stocks. |
+| W11 defusedxml | Done (fcef39c). |
+| Not started | 3.3 walk-forward (needs the 2010 prices), 3.4 cost model (needs charges), 3.5 call budget (needs the ceiling), 1.4 shareholding and documents (after the quarters backfill, to keep NSE traffic apart), W5, W6, W7 to W10. |
