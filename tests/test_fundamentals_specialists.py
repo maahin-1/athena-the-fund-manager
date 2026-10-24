@@ -13,6 +13,7 @@ from athena.agents.valuation import VALUATION
 from athena.evaluation.checks import check_abstention
 from athena.evaluation.schema import validate_specialist_output
 from athena.metrics.fundamentals import build_fundamentals_packet
+from athena.valuation import facts
 
 SPECS = {"valuation": VALUATION, "moat_quality": MOAT_QUALITY, "earnings_intelligence": EARNINGS_INTELLIGENCE}
 FULL = build_fundamentals_packet("ACME", NOW, ACME, PRICE, NOW, index_history())
@@ -20,6 +21,12 @@ WITH_INDUSTRY = build_fundamentals_packet(
     "ACME", NOW, ACME, PRICE, NOW, index_history(),
     industry={"industry": "Steel", "n_firms": 185, "data_as_of": "2026-01-05", "values": {"pe": 25.0, "pb": 2.5, "roe": 0.09, "operating_margin": 0.09}},
 )
+
+MODEL_DOC = {
+    "ok": True, "model": "fcff", "industry": "Steel", "on_date": "2026-10-22", "price": 220.0, "low": 60.0, "base": 100.0, "high": 160.0, "implied_return": 0.09, "required_return": 0.12,
+    "sensitivity": [{"label": "Equity premium = mature market only", "change": 0.3}, {"label": "Rupee inflation 5% instead of 4%", "change": 0.1}, {"label": "No rupee conversion: x", "change": -0.2}],
+}
+WITH_MODEL = facts.with_model(WITH_INDUSTRY, MODEL_DOC, 2.0, NOW.date())  # the valuation model's figures are added where a verdict is made, not in the stored packet
 
 
 def bank_payload():
@@ -57,7 +64,7 @@ def run(spec, packet):
 def test_every_declared_figure_exists_in_a_full_packet_and_critical_and_optional_are_shown():
     for name, spec in SPECS.items():
         declared = set(spec.critical) | set(spec.optional) | set(spec.shows)
-        assert declared <= set(WITH_INDUSTRY["metrics"]), (name, declared - set(WITH_INDUSTRY["metrics"]))  # the industry figures exist once the reference tables are loaded
+        assert declared <= set(WITH_MODEL["metrics"]), (name, declared - set(WITH_MODEL["metrics"]))  # the industry figures exist once the reference tables are loaded, the model's once it has run
         assert not (set(spec.critical) | set(spec.optional)) - set(FULL["metrics"]), name  # but nothing required depends on them
         assert set(spec.critical) | set(spec.optional) <= set(spec.shows), name
         assert spec.critical and not set(spec.critical) & set(spec.optional), name

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ from athena.orchestrator.orchestrator import OK, Orchestrator
 from athena.resolver import Resolution
 from athena.routing import route
 from athena.verdicts.calibration import Calibration, dampen
+from athena.valuation.facts import with_model
 from athena.verdicts.changes import Facts, change_reasons, facts_from
 from athena.warehouse.packets import FUNDAMENTALS, TECHNICAL
 from athena.warehouse.warehouse import ETF, STOCK, Warehouse
@@ -28,6 +29,7 @@ FUNDAMENTAL_ANALYSTS = ("valuation", "moat_quality", "earnings_intelligence")
 CLASS_OF = {STOCK: "equity", ETF: "etf"}
 
 Specialists = Mapping[str, Any]  # name -> something with .analyze(packet)
+ModelFacts = Callable[[str, float | None], tuple[Mapping[str, Any] | None, float | None, date | None]]
 
 
 class NoVerdictPossible(AthenaError):
@@ -37,7 +39,7 @@ class NoVerdictPossible(AthenaError):
 class VerdictRunner:
     def __init__(
         self, db_path: Path | str, specialists: Specialists, calibration: Calibration, clock: Callable[[], datetime] = utc_now,
-        model: str = "", wait_seconds: float = DB_WAIT_SECONDS,
+        model: str = "", wait_seconds: float = DB_WAIT_SECONDS, model_facts: ModelFacts | None = None,
     ):
         self._path = Path(db_path)
         self._specialists = dict(specialists)
@@ -45,6 +47,7 @@ class VerdictRunner:
         self._clock = clock
         self._model = model
         self._wait = wait_seconds
+        self._model_facts = model_facts  # symbol, close -> the valuation model's document, the market's median gap and its date
 
     @contextmanager
     def _warehouse(self, write: bool = False):
@@ -93,7 +96,14 @@ class VerdictRunner:
                 raise AthenaError(f"no statements are held for {symbol}")
             return fundamentals["packet"]
 
-        builders = {"quant_technical": lambda _: technical["packet"], **{name: statements for name in FUNDAMENTAL_ANALYSTS}}
+        def valuation(resolution: Resolution) -> dict[str, Any]:
+            packet = statements(resolution)
+            if self._model_facts is None:
+                return packet
+            doc, gap, gap_date = self._model_facts(symbol, facts.close)
+            return with_model(packet, doc, gap, gap_date)
+
+        builders = {"quant_technical": lambda _: technical["packet"], **{name: statements for name in FUNDAMENTAL_ANALYSTS}, "valuation": valuation}
         orchestrator = Orchestrator(None, self._specialists, builders, price_flags=lambda _: flags)  # type: ignore[arg-type]
         asset_class = CLASS_OF[entry["kind"]]
         resolution = Resolution(

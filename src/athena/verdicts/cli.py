@@ -37,7 +37,9 @@ def live_runner(
     client = (router or build_router(env_file=env_file)).client_for("specialist")
     specialists = {"quant_technical": Specialist(QUANT_TECHNICAL, client), **{n: Specialist(spec, client) for n, spec in FUNDAMENTAL_SPECIALISTS.items()}}
     model = ", ".join(getattr(client, "names", [])) or "unknown"
-    return VerdictRunner(db_path, specialists, calibration if calibration is not None else Calibration.load(), utc_now, model=model)
+    from athena.valuation.facts import live_facts
+
+    return VerdictRunner(db_path, specialists, calibration if calibration is not None else Calibration.load(), utc_now, model=model, model_facts=live_facts())
 
 
 def describe(stored: dict[str, Any]) -> str:
