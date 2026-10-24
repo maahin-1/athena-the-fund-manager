@@ -70,8 +70,8 @@ def test_a_missing_or_broken_budget_file_means_no_ceiling(tmp_path):
 
 def test_the_router_hands_out_metered_clients_only_when_given_a_meter(tmp_path):
     inner = Fake()
-    assert StaticRouter({"strong": inner}).client_for("judge") is inner
-    assert isinstance(StaticRouter({"strong": inner}, meter=meter(tmp_path)).client_for("judge"), MeteredLLM)
+    assert StaticRouter({"judge": inner}).client_for("judge") is inner
+    assert isinstance(StaticRouter({"judge": inner}, meter=meter(tmp_path)).client_for("judge"), MeteredLLM)
 
 
 def test_tokens_the_provider_reports_are_kept_with_each_call_and_summed(tmp_path):
