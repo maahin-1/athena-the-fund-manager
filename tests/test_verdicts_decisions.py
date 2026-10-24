@@ -58,3 +58,13 @@ def test_settling_all_uses_the_stored_decision_or_works_one_out_for_an_older_ver
     history = {"ABC": [{"made_at": datetime(2026, 9, 11), "data_as_of": DAYS[10], "payload": payload}]}
     rows = decisions.settle_all(history, lambda symbol: STOCK, BENCH)
     assert rows[0]["decision"]["type"] == "BUY" and set(rows[0]["outcomes"]) == {5, 20, 60}
+
+
+def test_a_buy_is_also_given_its_excess_return_after_the_cost_of_buying_and_selling_it_and_a_sell_is_not():
+    def row(kind, excess):
+        return {"decision": {"type": kind}, "outcomes": {20: {"excess": excess}}}
+
+    summary = decisions.summarize([row("BUY", 0.03), row("BUY", 0.01), row("SELL", -0.02)], buy_cost=0.005)
+    assert summary["BUY"]["20"]["mean_excess"] == pytest.approx(0.02) and summary["BUY"]["20"]["mean_excess_after_costs"] == pytest.approx(0.015)
+    assert "mean_excess_after_costs" not in summary["SELL"]["20"]
+    assert "+1.5% after costs" in decisions.format_summary(summary, 3)

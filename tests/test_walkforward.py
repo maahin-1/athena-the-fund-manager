@@ -64,3 +64,11 @@ def test_low_volatility_and_reversal_score_every_stock_with_enough_history():
     p = panel(True, names=30)
     assert len(wf.low_volatility(p, 300)) == 30 and len(wf.reversal_1m(p, 300)) == 30
     assert wf.low_volatility(p, 50) == {} and wf.momentum_12_1(p, 100) == {}
+
+
+def test_the_top_fifth_alone_is_reported_before_and_after_the_cost_of_trading_it():
+    rows = wf.run(panel(True), wf.momentum_12_1, date(2016, 1, 1), 21)
+    plain, costed = wf.report(rows)["overall"], wf.report(rows, cost=0.004)["overall"]
+    assert plain["mean_top_excess"] > 0 and plain["mean_top_excess_after_costs"] == plain["mean_top_excess"]
+    assert costed["mean_top_excess_after_costs"] == pytest.approx(plain["mean_top_excess"] - 0.004)
+    assert "after the cost of trading it" in wf.format_report("m", wf.report(rows, cost=0.004))

@@ -107,25 +107,29 @@ def run(panel: Panel, signal: Signal, since: date, horizon: int = 21) -> list[di
         quintiles = quintile_returns(values, excess)
         if rho is None or quintiles is None:
             continue
-        rows.append({"date": panel.days[i], "n": len(names), "ic": rho, "top_minus_bottom": quintiles[-1] - quintiles[0]})
+        rows.append({"date": panel.days[i], "n": len(names), "ic": rho, "top_minus_bottom": quintiles[-1] - quintiles[0], "top_excess": quintiles[-1]})
     return rows
 
 
-def _summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def _summary(rows: Sequence[Mapping[str, Any]], cost: float = 0.0) -> dict[str, Any]:
     ics = [r["ic"] for r in rows]
     spreads = [r["top_minus_bottom"] for r in rows]
     t = statistics.fmean(ics) / (statistics.stdev(ics) / math.sqrt(len(ics))) if len(ics) >= 3 and statistics.stdev(ics) > 0 else None
-    return {"dates": len(rows), "mean_ic": statistics.fmean(ics) if ics else None, "ic_t": t, "mean_top_minus_bottom": statistics.fmean(spreads) if spreads else None}
+    top = [r["top_excess"] for r in rows]
+    return {
+        "dates": len(rows), "mean_ic": statistics.fmean(ics) if ics else None, "ic_t": t, "mean_top_minus_bottom": statistics.fmean(spreads) if spreads else None,
+        "mean_top_excess": statistics.fmean(top) if top else None, "mean_top_excess_after_costs": statistics.fmean(top) - cost if top else None,
+    }
 
 
-def report(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def report(rows: Sequence[Mapping[str, Any]], cost: float = 0.0) -> dict[str, Any]:
     """Overall and by calendar year, and the share of years with a positive average correlation."""
     by_year: dict[int, list[Mapping[str, Any]]] = defaultdict(list)
     for r in rows:
         by_year[r["date"].year].append(r)
-    years = {str(y): _summary(v) for y, v in sorted(by_year.items())}
+    years = {str(y): _summary(v, cost) for y, v in sorted(by_year.items())}
     positive = [s for s in years.values() if s["mean_ic"] is not None and s["mean_ic"] > 0]
-    return {"overall": _summary(rows), "years": years, "years_positive": f"{len(positive)} of {len(years)}"}
+    return {"overall": _summary(rows, cost), "years": years, "years_positive": f"{len(positive)} of {len(years)}"}
 
 
 def format_report(name: str, rep: Mapping[str, Any]) -> str:
@@ -135,6 +139,7 @@ def format_report(name: str, rep: Mapping[str, Any]) -> str:
     t = "n/a" if o["ic_t"] is None else f"{o['ic_t']:+.1f}"
     per_year = " ".join(f"{y[2:]}:{s['mean_ic']:+.2f}" for y, s in rep["years"].items() if s["mean_ic"] is not None)
     return (f"{name}: {o['dates']} dates, mean rank IC {o['mean_ic']:+.3f} (t {t}), top fifth minus bottom fifth {o['mean_top_minus_bottom']:+.2%} a window; "
+            f"top fifth alone {o['mean_top_excess']:+.2%} ({o['mean_top_excess_after_costs']:+.2%} after the cost of trading it); "
             f"positive in {rep['years_positive']} years. By year: {per_year}")
 
 
@@ -153,9 +158,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         history = adjusted_history(warehouse)
         series = {e["symbol"]: [(ist_date(b.timestamp), b.close) for b in history(e["symbol"])] for e in warehouse.universe("stock")}
     panel = Panel.build({s: rows for s, rows in series.items() if rows})
+    from athena.costs.model import load, round_trip
+
+    rt = round_trip(load(), "delivery", 100000.0, daily_traded_crore=100.0)  # a stock of middling liquidity; every window sells the old fifth and buys the new
+    cost = rt["fraction"]
+    print(f"cost of trading a window: {cost:.2%} of the value{'' if rt['verified'] else ' (rates not yet checked against a contract note)'}")
     out: dict[str, Any] = {}
     for name, signal in SIGNALS.items():
-        out[name] = report(run(panel, signal, date.fromisoformat(args.since), args.horizon))
+        out[name] = report(run(panel, signal, date.fromisoformat(args.since), args.horizon), cost)
         print(format_report(name, out[name]))
     path = Path(args.out)
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -71,8 +71,9 @@ def settle_one(
     return out
 
 
-def summarize(settled: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
-    """By decision type and horizon: how many were settled, the average excess return, and for BUY and SELL the share that went the way they said (excess above or below zero)."""
+def summarize(settled: Sequence[Mapping[str, Any]], buy_cost: float = 0.0) -> dict[str, dict[str, dict[str, Any]]]:
+    """By decision type and horizon: how many were settled, the average excess return, and for BUY and SELL the share that went the way they said (excess above or below zero). A BUY is
+    also given its average excess return after `buy_cost`, the fraction of the value that buying and selling it costs (`athena.costs.model`); a SELL is an avoided loss and carries no cost."""
     groups: dict[tuple[str, int], list[float]] = defaultdict(list)
     for row in settled:
         for h, got in row["outcomes"].items():
@@ -83,7 +84,10 @@ def summarize(settled: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, dict[
         if kind in (BUY, SELL):
             sign = 1 if kind == BUY else -1
             right = sum(1 for v in values if sign * v > 0) / len(values)
-        out.setdefault(kind, {})[str(h)] = {"n": len(values), "mean_excess": statistics.fmean(values), "went_the_way_said": right}
+        got = {"n": len(values), "mean_excess": statistics.fmean(values), "went_the_way_said": right}
+        if kind == BUY:
+            got["mean_excess_after_costs"] = got["mean_excess"] - buy_cost
+        out.setdefault(kind, {})[str(h)] = got
     return out
 
 
@@ -106,6 +110,7 @@ def format_summary(summary: Mapping[str, Mapping[str, Mapping[str, Any]]], total
     for kind, per in summary.items():
         for h, c in per.items():
             way = "" if c["went_the_way_said"] is None else f"; went the way said {c['went_the_way_said']:.0%}"
+            way += f"; {c['mean_excess_after_costs']:+.1%} after costs" if "mean_excess_after_costs" in c else ""
             lines.append(f"{kind} after {h} trading days: {c['n']} settled, average excess return {c['mean_excess']:+.1%}{way}")
     if len(lines) == 1:
         lines.append("none old enough to settle yet")
@@ -133,7 +138,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return cache[symbol]
 
         settled = settle_all(history, closes, benchmark)
-    print(format_summary(summarize(settled), len(settled)))
+    from athena.costs.model import load, round_trip
+
+    cost = round_trip(load(), "delivery", 100000.0)
+    print(format_summary(summarize(settled, cost["fraction"]), len(settled)))
+    print(f"(costs: a delivery round trip's charges, {cost['fraction']:.2%} of the value, no slippage{'' if cost['verified'] else '; the rates are not yet checked against a contract note'})")
     for row in settled:
         got = ", ".join(f"{h}d {o['excess']:+.1%}" for h, o in sorted(row["outcomes"].items())) or "not settled yet"
         print(f"  {row['symbol']} {row['data_as_of']} {row['decision']['type']} ({row['decision']['rating']}): {got}")
