@@ -26,15 +26,31 @@ def _close(day: date) -> datetime:
     return datetime.combine(day, time(16, 0), tzinfo=IST)
 
 
+def _with_calendar(filed: tuple[dict[str, Any], datetime] | None, yahoo: tuple[dict[str, Any], datetime] | None) -> tuple[dict[str, Any], datetime] | None:
+    """The statements from the filings when there are some, else the warehouse's own. The filings carry no earnings calendar or dividend rate, so those two come from the
+    warehouse's copy when it has them (the surprise figures against Yahoo's estimates say so in their notes)."""
+    if filed is None:
+        return yahoo
+    payload, read = filed
+    if yahoo is not None:
+        theirs = yahoo[0]
+        extra = {"earnings_dates": theirs.get("earnings_dates") or []}
+        rate = (theirs.get("info") or {}).get("dividendRate")
+        payload = {**payload, **extra, "info": {**payload["info"], **({"dividendRate": rate} if rate else {})}}
+    return payload, read
+
+
 def build_packets(
     warehouse: Warehouse,
     now: datetime,
     on_progress: Callable[[str], None] = lambda text: None,
     symbols: list[str] | None = None,
     industry: Callable[[str, date], dict[str, Any] | None] | None = None,
+    filings: Callable[[str], tuple[dict[str, Any], datetime] | None] | None = None,
 ) -> dict[str, Any]:
     """Technical packets for every stock and ETF with enough recent prices; fundamentals packets for every stock whose statements
-    are held. `industry(symbol, day)` (optional) gives a stock's industry benchmarks for its fundamentals packet. Returns what was built and why anything was left out."""
+    are held. `industry(symbol, day)` (optional) gives a stock's industry benchmarks for its fundamentals packet. `filings(symbol)` (optional) gives the statements
+    from the exchange's filings as `(payload, filed)`; a stock it has none for falls back to the statements the warehouse holds. Returns what was built and why anything was left out."""
     last = warehouse.last_loaded_day()
     summary: dict[str, Any] = {"technical": 0, "fundamentals": 0, "no_prices": 0, "inactive": 0, "no_statements": 0, "failed": []}
     if last is None:
@@ -63,7 +79,7 @@ def build_packets(
             summary["technical"] += 1
             fundamentals, age, notes = None, None, list(flags)
             if kind == STOCK:
-                held = warehouse.statement(symbol)
+                held = _with_calendar(filings(symbol) if filings is not None else None, warehouse.statement(symbol))
                 if held is None:
                     summary["no_statements"] += 1
                 else:

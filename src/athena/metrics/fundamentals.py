@@ -163,6 +163,7 @@ def build_fundamentals_packet(
     Every figure is computed here from the stored statements; one that cannot be computed (too few periods, a
     lender where the ratio has no meaning, a missing price) is listed in `missing` with the reason."""
     st = Statements.from_payload(payload)
+    source = str(payload.get("source") or SOURCE)
     metrics: dict[str, dict[str, Any]] = {}
     reasons: dict[str, str] = {}
     groups: dict[str, str] = {}
@@ -179,7 +180,7 @@ def build_fundamentals_packet(
             "unit": unit,
             "inputs": inputs,
             "window": result.window,
-            "source": SOURCE,
+            "source": source,
             "group": group,
         }
         if result.note:

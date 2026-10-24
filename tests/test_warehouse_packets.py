@@ -96,3 +96,16 @@ def test_only_the_asked_symbols_are_built():
 def test_nothing_is_built_for_an_empty_warehouse():
     assert build_packets(Warehouse(":memory:"), NOW)["technical"] == 0
     assert MIN_BARS == 60 and ACTIVE_WITHIN_DAYS == 10
+
+
+def test_filing_statements_take_the_earnings_calendar_and_dividend_rate_from_the_warehouse_copy():
+    from datetime import datetime, timezone
+
+    from athena.warehouse.packets import _with_calendar
+
+    read = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    filed = ({"info": {"financialCurrency": "INR"}, "annual": {}, "source": "filings"}, read)
+    yahoo = ({"info": {"dividendRate": 5.0, "sharesOutstanding": 9.0}, "earnings_dates": [{"date": "2026-11-01"}]}, read)
+    payload, got_read = _with_calendar(filed, yahoo)
+    assert payload["info"] == {"financialCurrency": "INR", "dividendRate": 5.0} and payload["earnings_dates"] == [{"date": "2026-11-01"}] and payload["source"] == "filings"
+    assert _with_calendar(filed, None)[0] is filed[0] and _with_calendar(None, yahoo) is yahoo and _with_calendar(None, None) is None

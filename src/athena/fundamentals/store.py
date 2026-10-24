@@ -206,6 +206,11 @@ class FundamentalsStore:
     def bases(self, symbol: str) -> list[str]:
         return [r[0] for r in self._con.execute("SELECT DISTINCT basis FROM statement_lines WHERE symbol = ? ORDER BY basis", [symbol]).fetchall()]
 
+    def last_filed(self, symbol: str, basis: str) -> datetime | None:
+        """When the newest filing behind the symbol's lines under this basis was made."""
+        row = self._con.execute("SELECT max(filed) FROM statement_lines WHERE symbol = ? AND basis = ?", [symbol, basis]).fetchone()
+        return row[0] if row else None
+
     def company(self, symbol: str) -> dict[str, Any] | None:
         row = self._con.execute("SELECT symbol, name, isin, industry, layout, shares, updated FROM companies WHERE symbol = ?", [symbol]).fetchone()
         return dict(zip(("symbol", "name", "isin", "industry", "layout", "shares", "updated"), row)) if row else None
