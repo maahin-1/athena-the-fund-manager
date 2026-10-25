@@ -79,3 +79,10 @@ def test_the_judge_is_shown_the_debate_and_its_citations_are_checked():
 
 def test_the_ids_in_the_test_sheet_are_the_ones_used_here():
     assert evidence.fact_ids(make_sheet()) == {"T1", "T2", "F1", "N1"}
+
+
+def test_the_debaters_and_the_judge_are_told_how_to_read_the_valuation_models_ratio():
+    from athena.council import debate, judge
+
+    for system in (debate.SYSTEM, judge.SYSTEM):
+        assert "price_to_model_base_vs_market" in system and "typical company" in system
