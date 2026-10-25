@@ -45,7 +45,7 @@ def board(store: DerivsStore) -> dict[str, Any]:
             series = store.futures(symbol, instrument)
             if len(series) < 2 or series[-1][0] != latest:  # it left the futures market, or its file stopped: nothing to say about the latest day
                 continue
-            events, _, ratio = events_for(store, symbol, instrument)
+            events, _, ratio = events_for(store, symbol, instrument, series)
             rows.append(_row(symbol, kind, series, events, ratio))
     counts = Counter(e["kind"] for r in rows for e in r["events"])
     rows.sort(key=lambda r: (-(len(r["events"])), -(r["oi"] or 0.0)))

@@ -14,9 +14,9 @@ from athena.derivs.store import DEFAULT_PATH, DerivsStore
 from athena.flow import detectors as d
 
 
-def events_for(store: DerivsStore, symbol: str, instrument: str = "FUTSTK") -> tuple[list[d.Event], int, float | None]:
-    """`(events on the latest day, days of futures held, latest put-call ratio)` for one symbol."""
-    futures = store.futures(symbol, instrument)
+def events_for(store: DerivsStore, symbol: str, instrument: str = "FUTSTK", futures: list | None = None) -> tuple[list[d.Event], int, float | None]:
+    """`(events on the latest day, days of futures held, latest put-call ratio)` for one symbol. A caller that already has the symbol's futures series passes it."""
+    futures = store.futures(symbol, instrument) if futures is None else futures
     if not futures:
         return [], 0, None
     rows = [d.FutDay(day, close, oi, volume) for day, close, oi, volume in futures]

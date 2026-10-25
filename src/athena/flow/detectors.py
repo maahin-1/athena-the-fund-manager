@@ -89,9 +89,10 @@ def futures_events(symbol: str, rows: Sequence[FutDay]) -> list[Event]:
     return out
 
 
-def put_call_ratio(options: Sequence[OptRow], day: date, expiry: date | None = None) -> float | None:
-    """Put open interest over call open interest on `day` for one expiry (the nearest on the day when none is given); None when there are no calls."""
-    rows = [o for o in options if o.day == day]
+def put_call_ratio(options: Sequence[OptRow], day: date, expiry: date | None = None, by_day: Mapping[date, Sequence[OptRow]] | None = None) -> float | None:
+    """Put open interest over call open interest on `day` for one expiry (the nearest on the day when none is given); None when there are no calls. `by_day` (the rows grouped by day)
+    saves a scan of every row for each day when many days are asked."""
+    rows = list(by_day.get(day, ())) if by_day is not None else [o for o in options if o.day == day]
     if not rows:
         return None
     if expiry is None:
@@ -123,8 +124,11 @@ def options_events(symbol: str, options: Sequence[OptRow], days: Sequence[date],
     if len(days) < MIN_HISTORY + 1 or price <= 0:
         return []
     today = days[-1]
-    ratios = [r for d in days[-(LOOKBACK + 1) : -1] if (r := put_call_ratio(options, d)) is not None]
-    now = put_call_ratio(options, today)
+    grouped: dict[date, list[OptRow]] = {}
+    for o in options:
+        grouped.setdefault(o.day, []).append(o)
+    ratios = [r for d in days[-(LOOKBACK + 1) : -1] if (r := put_call_ratio(options, d, by_day=grouped)) is not None]
+    now = put_call_ratio(options, today, by_day=grouped)
     out: list[Event] = []
     z = _z(now, ratios) if now is not None else None
     if z is not None and abs(z) >= PCR_Z:
