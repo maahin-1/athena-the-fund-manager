@@ -668,3 +668,18 @@ abbr.fact { text-decoration: underline dotted; cursor: help; }
 .debate { margin: 6px 0 2px; }
 .debate summary { cursor: pointer; color: var(--fg-dim); font-size: 11px; }
 .debate-side { margin: 6px 0 0 8px; }
+
+/* notes panel */
+.notes .pb { display: flex; flex-direction: column; gap: 6px; padding: 6px; overflow: auto; }
+.notes-modes { display: flex; gap: 4px; }
+.notes-bar { display: flex; gap: 4px; }
+.notes-find { flex: 1; min-width: 0; }
+.notes-form { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
+.notes-text { flex: 1 1 100%; min-height: 54px; resize: vertical; background: var(--bg-panel); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; font: inherit; padding: 4px 6px; }
+.notes-taginput { width: 110px; }
+.notes-list { display: flex; flex-direction: column; gap: 6px; }
+.note-item { border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; background: var(--bg-panel); }
+.note-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; color: var(--fg-dim); font-size: 11px; }
+.note-symbol { background: none; border: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
+.note-time { flex: 1; }
+.note-body { white-space: pre-wrap; overflow-wrap: anywhere; }

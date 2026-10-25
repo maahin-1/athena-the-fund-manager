@@ -28,6 +28,7 @@ import { ChartPanel } from './panels/chart';
 import { DepthPanel } from './panels/depth';
 import { DetailsPanel } from './panels/details';
 import { QuotePanel } from './panels/quote';
+import { NotesPanel } from './panels/notes';
 import { TapePanel } from './panels/tape';
 import { VerdictPanel } from './panels/verdict';
 import { WatchlistPanel } from './panels/watchlist';
@@ -35,10 +36,10 @@ import { WatchlistPanel } from './panels/watchlist';
 const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
 const VIEW_KEY = 'athena.terminal.view';
-const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'details', 'analysis', 'verdict', 'tape'];
+const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'details', 'analysis', 'verdict', 'notes', 'tape'];
 type View = 'terminal' | 'lab' | 'grid' | 'options' | 'fund' | 'research' | 'screen';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
-  watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel, details: DetailsPanel,
+  watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel, details: DetailsPanel, notes: NotesPanel,
 };
 
 class App implements AppContext {

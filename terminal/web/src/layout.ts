@@ -1,6 +1,6 @@
 import { GROUPS, type Group } from './links';
 
-export const PANEL_TYPES = ['watchlist', 'chart', 'depth', 'quote', 'tape', 'analysis', 'verdict', 'details'] as const;
+export const PANEL_TYPES = ['watchlist', 'chart', 'depth', 'quote', 'tape', 'analysis', 'verdict', 'details', 'notes'] as const;
 export type PanelType = (typeof PANEL_TYPES)[number];
 
 export interface PanelState {

@@ -508,6 +508,7 @@ const WATCHLISTS: &str = "watchlists";
 const SCREENS: &str = "screens";
 const FORMULAS: &str = "formulas";
 const STRATEGIES: &str = "strategies";
+const NOTEBOOK: &str = "notebook";
 
 /// The name a symbol's drawings are kept under in the lists folder: `dr-` and the upper-cased symbol, where letters, digits, space and `-` stay and every other character
 /// (including `_`) becomes `_` and two hex digits (`M&M` is `dr-M_26M`). None for a symbol outside `A-Z 0-9 & ^ space -` or one whose name would pass the store's 40 characters.
@@ -539,6 +540,22 @@ async fn drawings_get(State(state): State<AppState>, Path(symbol): Path<String>)
 async fn drawings_put(State(state): State<AppState>, Path(symbol): Path<String>, body: Bytes) -> Response {
     let Some(name) = drawing_name(&symbol) else { return StatusCode::BAD_REQUEST.into_response() };
     match state.lists.put(&name, &body) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+/// The notebook: one document of the owner's notes, kept as the watchlists are (the page validates what is in it). It stays in the terminal's own folder on this machine.
+async fn notebook_get(State(state): State<AppState>) -> Response {
+    match state.lists.get(NOTEBOOK) {
+        Ok(body) => ([("content-type", "application/json")], body).into_response(),
+        Err(LayoutError::Missing) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => layout_status(e).into_response(),
+    }
+}
+
+async fn notebook_put(State(state): State<AppState>, body: Bytes) -> Response {
+    match state.lists.put(NOTEBOOK, &body) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => layout_status(e).into_response(),
     }
@@ -797,6 +814,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/fund/:symbol", get(api_fund))
         .route("/api/valuation/:symbol", get(api_valuation))
         .route("/api/flow/board", get(api_flow_board))
+        .route("/api/notebook", get(notebook_get).put(notebook_put))
         .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
@@ -1043,6 +1061,24 @@ mod tests {
         let big = format!(r#"{{"x":"{}"}}"#, "a".repeat(250 * 1024));
         assert_eq!(client.put(url("SBIN")).header("Origin", &origin).body(big).send().await.unwrap().status(), 413);
         assert_eq!(client.put(url("SBIN")).header("Origin", "http://evil.test").body(body).send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_notebook_is_one_document_saved_and_loaded_over_http() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}/api/notebook");
+        assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().status(), 204); // none written yet is not an error
+        let body = r#"{"version":1,"notes":[{"id":"n1","symbol":"TCS","text":"a note","tag":"","created":1,"updated":1}]}"#;
+        assert_eq!(client.put(&url).header("Origin", &origin).body(body).send().await.unwrap().status(), 204);
+        assert_eq!(client.get(&url).header("Origin", &origin).send().await.unwrap().text().await.unwrap(), body);
+        assert_eq!(client.put(&url).header("Origin", &origin).body("[]").send().await.unwrap().status(), 400);
+        let big = format!(r#"{{"x":"{}"}}"#, "a".repeat(250 * 1024));
+        assert_eq!(client.put(&url).header("Origin", &origin).body(big).send().await.unwrap().status(), 413);
+        assert_eq!(client.put(&url).header("Origin", "http://evil.test").body(body).send().await.unwrap().status(), 403);
+        assert_eq!(client.get(&url).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         stop.cancel();
     }
 
