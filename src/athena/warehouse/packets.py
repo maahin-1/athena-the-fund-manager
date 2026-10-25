@@ -40,6 +40,38 @@ def _with_calendar(filed: tuple[dict[str, Any], datetime] | None, yahoo: tuple[d
     return payload, read
 
 
+def _quarter_after(day: date) -> date:
+    """The last day of the quarter that follows the one ending on `day`."""
+    month = day.month + 3
+    year = day.year + (month - 1) // 12
+    month = (month - 1) % 12 + 1
+    first_of_next = date(year + month // 12, month % 12 + 1, 1)
+    return first_of_next - timedelta(days=1)
+
+
+def with_next_results(payload: dict[str, Any], announced: list[date], today: date) -> dict[str, Any]:
+    """Adds the next results date to the payload's earnings dates when it holds none after today. An announced board meeting is the date; with none announced it is
+    last year's filing day for the same quarter plus a year (marked as an estimate, because companies move by a week or two). Nothing is added when neither exists."""
+    held = payload.get("earnings_dates") or []
+    if any(date.fromisoformat(row["date"]) > today for row in held):
+        return payload
+    if announced:
+        row = {"date": announced[0].isoformat(), "reported": None, "surprise_pct": None, "source": "announced board meeting"}
+    else:
+        filed = {date.fromisoformat(k): date.fromisoformat(v) for k, v in (payload.get("filing_dates") or {}).items()}
+        if not filed:
+            return payload
+        following = _quarter_after(max(filed))
+        earlier = next((v for k, v in filed.items() if (k.year, k.month) == (following.year - 1, following.month)), None)
+        if earlier is None:
+            return payload
+        expected = earlier + timedelta(days=364)  # the same weekday a year on
+        if expected <= today:
+            return payload
+        row = {"date": expected.isoformat(), "reported": None, "surprise_pct": None, "source": "estimated from last year's filing date"}
+    return {**payload, "earnings_dates": [*held, row]}
+
+
 def build_packets(
     warehouse: Warehouse,
     now: datetime,
@@ -84,6 +116,7 @@ def build_packets(
                     summary["no_statements"] += 1
                 else:
                     payload, fetched = held
+                    payload = with_next_results(payload, warehouse.upcoming_results(symbol, ist_date(now)), ist_date(now))
                     age = (now - fetched).days
                     if age > STALE_OK_DAYS:
                         notes.append(f"statements fetched {age} days ago")

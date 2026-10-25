@@ -434,6 +434,16 @@ class Warehouse:
             raise
         return len(data)
 
+    def upcoming_results(self, symbol: str, today: date) -> list[date]:
+        """Dates of the board meetings the exchange has announced to approve results, from today on, soonest first."""
+        try:
+            rows = self._con.execute(
+                "SELECT DISTINCT event_date FROM events WHERE symbol = ? AND event_date >= ? AND purpose ILIKE '%result%' ORDER BY event_date", [symbol, today]
+            ).fetchall()
+        except duckdb.CatalogException:
+            return []
+        return [r[0] for r in rows]
+
     def events_status(self) -> dict[str, Any]:
         try:
             row = self._con.execute("SELECT count(*), min(event_date), max(event_date), max(fetched_at) FROM events").fetchone()

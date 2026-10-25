@@ -97,6 +97,7 @@ def payload_from_store(
         "annual": {"income": _income(fy, lender), "balance": _balance(balance, set(fy)), "cashflow": _cashflow(cash, fy)},
         "quarterly": {"income": _income(quarters, lender)},
         "earnings_dates": [],
+        "filing_dates": {end.isoformat(): filed.isoformat() for end, filed in store.filing_dates(symbol).items()},
         "source": SOURCE,
         "quality_flags": [] if company.get("shares") else ["no share count is held, so per-share figures and the market value are missing"],
     }

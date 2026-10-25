@@ -109,3 +109,23 @@ def test_filing_statements_take_the_earnings_calendar_and_dividend_rate_from_the
     payload, got_read = _with_calendar(filed, yahoo)
     assert payload["info"] == {"financialCurrency": "INR", "dividendRate": 5.0} and payload["earnings_dates"] == [{"date": "2026-11-01"}] and payload["source"] == "filings"
     assert _with_calendar(filed, None)[0] is filed[0] and _with_calendar(None, yahoo) is yahoo and _with_calendar(None, None) is None
+
+
+def test_the_next_results_date_is_the_announced_meeting_else_last_years_filing_day_plus_a_year():
+    from datetime import date
+    from athena.warehouse.packets import with_next_results
+
+    filed = {"2025-12-31": "2026-01-12", "2026-03-31": "2026-04-09", "2026-06-30": "2026-07-09", "2026-09-30": "2026-10-08"}
+    today = date(2026, 10, 25)
+    base = {"earnings_dates": [], "filing_dates": filed}
+
+    announced = with_next_results(base, [date(2026, 11, 3)], today)["earnings_dates"]
+    assert announced == [{"date": "2026-11-03", "reported": None, "surprise_pct": None, "source": "announced board meeting"}]
+
+    estimate = with_next_results(base, [], today)["earnings_dates"][0]
+    assert estimate["date"] == "2027-01-11" and estimate["source"].startswith("estimated")  # 2026-01-12 plus 364 days, both Mondays
+
+    assert with_next_results({"earnings_dates": [], "filing_dates": {"2026-09-30": "2026-10-08"}}, [], today)["earnings_dates"] == []  # no filing a year back to go on
+    assert with_next_results({"earnings_dates": []}, [], today)["earnings_dates"] == []
+    held = {"earnings_dates": [{"date": "2026-11-20", "reported": None}], "filing_dates": filed}
+    assert with_next_results(held, [date(2026, 11, 3)], today) is held  # a future date already held is kept

@@ -463,9 +463,9 @@ def build_fundamentals_packet(
 
     def days_to_next() -> R:
         today = ist_date(now)
-        future = sorted(date.fromisoformat(row["date"]) for row in st.earnings_dates if date.fromisoformat(row["date"]) > today)
+        future = sorted((date.fromisoformat(row["date"]), row.get("source") or "") for row in st.earnings_dates if date.fromisoformat(row["date"]) > today)
         _need(bool(future), "no upcoming earnings date")
-        return R((future[0] - today).days, f"next report {future[0].isoformat()}")
+        return R((future[0][0] - today).days, f"next report {future[0][0].isoformat()}" + (f" ({future[0][1]})" if future[0][1] else ""))
 
     attempt("days_to_next_earnings", EARNINGS, "days", ["earnings calendar"], days_to_next)
 

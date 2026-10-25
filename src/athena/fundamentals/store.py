@@ -211,6 +211,11 @@ class FundamentalsStore:
         row = self._con.execute("SELECT max(filed) FROM statement_lines WHERE symbol = ? AND basis = ?", [symbol, basis]).fetchone()
         return row[0] if row else None
 
+    def filing_dates(self, symbol: str) -> dict[date, date]:
+        """The day each reporting period's results were first filed (shareholding patterns are not results and are left out)."""
+        rows = self._con.execute("SELECT period_end, min(filed) FROM filings WHERE symbol = ? AND basis <> 'shp' AND filed IS NOT NULL GROUP BY period_end", [symbol]).fetchall()
+        return {period: filed.date() for period, filed in rows}
+
     def company(self, symbol: str) -> dict[str, Any] | None:
         row = self._con.execute("SELECT symbol, name, isin, industry, layout, shares, updated FROM companies WHERE symbol = ?", [symbol]).fetchone()
         return dict(zip(("symbol", "name", "isin", "industry", "layout", "shares", "updated"), row)) if row else None
