@@ -88,3 +88,21 @@ def test_a_name_the_exchange_abbreviates_is_matched_to_exactly_one_listed_name_a
 def test_abbreviations_are_spelled_out_when_names_are_compared():
     assert m.name_words("Banco Products (I) Limited") == frozenset({"banco", "products", "india"})
     assert m.name_words("Black Rose Inds. Limited") == frozenset({"black", "rose", "industries"})
+
+
+def test_a_name_word_that_sits_mostly_in_one_industry_places_a_company_nothing_else_reached():
+    damodaran = [row(f"Alpha{i} Hotels Ltd", f"NSEI:H{i}", "Hotel/Gaming") for i in range(9)] + [row("Beta Hotels Ltd", "NSEI:HX", "Retail")] + [row(f"Gamma{i} Cement Ltd", f"NSEI:C{i}", "Construction Supplies") for i in range(4)]
+    mapped_companies = [m.Company(f"H{i}", f"Alpha{i} Hotels Ltd", "") for i in range(9)] + [m.Company("HX", "Beta Hotels Ltd", "")] + [m.Company(f"C{i}", f"Gamma{i} Cement Ltd", "") for i in range(4)]
+    new = [m.Company("NEWHOTEL", "Zeta Hotels and Resorts Limited", ""), m.Company("NEWCEMENT", "Zeta Cement Limited", ""), m.Company("NOWORD", "Zeta Unrelated Limited", "")]
+    mapped = {r.symbol: r for r in m.build_company_map(damodaran, mapped_companies + new)}
+    assert (mapped["NEWHOTEL"].industry, mapped["NEWHOTEL"].method, mapped["NEWHOTEL"].confidence) == ("Hotel/Gaming", "words", 0.63)  # 9 of 10 companies with the word, x 0.7
+    assert "NEWCEMENT" not in mapped  # four companies are too few for a word to vote
+    assert "NOWORD" not in mapped
+
+
+def test_a_word_split_across_industries_does_not_vote_and_a_company_already_mapped_is_left_alone():
+    damodaran = [row(f"Bank{i} Trading Ltd", f"NSEI:T{i}", ("Retail", "Steel")[i % 2]) for i in range(10)]
+    companies = [m.Company(f"T{i}", f"Bank{i} Trading Ltd", "") for i in range(10)] + [m.Company("NEWTRADE", "Zeta Trading Limited", "")]
+    mapped = {r.symbol: r for r in m.build_company_map(damodaran, companies)}
+    assert "NEWTRADE" not in mapped  # 5 of 10 is under 0.6
+    assert all(mapped[f"T{i}"].method == "nse_ticker" for i in range(10))
