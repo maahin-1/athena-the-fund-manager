@@ -40,11 +40,13 @@ pub type Launcher = Arc<dyn Fn(&str, &str) -> Command + Send + Sync>;
 pub struct FundFetch {
     state: Mutex<State>,
     launch: Launcher,
+    /// Fetches finished (done or failed): what the Fundamentals page kept from before the latest one is not served again.
+    pub finished: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl FundFetch {
     pub fn new(launch: Launcher) -> Arc<Self> {
-        Arc::new(FundFetch { state: Mutex::new(State::Idle), launch })
+        Arc::new(FundFetch { state: Mutex::new(State::Idle), launch, finished: Arc::new(std::sync::atomic::AtomicU64::new(0)) })
     }
 
     pub fn standard(python: &str, store: PathBuf) -> Arc<Self> {
@@ -101,10 +103,12 @@ impl FundFetch {
                 },
             };
             if let Err(message) = outcome {
+                self.finished.fetch_add(1, std::sync::atomic::Ordering::Relaxed); // a failed stage may still have written part of the company
                 *self.state.lock().unwrap() = State::Failed { symbol, message };
                 return;
             }
         }
+        self.finished.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         *self.state.lock().unwrap() = State::Done { symbol };
     }
 }

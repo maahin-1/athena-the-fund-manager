@@ -297,10 +297,36 @@ async fn api_derivs_futures(State(state): State<AppState>, Query(q): Query<Deriv
     derivs_reply(state.derivs.with(|t| t.futures(&name)))
 }
 
+/// Answers kept in memory: the market screen until the warehouse file changes, the fundamentals counts for `FUND_STATUS_FOR`. Keyed by the file, as
+/// tests run several servers in one process.
+type Remembered = std::sync::Mutex<std::collections::HashMap<PathBuf, (SystemTime, std::time::Instant, Arc<serde_json::Value>)>>;
+static SCREEN_ANSWERS: std::sync::LazyLock<Remembered> = std::sync::LazyLock::new(Default::default);
+static FUND_COUNTS: std::sync::LazyLock<Remembered> = std::sync::LazyLock::new(Default::default);
+/// The fundamentals store is written for hours while a backfill runs, so its counts are kept for a minute rather than until the file changes.
+pub const FUND_STATUS_FOR: Duration = Duration::from_secs(60);
+
+fn modified(path: &std::path::Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
 async fn api_screen(State(state): State<AppState>) -> Response {
     let path = state.bars.warehouse.clone();
-    match tokio::task::spawn_blocking(move || crate::analysis::screen_all(&path)).await {
-        Ok(Ok(body)) => Json(body).into_response(),
+    let stamp = modified(&path);
+    if let Some(stamp) = stamp {
+        if let Some((at, _, body)) = SCREEN_ANSWERS.lock().unwrap().get(&path) {
+            if *at == stamp {
+                return Json(body.as_ref().clone()).into_response();
+            }
+        }
+    }
+    let read = path.clone();
+    match tokio::task::spawn_blocking(move || crate::analysis::screen_all(&read)).await {
+        Ok(Ok(body)) => {
+            if let Some(stamp) = stamp {
+                SCREEN_ANSWERS.lock().unwrap().insert(path, (stamp, std::time::Instant::now(), Arc::new(body.clone())));
+            }
+            Json(body).into_response()
+        }
         _ => (StatusCode::SERVICE_UNAVAILABLE, "the warehouse is busy").into_response(),
     }
 }
@@ -385,9 +411,18 @@ async fn api_fund_export(State(state): State<AppState>, Path(symbol): Path<Strin
 }
 
 async fn api_fund_status(State(state): State<AppState>) -> Response {
+    let key = state.fundamentals.store_path().to_path_buf();
+    if let Some((_, at, body)) = FUND_COUNTS.lock().unwrap().get(&key) {
+        if at.elapsed() < FUND_STATUS_FOR {
+            return Json(body.as_ref().clone()).into_response();
+        }
+    }
     let jobs = state.fundamentals.clone();
     match tokio::task::spawn_blocking(move || jobs.status()).await {
-        Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Ok(body)) => {
+            FUND_COUNTS.lock().unwrap().insert(key, (SystemTime::now(), std::time::Instant::now(), Arc::new(body.clone())));
+            Json(body).into_response()
+        }
         Ok(Err(e)) => fund_error(e),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

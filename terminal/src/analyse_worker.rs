@@ -1,5 +1,5 @@
 //! The live analysis: the project's own Python dashboard service, kept running as one worker process (`athena.dashboard.worker`).
-//! It is started on the first request (building the service takes about 15 seconds) and then answers one request at a time over
+//! It is started when the terminal starts (building the service takes about 15 seconds), or on the first request if that failed, and then answers one request at a time over
 //! JSON lines. A request that fails, times out or finds the worker gone drops the process, so the next request starts a fresh one.
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -72,6 +72,14 @@ impl AnalyseWorker {
         .await
         .unwrap_or(false);
         ready.then_some(Live { _child: child, stdin, out })
+    }
+
+    /// Start the worker now (about 15 seconds) so the first analysis asked for does not wait for it.
+    pub async fn warm(&self) {
+        let mut guard = self.live.lock().await;
+        if guard.is_none() {
+            *guard = self.start().await;
+        }
     }
 
     /// The dashboard view for a typed ticker, ISIN or name, as the worker built it (`relatives` lists related instruments).

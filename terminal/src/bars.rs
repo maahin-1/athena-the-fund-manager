@@ -216,10 +216,19 @@ impl AdjustedDaily {
         AdjustedDaily { cache: Arc::new(Mutex::new(HashMap::new())), fetch }
     }
 
-    pub fn python(python: String, warehouse: PathBuf) -> Self {
+    /// Asks a warm helper first (0.3 s), else starts the module for the request (one to two seconds).
+    pub fn python(python: String, warehouse: PathBuf, helpers: Option<Arc<crate::helper::Helpers>>) -> Self {
         Self::new(Arc::new(move |symbol: String| {
-            let (python, warehouse) = (python.clone(), warehouse.clone());
+            let (python, warehouse, helpers) = (python.clone(), warehouse.clone(), helpers.clone());
             Box::pin(async move {
+                if let Some(h) = &helpers {
+                    let args = vec![symbol.clone(), "--limit".to_string(), "5000".to_string(), "--warehouse".to_string(), warehouse.to_string_lossy().into_owned()];
+                    if let Some(out) = h.run("chart_bars", &args, ADJUST_LIMIT).await {
+                        if let Some(a) = serde_json::from_slice::<Adjusted>(&out).ok().filter(|a| !a.bars.is_empty()) {
+                            return Some(a);
+                        }
+                    }
+                }
                 let mut cmd = tokio::process::Command::new(python);
                 cmd.args(["-m", "athena.warehouse.chart_bars", &symbol, "--limit", "5000", "--warehouse"])
                     .arg(&warehouse)

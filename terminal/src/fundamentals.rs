@@ -1,10 +1,13 @@
 //! The Fundamentals page: one company's statements as the document `athena.fundamentals.page` builds, and its Excel workbook.
-//! Each request starts the Python module once (a second or two; they are rare), with a price read from the warehouse's `screen` table.
+//! A page or valuation is asked of a warm Python helper (`crate::helper`, 0.1 to 0.3 s), or when none can answer, of the module started for the request (a second
+//! or two), with a price read from the warehouse's `screen` table. An answer is kept for `KEEP_FOR`, and for no longer than the next company fetch from the page.
 //! The fundamentals file itself is only ever read here, never written. Nothing but a fixed message from a failed child reaches the page.
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use duckdb::{AccessMode, Config, Connection, OptionalExt};
 use serde_json::{json, Value};
@@ -13,6 +16,12 @@ use tokio::sync::Semaphore;
 
 const LIMIT: Duration = Duration::from_secs(30);
 const AT_ONCE: usize = 2;
+/// How long a page or valuation is served from memory. The filings change only when a fetch runs; a fetch from the page clears the kept answers at once, and a
+/// fetch run by hand shows within this time.
+pub const KEEP_FOR: Duration = Duration::from_secs(10 * 60);
+
+/// (module, arguments, fetches finished when it was made) -> (when, the document)
+type Kept = HashMap<(String, Vec<String>, u64), (Instant, Value)>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FundError {
@@ -44,11 +53,29 @@ pub struct FundamentalsJobs {
     store: PathBuf,
     slots: Semaphore,
     counter: AtomicU64,
+    helpers: Option<Arc<crate::helper::Helpers>>,
+    /// Counts the company fetches finished from the page; an answer made before the latest one is not served.
+    fetches: Arc<AtomicU64>,
+    kept: std::sync::Mutex<Kept>,
 }
 
 impl FundamentalsJobs {
     pub fn new(page: Vec<String>, export: Vec<String>, warehouse: PathBuf, store: PathBuf) -> Self {
-        FundamentalsJobs { page, export, valuation: Vec::new(), warehouse, store, slots: Semaphore::new(AT_ONCE), counter: AtomicU64::new(0) }
+        FundamentalsJobs {
+            page, export, valuation: Vec::new(), warehouse, store, slots: Semaphore::new(AT_ONCE), counter: AtomicU64::new(0), helpers: None,
+            fetches: Arc::new(AtomicU64::new(0)), kept: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn with_helpers(mut self, helpers: Arc<crate::helper::Helpers>) -> Self {
+        self.helpers = Some(helpers);
+        self
+    }
+
+    /// Share the count of finished company fetches (`FundFetch::finished`).
+    pub fn with_fetches(mut self, fetches: Arc<AtomicU64>) -> Self {
+        self.fetches = fetches;
+        self
     }
 
     pub fn with_valuation(mut self, valuation: Vec<String>) -> Self {
@@ -73,14 +100,64 @@ impl FundamentalsJobs {
         Some((close, format!("warehouse close {}", day.unwrap_or_default())))
     }
 
+    /// The arguments after the module: the symbol, the basis, the store and the warehouse price when there is one.
+    fn args(&self, symbol: &str, basis: &str) -> Vec<String> {
+        let mut args = vec![symbol.to_string(), "--basis".into(), basis.to_string(), "--store".into(), self.store.to_string_lossy().into_owned()];
+        if let Some((close, note)) = self.price(symbol) {
+            args.extend(["--price".into(), close.to_string(), "--price-note".into(), note]);
+        }
+        args
+    }
+
     fn command(&self, base: &[String], symbol: &str, basis: &str) -> Command {
         let mut cmd = Command::new(&base[0]);
-        cmd.args(&base[1..]).arg(symbol).args(["--basis", basis]).args(["--store"]).arg(&self.store);
-        if let Some((close, note)) = self.price(symbol) {
-            cmd.args(["--price", &close.to_string(), "--price-note", &note]);
-        }
+        cmd.args(&base[1..]).args(self.args(symbol, basis));
         cmd.stdin(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
         cmd
+    }
+
+    /// A page or valuation document: kept, else from a helper, else from the module started for it. `what` names it in the messages.
+    async fn document(&self, base: &[String], symbol: &str, basis: &str, what: &str) -> Result<Value, FundError> {
+        let module = base.last().cloned().unwrap_or_default();
+        let op = if module.ends_with("valuation.page") { "valuation" } else { "page" };
+        let args = self.args(symbol, basis);
+        let key = (module, args.clone(), self.fetches.load(Ordering::Relaxed));
+        if let Some((at, doc)) = self.kept.lock().unwrap().get(&key) {
+            if at.elapsed() < KEEP_FOR {
+                return Ok(doc.clone());
+            }
+        }
+        let _slot = self.slots.acquire().await.map_err(|_| FundError::Busy)?;
+        let from_helper = match &self.helpers {
+            Some(h) => h.run(op, &args, LIMIT).await,
+            None => None,
+        };
+        let stdout = match from_helper {
+            Some(out) => out,
+            None => {
+                let mut cmd = self.command(base, symbol, basis);
+                cmd.stdout(Stdio::piped());
+                let output = tokio::time::timeout(LIMIT, async { cmd.spawn()?.wait_with_output().await })
+                    .await
+                    .map_err(|_| FundError::Failed(format!("the {what} took longer than 30 seconds and was stopped")))?
+                    .map_err(|_| FundError::Failed(format!("could not start the {what}")))?;
+                if !output.status.success() {
+                    return Err(FundError::Failed(format!("the {what} failed")));
+                }
+                output.stdout
+            }
+        };
+        let doc: Value = serde_json::from_slice(&stdout).map_err(|_| FundError::Failed(format!("the {what} gave an unreadable answer")))?;
+        if doc["busy"] == true {
+            return Err(FundError::Busy);
+        }
+        if doc["error"] == "no statements stored" {
+            return Err(FundError::NoData);
+        }
+        let mut kept = self.kept.lock().unwrap();
+        kept.retain(|_, (at, _)| at.elapsed() < KEEP_FOR);
+        kept.insert(key, (Instant::now(), doc.clone()));
+        Ok(doc)
     }
 
     fn check(symbol: &str, basis: &str) -> Result<(), FundError> {
@@ -96,24 +173,7 @@ impl FundamentalsJobs {
     /// The page document for one company.
     pub async fn page(&self, symbol: &str, basis: &str) -> Result<Value, FundError> {
         Self::check(symbol, basis)?;
-        let _slot = self.slots.acquire().await.map_err(|_| FundError::Busy)?;
-        let mut cmd = self.command(&self.page, symbol, basis);
-        cmd.stdout(Stdio::piped());
-        let output = tokio::time::timeout(LIMIT, async { cmd.spawn()?.wait_with_output().await })
-            .await
-            .map_err(|_| FundError::Failed("the page took longer than 30 seconds and was stopped".into()))?
-            .map_err(|_| FundError::Failed("could not start the page builder".into()))?;
-        if !output.status.success() {
-            return Err(FundError::Failed("the page builder failed".into()));
-        }
-        let doc: Value = serde_json::from_slice(&output.stdout).map_err(|_| FundError::Failed("the page builder gave an unreadable answer".into()))?;
-        if doc["busy"] == true {
-            return Err(FundError::Busy);
-        }
-        if doc["error"] == "no statements stored" {
-            return Err(FundError::NoData);
-        }
-        Ok(doc)
+        self.document(&self.page, symbol, basis, "page builder").await
     }
 
     /// The valuation document for one company (`athena.valuation.page`): a value range, the cost of capital and the assumptions behind them.
@@ -122,24 +182,7 @@ impl FundamentalsJobs {
         if self.valuation.is_empty() {
             return Err(FundError::Failed("the valuation module is not configured".into()));
         }
-        let _slot = self.slots.acquire().await.map_err(|_| FundError::Busy)?;
-        let mut cmd = self.command(&self.valuation, symbol, basis);
-        cmd.stdout(Stdio::piped());
-        let output = tokio::time::timeout(LIMIT, async { cmd.spawn()?.wait_with_output().await })
-            .await
-            .map_err(|_| FundError::Failed("the valuation took longer than 30 seconds and was stopped".into()))?
-            .map_err(|_| FundError::Failed("could not start the valuation".into()))?;
-        if !output.status.success() {
-            return Err(FundError::Failed("the valuation failed".into()));
-        }
-        let doc: Value = serde_json::from_slice(&output.stdout).map_err(|_| FundError::Failed("the valuation gave an unreadable answer".into()))?;
-        if doc["busy"] == true {
-            return Err(FundError::Busy);
-        }
-        if doc["error"] == "no statements stored" {
-            return Err(FundError::NoData);
-        }
-        Ok(doc)
+        self.document(&self.valuation, symbol, basis, "valuation").await
     }
 
     /// The workbook for one company, as the bytes of an `.xlsx` file.
@@ -159,6 +202,10 @@ impl FundamentalsJobs {
         };
         let _ = std::fs::remove_file(&file);
         result
+    }
+
+    pub fn store_path(&self) -> &Path {
+        &self.store
     }
 
     /// How much is stored: companies, periods and the newest period end. Read straight from the store; a locked file is retried briefly.

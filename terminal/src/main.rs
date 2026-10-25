@@ -11,6 +11,7 @@ mod fund_fetch;
 mod indices;
 mod fundamentals;
 mod hub;
+mod helper;
 mod layouts;
 mod live_bars;
 mod search;
@@ -229,8 +230,14 @@ async fn main() {
         tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), deriv_quotes.clone(), status.clone(), shutdown.clone()));
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
     }
+    // warm Python helpers for the Fundamentals page, the valuation and the adjusted daily bars, started now so the first page opened does not wait
+    let helpers = Arc::new(helper::Helpers::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
+    {
+        let h = helpers.clone();
+        tokio::spawn(async move { h.warm().await });
+    }
     let bars = Arc::new(bars::Bars {
-        adjusted: bars::AdjustedDaily::python(args.python.clone(), args.warehouse.clone()),
+        adjusted: bars::AdjustedDaily::python(args.python.clone(), args.warehouse.clone(), Some(helpers.clone())),
         warehouse: args.warehouse,
         intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())),
     });
@@ -238,8 +245,16 @@ async fn main() {
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
     let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
-    let fundamentals = Arc::new(fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone()));
+    {
+        let a = analyse.clone();
+        tokio::spawn(async move { a.warm().await });
+    }
     let fund_fetch = fund_fetch::FundFetch::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.fund_store.clone());
+    let fundamentals = Arc::new(
+        fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone())
+            .with_helpers(helpers.clone())
+            .with_fetches(fund_fetch.finished.clone()),
+    );
     let search = Arc::new(search::SearchCache::new(bars.warehouse.clone()));
     let pyind = pyind::PyInd::new(args.fund_python.as_deref().unwrap_or(&args.python), &args.indicator_runner, &args.indicators_dir);
     let derivs = derivs::DerivsStore::new();
