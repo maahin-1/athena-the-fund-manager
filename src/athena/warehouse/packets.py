@@ -3,7 +3,7 @@ and statements, so it is the same every time it is built from the same data; the
 last price and flags for anything that makes it less reliable (a price break nothing explains, statements older than a month)."""
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
@@ -79,10 +79,12 @@ def build_packets(
     symbols: list[str] | None = None,
     industry: Callable[[str, date], dict[str, Any] | None] | None = None,
     filings: Callable[[str], tuple[dict[str, Any], datetime] | None] | None = None,
+    valuations: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Technical packets for every stock and ETF with enough recent prices; fundamentals packets for every stock whose statements
     are held. `industry(symbol, day)` (optional) gives a stock's industry benchmarks for its fundamentals packet. `filings(symbol)` (optional) gives the statements
-    from the exchange's filings as `(payload, filed)`; a stock it has none for falls back to the statements the warehouse holds. Returns what was built and why anything was left out."""
+    from the exchange's filings as `(payload, filed)`; a stock it has none for falls back to the statements the warehouse holds. `valuations` (optional) is each stock's last recorded
+    valuation range, for the screen's value columns. Returns what was built and why anything was left out."""
     last = warehouse.last_loaded_day()
     summary: dict[str, Any] = {"technical": 0, "fundamentals": 0, "no_prices": 0, "inactive": 0, "no_statements": 0, "failed": []}
     if last is None:
@@ -125,7 +127,7 @@ def build_packets(
                     )
                     rows.append((symbol, FUNDAMENTALS, day, notes, fundamentals))
                     summary["fundamentals"] += 1
-            screen.append(screen_row(symbol, kind, entry["name"] or symbol, day, bars, technical, fundamentals, len(notes), age))
+            screen.append(screen_row(symbol, kind, entry["name"] or symbol, day, bars, technical, fundamentals, len(notes), age, (valuations or {}).get(symbol)))
         except Exception as exc:  # one stock's odd data must not stop the market's build
             summary["failed"].append(f"{symbol}: {type(exc).__name__}: {str(exc)[:80]}")
             on_progress(f"{symbol}: packet failed ({type(exc).__name__})")

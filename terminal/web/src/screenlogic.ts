@@ -10,6 +10,9 @@ export const COLUMNS: Record<string, [string, Style]> = {
   sma50_vs_200: ['50d vs 200d', 'pct'], market_cap_cr: ['Mkt cap (Rs cr)', 'number0'], traded_value_cr: ['Traded (Rs cr/day)', 'number'],
   pe: ['P/E', 'number'], pb: ['P/B', 'number'], roe: ['ROE', 'pct'], net_margin: ['Net margin', 'pct'], debt_to_equity: ['Debt/Equity', 'number'],
   dividend_yield: ['Dividend yield', 'pct'], earnings_yield: ['Earnings yield', 'pct'], revenue_growth: ['Sales growth (qtr, yoy)', 'pct'], flags: ['Flags', 'number0'],
+  industry_group: ['Industry (valuation)', 'text'], pe_vs_industry: ['P/E vs industry', 'number'], pb_vs_industry: ['P/B vs industry', 'number'], roe_vs_industry: ['ROE less industry', 'pct'],
+  value_base: ['Model value (Rs)', 'price'], price_vs_value: ['Price vs model value', 'pct'], value_position: ['Vs model range', 'number0'], implied_return: ['Implied return', 'pct'],
+  valued_on: ['Valued on', 'text'],
 };
 export const DEFAULT_COLUMNS = ['symbol', 'name', 'close', 'ret_1m', 'ret_1y', 'from_52w_high', 'pe', 'pb', 'roe', 'market_cap_cr', 'trend', 'flags'];
 
@@ -17,6 +20,7 @@ export const DEFAULT_COLUMNS = ['symbol', 'name', 'close', 'ret_1m', 'ret_1y', '
 export const RANGE_FILTERS: Record<string, [string, string, number]> = {
   pe: ['P/E', 'x', 1], pb: ['P/B', 'x', 1], roe: ['ROE', '%', 0.01], ret_1y: ['1-year return', '%', 0.01], from_52w_high: ['From 52-week high', '%', 0.01],
   market_cap_cr: ['Market cap', 'Rs cr', 1], traded_value_cr: ['Traded per day', 'Rs cr', 1], dividend_yield: ['Dividend yield', '%', 0.01], debt_to_equity: ['Debt/Equity', 'x', 1],
+  pe_vs_industry: ['P/E against its industry', 'x', 1], price_vs_value: ['Price against model value', '%', 0.01], implied_return: ['Implied return', '%', 0.01],
 };
 
 export type Limits = Record<string, [number | null, number | null]>; // in stored units
@@ -36,6 +40,8 @@ export const PRESETS: Preset[] = [
   { label: 'Beaten down', note: 'More than 40% below the 52-week high. A fall is not a reason to buy; look at why.', ranges: { from_52w_high: [null, -0.4], traded_value_cr: [1, null] }, kinds: ['stock'], trends: [] },
   { label: 'Dividend payers', note: 'Dividend yield over 3% on stocks that trade at least Rs 1 cr a day.', ranges: { dividend_yield: [0.03, null], traded_value_cr: [1, null] }, kinds: ['stock'], trends: [] },
   { label: 'Liquid large caps', note: 'Market cap over Rs 50,000 cr.', ranges: { market_cap_cr: [50000, null] }, kinds: ['stock'], trends: [] },
+  { label: 'Cheaper than its industry', note: 'P/E under 0.8 of its industry\'s and ROE no worse than the industry\'s (Damodaran India tables; a stock with no industry is left out).', ranges: { pe_vs_industry: [0, 0.8], roe_vs_industry: [0, null] }, kinds: ['stock'], trends: [] },
+  { label: 'Below model range', note: 'Price under the low end of the written-rule valuation range as last recorded. A range, not a target: read the Valuation section before anything else.', ranges: { value_position: [null, -1] }, kinds: ['stock'], trends: [] },
 ];
 
 export interface Filters {

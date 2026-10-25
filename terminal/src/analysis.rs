@@ -111,13 +111,15 @@ pub fn analysis(path: &Path, symbol: &str) -> Result<Value, AnalysisError> {
     }))
 }
 
-/// The columns `screen_all` returns, in order. These are text; every other column is a number (or empty).
-const SCREEN_ALL: [&str; 26] = [
+/// The columns `screen_all` returns, in order. These are text; every other column is a number (or empty). The last nine were added later: a warehouse built before them has none
+/// of them, and each is then null for every row.
+const SCREEN_ALL: [&str; 35] = [
     "symbol", "kind", "name", "sector", "close", "ret_1d", "ret_1m", "ret_3m", "ret_6m", "ret_1y", "from_52w_high", "from_52w_low", "traded_value_cr",
     "rsi_14", "trend", "sma50_vs_200", "market_cap_cr", "pe", "pb", "roe", "net_margin", "debt_to_equity", "dividend_yield", "earnings_yield",
-    "revenue_growth", "flags",
+    "revenue_growth", "flags", "industry_group", "pe_vs_industry", "pb_vs_industry", "roe_vs_industry", "value_base", "price_vs_value", "value_position",
+    "implied_return", "valued_on",
 ];
-const SCREEN_TEXT: [&str; 5] = ["symbol", "kind", "name", "sector", "trend"];
+const SCREEN_TEXT: [&str; 7] = ["symbol", "kind", "name", "sector", "trend", "industry_group", "valued_on"];
 
 /// A two-column query as symbol -> text; empty when the query fails (a table that does not exist yet).
 fn symbol_map(conn: &Connection, sql: &str) -> std::collections::HashMap<String, String> {
@@ -129,7 +131,8 @@ fn symbol_map(conn: &Connection, sql: &str) -> std::collections::HashMap<String,
 /// Every row of the stored market screen (all stocks and ETFs) as `{columns, rows, market_day}`, for the page to filter and sort. A missing figure is `null`, never zero.
 pub fn screen_all(path: &Path) -> Result<Value, AnalysisError> {
     let conn = connect(path)?;
-    let select: Vec<String> = SCREEN_ALL.iter().map(|c| format!("CAST({c} AS VARCHAR)")).collect();
+    let held = symbol_map(&conn, "SELECT column_name, column_name FROM information_schema.columns WHERE table_name = 'screen'");
+    let select: Vec<String> = SCREEN_ALL.iter().map(|c| if held.contains_key(*c) { format!("CAST({c} AS VARCHAR)") } else { "CAST(NULL AS VARCHAR)".to_string() }).collect();
     let mut stmt = conn.prepare(&format!("SELECT {} FROM screen ORDER BY traded_value_cr DESC NULLS LAST", select.join(", "))).map_err(|_| AnalysisError::Busy)?;
     let rows = stmt
         .query_map([], |r| {
@@ -287,6 +290,36 @@ mod tests {
         let a = screen_all(&path).unwrap();
         assert_eq!(at(&a, "industry"), "Financial Services"); // the largest index holding it decides (NIFTY 500 has two rows)
         assert_eq!(at(&a, "indices"), "NIFTY 50|NIFTY 500|NIFTY BANK");
+    }
+
+    #[test]
+    fn the_value_and_industry_columns_come_through_when_the_table_has_them_and_are_null_when_it_does_not() {
+        let cols = |a: &Value| -> Vec<String> { a["columns"].as_array().unwrap().iter().map(|c| c.as_str().unwrap().to_string()).collect() };
+        let at = |a: &Value, name: &str| a["rows"][0][cols(a).iter().position(|c| c == name).unwrap()].clone();
+        let old = screen_all(&warehouse("screen_old_columns")).unwrap(); // the fixture table has none of the later columns
+        for name in ["industry_group", "pe_vs_industry", "value_base", "price_vs_value", "value_position", "implied_return", "valued_on"] {
+            assert!(at(&old, name).is_null(), "{name} should be null for a table built before it existed");
+        }
+        assert_eq!(at(&old, "pe"), 9.8); // the columns it does have are untouched
+
+        let path = warehouse("screen_new_columns");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "ALTER TABLE screen ADD COLUMN industry_group VARCHAR; ALTER TABLE screen ADD COLUMN pe_vs_industry DOUBLE; ALTER TABLE screen ADD COLUMN pb_vs_industry DOUBLE;
+                 ALTER TABLE screen ADD COLUMN roe_vs_industry DOUBLE; ALTER TABLE screen ADD COLUMN value_base DOUBLE; ALTER TABLE screen ADD COLUMN price_vs_value DOUBLE;
+                 ALTER TABLE screen ADD COLUMN value_position INTEGER; ALTER TABLE screen ADD COLUMN implied_return DOUBLE; ALTER TABLE screen ADD COLUMN valued_on DATE;
+                 UPDATE screen SET industry_group = 'Banks (Regional)', pe_vs_industry = 0.8, value_base = 1100.0, price_vs_value = -0.125, value_position = 0, implied_return = 0.13,
+                   valued_on = DATE '2026-10-01';",
+            )
+            .unwrap();
+        let a = screen_all(&path).unwrap();
+        assert_eq!(at(&a, "industry_group"), "Banks (Regional)");
+        assert_eq!(at(&a, "pe_vs_industry"), 0.8);
+        assert_eq!(at(&a, "price_vs_value"), -0.125);
+        assert_eq!(at(&a, "value_position"), 0.0);
+        assert_eq!(at(&a, "valued_on"), "2026-10-01"); // a date stays text
+        assert!(at(&a, "pb_vs_industry").is_null()); // not every stock has every figure
     }
 
     #[test]

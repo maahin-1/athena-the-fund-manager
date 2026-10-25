@@ -105,6 +105,10 @@ class Warehouse:
         self._con.execute("CREATE TABLE IF NOT EXISTS index_days (day DATE PRIMARY KEY, rows INTEGER NOT NULL, loaded_at TIMESTAMP NOT NULL)")
         columns = ", ".join(f"{name} {sql_type}" for name, sql_type in SCREEN_COLUMNS.items())
         self._con.execute(f"CREATE TABLE IF NOT EXISTS screen ({columns}, built_at TIMESTAMP NOT NULL, PRIMARY KEY (symbol))")
+        held = {r[0] for r in self._con.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'screen'").fetchall()}
+        for name, sql_type in SCREEN_COLUMNS.items():
+            if name not in held:  # a table made before this column existed
+                self._con.execute(f"ALTER TABLE screen ADD COLUMN {name} {sql_type}")
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS packets (symbol VARCHAR NOT NULL, kind VARCHAR NOT NULL, data_as_of DATE NOT NULL, built_at TIMESTAMP NOT NULL, "
             "flags VARCHAR NOT NULL, payload VARCHAR NOT NULL, PRIMARY KEY (symbol, kind))"
@@ -216,7 +220,7 @@ class Warehouse:
                 self._con.execute("DELETE FROM screen")
             if data:
                 marks = ", ".join("?" for _ in range(len(names) + 1))
-                self._con.executemany(f"INSERT OR REPLACE INTO screen VALUES ({marks})", data)
+                self._con.executemany(f"INSERT OR REPLACE INTO screen ({', '.join(names)}, built_at) VALUES ({marks})", data)
             self._con.execute("COMMIT")
         except Exception:
             self._con.execute("ROLLBACK")

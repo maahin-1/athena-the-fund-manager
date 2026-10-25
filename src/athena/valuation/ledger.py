@@ -69,6 +69,18 @@ class Ledger:
         return [dict(zip(COLUMNS, r)) for r in got]
 
 
+def latest_snapshots(path: str | Path = DEFAULT_PATH) -> dict[str, dict[str, Any]]:
+    """Each symbol's range from the most recent snapshot, with its date as `snap_date`; empty when there is no ledger, no snapshot, or the file is busy."""
+    if not Path(path).exists():
+        return {}
+    try:
+        with Ledger(path, read_only=True) as ledger:
+            days = ledger.snapshot_dates()
+            return {r["symbol"]: {**r, "snap_date": days[-1]} for r in ledger.rows(days[-1])} if days else {}
+    except duckdb.Error:
+        return {}
+
+
 def stored_prices(warehouse: Path) -> dict[str, tuple[float, date]]:
     """Each stock's stored close and the day it is for."""
     con = duckdb.connect(str(warehouse), read_only=True)

@@ -52,6 +52,14 @@ export const FIELDS: FieldDef[] = [
   f(['earnings_yield'], 'Earnings yield', 'percent', 'earnings_yield > 5', '%'),
   f(['revenue_growth', 'growth'], 'Sales growth (quarter, year on year)', 'percent', 'revenue_growth > 15', '%'),
   f(['flags'], 'Data flags', 'number', 'flags = 0'),
+  f(['industry_group', 'valuation_industry'], 'Industry used for valuation (Damodaran)', 'text', 'industry_group = "Hotel/Gaming"'),
+  f(['pe_vs_industry'], 'P/E over its industry\'s', 'number', 'pe_vs_industry < 0.8', 'x'),
+  f(['pb_vs_industry'], 'P/B over its industry\'s', 'number', 'pb_vs_industry < 1', 'x'),
+  f(['roe_vs_industry'], 'ROE less its industry\'s', 'percent', 'roe_vs_industry > 0', '%'),
+  f(['value_base', 'model_value'], 'Model value per share (base case, as last recorded)', 'number', 'model_value > 100', 'Rs'),
+  f(['price_vs_value'], 'Price against model value', 'percent', 'price_vs_value < -20', '%'),
+  f(['value_position'], 'Price against the model range (-1 below, 0 inside, 1 above)', 'number', 'value_position = -1'),
+  f(['implied_return'], 'Implied yearly return at the recorded price', 'percent', 'implied_return > 12', '%'),
 ];
 
 const BY_NAME = new Map(FIELDS.flatMap((d) => d.names.map((n) => [n.toLowerCase(), d] as const)));
