@@ -46,6 +46,9 @@ def variants() -> list[Variant]:
         v("terminal-moat-full", "all of it lasts for ever (return on capital capped at 30%)", policy=p(terminal_excess_share=1.0)),
         v("terminal-growth-5", "terminal growth 5% instead of the rupee risk-free rate", policy=p(terminal_growth=0.05)),
         v("minority-at-pb", "minority interests at book x industry price to book", policy=p(minority_at_industry_pb=True)),
+        v("no-failure", "no failure value blended in (the rules before 25 Oct)", policy=p(failure=False)),
+        v("failure-book", "failure proceeds tied to book capital instead of the going-concern value", policy=p(failure_tie="book")),
+        v("failure-5y", "chance of failure over 5 years instead of 10", policy=p(failure_horizon=5)),
         v("lender-roe-company", "a lender's stable ROE = its own", policy=p(lender_stable_roe="company")),
         v("lender-roe-blend", "a lender's stable ROE = mean of its own and the industry's", policy=p(lender_stable_roe="blend")),
     ]
@@ -105,3 +108,49 @@ def ic_summary(result: StudyResult, tier: str, dates: Sequence[str], signal: str
         out[variant] = summarize_ic([by_date[d][tier][signal]["ic"] for d in dates if d in by_date and signal in by_date[d][tier]])
     return out
 
+
+
+def format_table(result: StudyResult, tier: str = "all", dev: Sequence[str] = (), holdout: Sequence[str] = ()) -> str:
+    """One line per variant: the rank correlation of the model signal with the next period's return on the development dates and on the holdout dates, with the t statistic and the
+    share of dates above zero, and the median price over base value."""
+    dev_ic, hold_ic = ic_summary(result, tier, dev), ic_summary(result, tier, holdout)
+    f = lambda s: "   n/a" if s["mean"] is None else f"{s['mean']:+.3f} (t {('%+.1f' % s['t']) if s['t'] is not None else 'n/a'}, {s['positive']:.0%} up)"  # noqa: E731
+    lines = [f"{'variant':24s} {'development ' + str(len(dev)) + ' dates':32s} {'holdout ' + str(len(holdout)) + ' dates':32s} median price/base"]
+    for name in result.forward:
+        levels = [result.levels[name][d].get("median_price_to_base") for d in result.dates if d in result.levels[name]]
+        got = [x for x in levels if x is not None]
+        mid = sorted(got)[len(got) // 2] if got else None
+        lines.append(f"{name:24s} {f(dev_ic[name]):32s} {f(hold_ic[name]):32s} {'n/a' if mid is None else f'{mid:.2f}'}")
+    return "\n".join(lines)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+    import json
+
+    from athena.fundamentals.store import DEFAULT_PATH as FUNDAMENTALS
+    from athena.fundamentals.store import open_read
+    from athena.reference.store import DEFAULT_PATH as REFERENCE
+    from athena.valuation.cli import WAREHOUSE
+
+    parser = argparse.ArgumentParser(description="python -m athena.valuation.study: run the calibration study and print the variants against each other")
+    parser.add_argument("--horizon", type=int, default=HORIZON, help="months ahead the return is measured over")
+    parser.add_argument("--out", default=str(Path(".athena") / "reports" / "calibration-study.json"))
+    parser.add_argument("--only", action="append", help="a variant name to run (repeat); default all")
+    args = parser.parse_args(argv)
+    chosen = [v for v in variants() if not args.only or v.name in args.only or v.name == "baseline"]
+    started = __import__("time").time()
+    with open_read(str(FUNDAMENTALS)) as fund, ReferenceStore(str(REFERENCE), read_only=True) as ref:
+        result = run(fund, ref, WAREHOUSE, date.today(), chosen=chosen, horizon=args.horizon)
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.out).write_text(json.dumps({"dates": result.dates, "levels": result.levels, "forward": result.forward, "excluded": result.excluded, "sizes": result.sizes}, default=str, indent=1), encoding="utf-8")
+    dev = [d.isoformat() for d in DEV_DATES]
+    hold = [d.isoformat() for d in HOLDOUT_DATES]
+    print(f"\nmodel signal, ln(base/price), against the next {args.horizon} months' return (all stocks)\n" + format_table(result, "all", dev, hold))
+    print(f"\nlarge companies\n" + format_table(result, "large", dev, hold))
+    print(f"saved {args.out} {__import__('time').time() - started:.0f} s")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
