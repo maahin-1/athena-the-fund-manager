@@ -9,8 +9,8 @@ const trend = (): Drawing => newDrawing('trend', [a(100, 10), a(200, 20)]);
 const doc = (drawings: Drawing[]) => JSON.parse(serializeDoc('SBIN', drawings));
 
 describe('tools', () => {
-  it('there are 22 tools, each in a known group with at least one anchor and no more clicks than anchors', () => {
-    expect(TOOL_IDS).toHaveLength(22);
+  it('there are 50 tools, each in a known group with at least one anchor and no more clicks than anchors', () => {
+    expect(TOOL_IDS).toHaveLength(50);
     const groups = GROUPS.map((g) => g.id);
     for (const id of TOOL_IDS) {
       expect(groups).toContain(TOOLS[id].group);

@@ -8,9 +8,18 @@ export type ToolId =
   | 'rect' | 'ellipse' | 'triangle'
   | 'text' | 'label'
   | 'measure' | 'pricerange' | 'daterange'
-  | 'long' | 'short';
+  | 'long' | 'short'
+  // tier 2: more lines, channels, pitchforks, Fibonacci, Gann, shapes and markers
+  | 'angle' | 'arrow' | 'disjoint'
+  | 'pitchfork' | 'schiff' | 'mschiff'
+  | 'fibchannel' | 'fibtime' | 'fibfan' | 'fibcircles' | 'fibarcs'
+  | 'gannfan' | 'gannbox'
+  | 'circle' | 'arrowup' | 'arrowdown' | 'forecast'
+  // tier 3: patterns, Elliott waves, cycles
+  | 'abcd' | 'xabcd' | 'cypher' | 'headshoulders' | 'threedrives' | 'trianglepat' | 'elliottimpulse' | 'elliottcorrective'
+  | 'cyclic' | 'timecycles' | 'sine';
 
-export type Group = 'lines' | 'channels' | 'fib' | 'shapes' | 'notes' | 'measure' | 'position';
+export type Group = 'lines' | 'channels' | 'pitchfork' | 'fib' | 'gann' | 'patterns' | 'cycles' | 'shapes' | 'notes' | 'measure' | 'position';
 
 export interface ToolInfo {
   label: string;
@@ -20,8 +29,9 @@ export interface ToolInfo {
 }
 
 export const GROUPS: { id: Group; label: string }[] = [
-  { id: 'lines', label: 'Lines' }, { id: 'channels', label: 'Channels' }, { id: 'fib', label: 'Fibonacci' }, { id: 'shapes', label: 'Shapes' },
-  { id: 'notes', label: 'Annotation' }, { id: 'measure', label: 'Measure' }, { id: 'position', label: 'Position' },
+  { id: 'lines', label: 'Lines' }, { id: 'channels', label: 'Channels' }, { id: 'pitchfork', label: 'Pitchforks' }, { id: 'fib', label: 'Fibonacci' }, { id: 'gann', label: 'Gann' },
+  { id: 'patterns', label: 'Patterns and Elliott waves' }, { id: 'cycles', label: 'Cycles' }, { id: 'shapes', label: 'Shapes' },
+  { id: 'notes', label: 'Annotation' }, { id: 'measure', label: 'Measure and forecast' }, { id: 'position', label: 'Position' },
 ];
 
 const tool = (label: string, group: Group, anchors: number, clicks = anchors): ToolInfo => ({ label, group, anchors, clicks });
@@ -35,6 +45,15 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
   text: tool('Text', 'notes', 1), label: tool('Price label', 'notes', 1),
   measure: tool('Measure', 'measure', 2), pricerange: tool('Price range', 'measure', 2), daterange: tool('Date range', 'measure', 2),
   long: tool('Long position', 'position', 3, 2), short: tool('Short position', 'position', 3, 2),
+  angle: tool('Trend angle', 'lines', 2), arrow: tool('Arrow', 'lines', 2), disjoint: tool('Disjoint channel', 'channels', 4),
+  pitchfork: tool('Pitchfork', 'pitchfork', 3), schiff: tool('Schiff pitchfork', 'pitchfork', 3), mschiff: tool('Modified Schiff pitchfork', 'pitchfork', 3),
+  fibchannel: tool('Fib channel', 'fib', 3), fibtime: tool('Fib time zones', 'fib', 2), fibfan: tool('Fib speed fan', 'fib', 2), fibcircles: tool('Fib circles', 'fib', 2), fibarcs: tool('Fib arcs', 'fib', 2),
+  gannfan: tool('Gann fan', 'gann', 2), gannbox: tool('Gann box', 'gann', 2),
+  circle: tool('Circle', 'shapes', 2), arrowup: tool('Arrow marker up', 'notes', 1), arrowdown: tool('Arrow marker down', 'notes', 1), forecast: tool('Forecast', 'measure', 2),
+  abcd: tool('ABCD pattern', 'patterns', 4), xabcd: tool('XABCD pattern', 'patterns', 5), cypher: tool('Cypher pattern', 'patterns', 5), headshoulders: tool('Head and shoulders', 'patterns', 7),
+  threedrives: tool('Three drives', 'patterns', 7), trianglepat: tool('Triangle pattern', 'patterns', 4), elliottimpulse: tool('Elliott impulse wave (0 to 5)', 'patterns', 6),
+  elliottcorrective: tool('Elliott correction (0, A, B, C)', 'patterns', 4),
+  cyclic: tool('Cyclic lines', 'cycles', 2), timecycles: tool('Time cycles', 'cycles', 2), sine: tool('Sine line', 'cycles', 2),
 };
 
 export const TOOL_IDS = Object.keys(TOOLS) as ToolId[];

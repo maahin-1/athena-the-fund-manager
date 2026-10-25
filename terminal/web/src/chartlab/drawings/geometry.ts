@@ -1,36 +1,17 @@
 /** What each drawing looks like in pixels, and which of its parts a pointer is on. Pure: the painter and the tests both read these shapes. */
 import { pct, price, signed } from '../../format';
-import type { Dash, Drawing } from './model';
+import { clipLine, DOWN, FIB_COLORS, FILL_ALPHA, rgba, UP, type Bounds, type Paint, type Pt, type Shape } from './draw-kit';
+import { extraShapes } from './extra';
+import type { Drawing } from './model';
 import type { Projection } from './projection';
 
-export interface Bounds { w: number; h: number }
-export type Pt = [number, number];
-interface Paint { color: string; width: number; dash: Dash }
-
-export type Shape =
-  | ({ k: 'line'; x1: number; y1: number; x2: number; y2: number } & Paint)
-  | ({ k: 'poly'; pts: Pt[]; closed: boolean; fill?: string } & Paint)
-  | ({ k: 'rect'; x: number; y: number; w: number; h: number; fill?: string } & Paint)
-  | ({ k: 'ellipse'; cx: number; cy: number; rx: number; ry: number; fill?: string } & Paint)
-  | { k: 'text'; x: number; y: number; text: string; color: string; align: 'left' | 'center' | 'right'; bg?: string; size: number };
+export { rgba };
+export type { Bounds, Pt, Shape };
 
 export type Hit = { kind: 'handle'; index: number } | { kind: 'body' };
 
 export const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 export const FIB_EXT_RATIOS = [0, 0.618, 1, 1.272, 1.618, 2.618];
-const FIB_COLORS: Record<number, string> = {
-  0: '#787b86', 0.236: '#f23645', 0.382: '#ff9800', 0.5: '#089981', 0.618: '#00bcd4', 0.786: '#2962ff', 1: '#787b86', 1.272: '#9c27b0', 1.618: '#f23645', 2.618: '#ff9800',
-};
-const UP = '#089981';
-const DOWN = '#f23645';
-const FILL_ALPHA = 0.14;
-
-/** `#rrggbb` with an alpha. */
-export function rgba(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
 // ---- numbers behind the tools -------------------------------------------------------------------------------------------------------------------
 
 /** Fibonacci levels of a retracement (two anchors A, B: ratio 0 at B and 1 at A) or an extension (A, B, C: C plus the A to B move times the ratio). */
@@ -66,26 +47,6 @@ export function spanText(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
   return h ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`;
-}
-
-// ---- line clipping -------------------------------------------------------------------------------------------------------------------------
-
-/** The part of the line through (x1,y1) and (x2,y2) that is in the pane: the segment only, or continued past either end, or both (Liang-Barsky). Null when nothing is in view. */
-function clipLine(x1: number, y1: number, x2: number, y2: number, b: Bounds, left: boolean, right: boolean): [number, number, number, number] | null {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  let lo = left ? -Infinity : 0;
-  let hi = right ? Infinity : 1;
-  const edge = (p: number, q: number): boolean => {
-    if (p === 0) return q >= 0;
-    const r = q / p;
-    if (p < 0) lo = Math.max(lo, r);
-    else hi = Math.min(hi, r);
-    return lo <= hi;
-  };
-  if (!(edge(-dx, x1) && edge(dx, b.w - x1) && edge(-dy, y1) && edge(dy, b.h - y1))) return null;
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null; // no direction (both ends the same point) and an extension asked for
-  return [x1 + lo * dx, y1 + lo * dy, x1 + hi * dx, y1 + hi * dy];
 }
 
 // ---- shapes --------------------------------------------------------------------------------------------------------------------------------------
@@ -261,6 +222,8 @@ export function shapesOf(d: Drawing, proj: Projection, bounds: Bounds): Shape[] 
       text(left + w / 2, yEntry - 4, `${d.tool === 'long' ? 'Long' : 'Short'}  R:R ${pos.ratio === null ? '–' : pos.ratio.toFixed(1)}`, 'center', rgba('#000000', 0.5), '#ffffff');
       break;
     }
+    default:
+      extraShapes({ d, p, proj, bounds, out, line, text, measure: (x) => measureOf(x, proj), span: spanText });
   }
   return out;
 }

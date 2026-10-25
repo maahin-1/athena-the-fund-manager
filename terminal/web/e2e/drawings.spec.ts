@@ -257,3 +257,22 @@ test('the magnet snaps a drawing to a bar price', async ({ page }) => {
   expect(bar).toBeTruthy(); // the click was within the bars, so its time is a bar's
   expect([bar!.o, bar!.h, bar!.l, bar!.c].some((v) => Math.abs(v - p) < 0.011)).toBe(true);
 });
+
+test('tier 2 and 3 tools: a pitchfork, a Gann fan, an ABCD, head and shoulders and a sine line can be drawn from their groups, and they are there after a reload', async ({ page }) => {
+  await openLab(page);
+  await draw(page, 'pitchfork', 'Pitchforks', [[0.15, 0.7], [0.35, 0.3], [0.5, 0.6]]);
+  await draw(page, 'gannfan', 'Gann', [[0.6, 0.8], [0.75, 0.55]]);
+  await draw(page, 'abcd', 'Patterns and Elliott waves', [[0.1, 0.2], [0.2, 0.45], [0.28, 0.3], [0.4, 0.6]]);
+  await draw(page, 'headshoulders', 'Patterns and Elliott waves', [[0.45, 0.9], [0.5, 0.75], [0.55, 0.85], [0.62, 0.65], [0.7, 0.85], [0.75, 0.75], [0.82, 0.9]]);
+  await draw(page, 'sine', 'Cycles', [[0.1, 0.9], [0.3, 0.7]]);
+  await page.waitForTimeout(1200);
+  const tools = (await saved(page)).drawings.map((d) => d.tool);
+  expect(tools).toEqual(['pitchfork', 'gannfan', 'abcd', 'headshoulders', 'sine']);
+  expect((await saved(page)).drawings[3].points).toHaveLength(7);
+  await page.screenshot({ path: 'test-results/drawings-tier2-3.png' });
+  await page.evaluate(() => window.localStorage.removeItem('athena.drawings.SBIN'));
+  await page.reload();
+  await openLab(page);
+  await page.locator('.lab-tab', { hasText: 'Objects' }).click();
+  await expect(page.locator('.obj-row')).toHaveCount(5);
+});

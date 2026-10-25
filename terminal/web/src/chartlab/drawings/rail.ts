@@ -3,7 +3,7 @@ import type { DrawingController } from './controller';
 import { GROUPS, TOOL_IDS, TOOLS, type Group } from './model';
 import type { Magnet } from './projection';
 
-const GLYPH: Record<Group, string> = { lines: '╱', channels: '∥', fib: 'Fib', shapes: '▭', notes: 'T', measure: '↔', position: '⇅' };
+const GLYPH: Record<Group, string> = { lines: '╱', channels: '∥', pitchfork: 'Pf', fib: 'Fib', gann: 'Gn', patterns: 'XA', cycles: '∿', shapes: '▭', notes: 'T', measure: '↔', position: '⇅' };
 const NEXT_MAGNET: Record<Magnet, Magnet> = { off: 'weak', weak: 'strong', strong: 'off' };
 const MAGNET_TEXT: Record<Magnet, string> = { off: 'Magnet: off', weak: 'Magnet: weak (snaps to open, high, low or close when near)', strong: 'Magnet: strong (always snaps to open, high, low or close)' };
 

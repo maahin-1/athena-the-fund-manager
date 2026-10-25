@@ -2,8 +2,8 @@ import { el } from '../../panels/base';
 import type { DrawingController } from './controller';
 import { COLORS, TOOLS, type Dash, type ToolId } from './model';
 
-const EXTENDABLE: ToolId[] = ['trend', 'info', 'channel', 'flat', 'fib', 'fibext'];
-const WORDS: ToolId[] = ['text', 'label'];
+const EXTENDABLE: ToolId[] = ['trend', 'info', 'channel', 'flat', 'fib', 'fibext', 'angle', 'fibchannel', 'trianglepat'];
+const WORDS: ToolId[] = ['text', 'label', 'arrowup', 'arrowdown'];
 
 /** The bar over the chart for the selected drawing: colour, width, line style, extend left and right, words, lock, duplicate, order and delete. Hidden when nothing is selected. */
 export function buildProps(c: DrawingController): HTMLElement {
