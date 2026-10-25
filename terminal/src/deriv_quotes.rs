@@ -1,11 +1,12 @@
-//! Live quotes of futures and options: what the stream last said about each derivative token a page asked about. A page asks by polling the quotes route, which
-//! both answers and marks those contracts as wanted; the stream subscribes what is wanted and lets go of what nobody has asked for lately. Kept apart from the
-//! cash hub because a token is only unique within its exchange segment and a chain asks for a hundred at a time.
+//! Live quotes of futures and options: what the stream last said about each derivative token a page asked about. A page names the contracts on its socket (the
+//! server then pushes each change as it comes) or asks the quotes route; either marks them as wanted. The stream subscribes what is wanted and lets go of what
+//! nobody has asked for lately. Kept apart from the cash hub because a token is only unique within its exchange segment and a chain asks for a hundred at a time.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use tokio::sync::Notify;
 
 use crate::angel::decode::Tick;
 
@@ -13,7 +14,7 @@ use crate::angel::decode::Tick;
 pub const WANTED_FOR: Duration = Duration::from_secs(30);
 /// Most contracts one request may ask for (a chain of 40 strikes each side is 81).
 pub const MAX_ASKED: usize = 100;
-/// Most contracts streamed at once across all pages; Angel allows 1000 token subscriptions a session and the cash symbols use up to 50.
+/// Most contracts streamed at once across all pages; Angel allows 1000 token subscriptions a session and the cash symbols use up to 600 (`hub::MAX_STREAMED`).
 pub const MAX_WANTED: usize = 300;
 
 /// A contract on the stream: the exchange type the stream wants and the token.
@@ -70,12 +71,14 @@ impl DerivQuote {
 
 #[derive(Default)]
 struct Inner {
-    quotes: HashMap<Key, DerivQuote>,
+    rev: u64,
+    quotes: HashMap<Key, (DerivQuote, u64)>,
     wanted: HashMap<Key, Instant>,
 }
 
+/// The quotes and the wants, and a signal raised when a contract is newly wanted so the stream subscribes it at once.
 #[derive(Clone, Default)]
-pub struct DerivQuotes(Arc<Mutex<Inner>>);
+pub struct DerivQuotes(Arc<Mutex<Inner>>, Arc<Notify>);
 
 impl DerivQuotes {
     pub fn new() -> Self {
@@ -85,9 +88,34 @@ impl DerivQuotes {
     /// Mark these contracts as wanted from `now` (a repeat extends it).
     pub fn want(&self, keys: &[Key], now: Instant) {
         let mut g = self.0.lock().unwrap();
+        let mut new = false;
         for k in keys {
-            g.wanted.insert(k.clone(), now);
+            let before = g.wanted.insert(k.clone(), now);
+            new |= before.is_none_or(|at| now.saturating_duration_since(at) > WANTED_FOR);
         }
+        if new {
+            self.1.notify_one();
+        }
+    }
+
+    /// Resolves when a contract was newly wanted since the last time it resolved.
+    pub fn wants_changed(&self) -> tokio::sync::futures::Notified<'_> {
+        self.1.notified()
+    }
+
+    /// The quotes of these contracts that changed since `sent` last recorded them, and `sent` brought up to date: what one page's socket is sent next.
+    pub fn changed(&self, keys: &[Key], sent: &mut HashMap<Key, u64>) -> Vec<DerivQuote> {
+        let g = self.0.lock().unwrap();
+        let mut out = Vec::new();
+        for k in keys {
+            if let Some((q, rev)) = g.quotes.get(k) {
+                if *rev > sent.get(k).copied().unwrap_or(0) {
+                    out.push(q.clone());
+                    sent.insert(k.clone(), *rev);
+                }
+            }
+        }
+        out
     }
 
     /// The contracts to be on the stream at `now`: those asked for within `WANTED_FOR`, the most recently asked first when there are more than `MAX_WANTED`.
@@ -106,20 +134,34 @@ impl DerivQuotes {
         let mut g = self.0.lock().unwrap();
         let key = (exchange_type, quote.token.clone());
         if g.wanted.contains_key(&key) {
-            g.quotes.insert(key, quote);
+            if g.quotes.get(&key).is_some_and(|(held, _)| *held == quote) {
+                return; // an identical quote is no change to send
+            }
+            g.rev += 1;
+            let rev = g.rev;
+            g.quotes.insert(key, (quote, rev));
         }
     }
 
     /// The quotes known for these contracts, in the order asked; one the stream has not yet spoken about is left out.
     pub fn get(&self, keys: &[Key]) -> Vec<DerivQuote> {
         let g = self.0.lock().unwrap();
-        keys.iter().filter_map(|k| g.quotes.get(k).cloned()).collect()
+        keys.iter().filter_map(|k| g.quotes.get(k).map(|(q, _)| q.clone())).collect()
     }
 }
 
 /// The contracts a page asks about: `NFO:12345,MCX:678`, at most `MAX_ASKED`, each a derivatives segment and a numeric token. The reason it is refused, in words
 /// the page can show, otherwise.
 pub fn parse_keys(text: &str) -> Result<Vec<Key>, &'static str> {
+    parse_keys_up_to(text, MAX_ASKED, "at most 100 contracts at a time")
+}
+
+/// As `parse_keys`, for the list a page sends on its socket: up to `MAX_WANTED`, the most the stream carries.
+pub fn parse_socket_keys(text: &str) -> Result<Vec<Key>, &'static str> {
+    parse_keys_up_to(text, MAX_WANTED, "at most 300 contracts at a time")
+}
+
+fn parse_keys_up_to(text: &str, max: usize, too_many: &'static str) -> Result<Vec<Key>, &'static str> {
     let mut keys: Vec<Key> = Vec::new();
     for part in text.split(',').map(str::trim).filter(|p| !p.is_empty()) {
         let (segment, token) = part.split_once(':').ok_or("each contract is SEGMENT:TOKEN")?;
@@ -134,8 +176,8 @@ pub fn parse_keys(text: &str) -> Result<Vec<Key>, &'static str> {
         if !keys.contains(&key) {
             keys.push(key);
         }
-        if keys.len() > MAX_ASKED {
-            return Err("at most 100 contracts at a time");
+        if keys.len() > max {
+            return Err(too_many);
         }
     }
     Ok(keys)
@@ -207,6 +249,43 @@ mod tests {
         let gone = store.wanted(t0 + Duration::from_secs(100));
         assert!(gone.is_empty());
         assert!(store.get(&[a]).is_empty());
+    }
+
+    #[test]
+    fn a_page_is_sent_each_change_once_and_an_identical_tick_is_no_change() {
+        let store = DerivQuotes::new();
+        let t0 = Instant::now();
+        let a = (2u8, "1".to_string());
+        store.want(&[a.clone()], t0);
+        let mut sent = HashMap::new();
+        assert!(store.changed(&[a.clone()], &mut sent).is_empty());
+        store.update(2, DerivQuote::from_tick("NFO", 2, &tick(2, "1", 100, 5, 1.0)));
+        assert_eq!(store.changed(&[a.clone()], &mut sent).len(), 1);
+        assert!(store.changed(&[a.clone()], &mut sent).is_empty());
+        store.update(2, DerivQuote::from_tick("NFO", 2, &tick(2, "1", 100, 5, 1.0)));
+        assert!(store.changed(&[a.clone()], &mut sent).is_empty(), "the same quote again");
+        store.update(2, DerivQuote::from_tick("NFO", 2, &tick(2, "1", 101, 5, 1.0)));
+        assert_eq!(store.changed(&[a], &mut sent)[0].last, Some(1.01));
+    }
+
+    #[test]
+    fn a_newly_wanted_contract_is_signalled_and_a_repeat_is_not() {
+        let store = DerivQuotes::new();
+        let t0 = Instant::now();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        rt.block_on(async {
+            store.want(&[(2, "7".into())], t0);
+            tokio::time::timeout(Duration::from_millis(50), store.wants_changed()).await.expect("signalled");
+            store.want(&[(2, "7".into())], t0 + Duration::from_secs(1));
+            assert!(tokio::time::timeout(Duration::from_millis(50), store.wants_changed()).await.is_err());
+        });
+    }
+
+    #[test]
+    fn the_socket_list_may_hold_up_to_the_stream_cap() {
+        let many = (0..MAX_WANTED).map(|i| format!("NFO:{i}")).collect::<Vec<_>>().join(",");
+        assert_eq!(parse_socket_keys(&many).unwrap().len(), MAX_WANTED);
+        assert!(parse_socket_keys(&format!("{many},NFO:99999")).is_err());
     }
 
     #[test]

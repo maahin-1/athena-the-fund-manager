@@ -15,6 +15,8 @@ const TERM_EXPIRIES = 6;
 const AROUND = [10, 20, 40, 'all'] as const;
 /** While prices are live the chain asks for fresh ones this often (the server's stream may send several ticks a second; the page needs no more than this). */
 const REFRESH_MS = 2000;
+/** With pushed prices the chain is redrawn on each change, at most this often (a chain is about 80 rows and the curves). */
+const REPAINT_MS = 100;
 /** After asking for the contracts of the term curve, the live stream is given this long to answer before they are read. */
 const SUBSCRIBE_WAIT_MS = 2500;
 /** The names an index has in the exchange's all-indices snapshot, for the spot of its options. */
@@ -73,6 +75,8 @@ export class OptionsView {
   private termBox = el('div', 'opt-term');
   private futureList: FutureInfo[] = [];
   private refresher: ReturnType<typeof setInterval> | null = null;
+  private offPush: (() => void) | null = null;
+  private repaint: ReturnType<typeof setTimeout> | null = null;
   private refreshing = false;
   private storage: OptionsOptions['storage'];
   private now: () => number;
@@ -108,7 +112,7 @@ export class OptionsView {
     this.feed = this.synthetic;
     this.storage = options.storage === undefined ? browserStorage() : options.storage;
     this.now = options.now ?? (() => Date.now() / 1000);
-    this.live = options.feed ? null : options.live === undefined ? liveFeed({ spotOf: (u) => this.spotOf(u) }) : options.live;
+    this.live = options.feed ? null : options.live === undefined ? liveFeed({ spotOf: (u) => this.spotOf(u), push: typeof ctx.feed?.needDerivs === 'function' ? ctx.feed : undefined }) : options.live;
     this.load();
     this.builder = new PayoffBuilder(() => ({
       underlying: this.underlying,
@@ -239,6 +243,11 @@ export class OptionsView {
     this.retry = null;
     if (this.refresher) clearInterval(this.refresher);
     this.refresher = null;
+    this.offPush?.();
+    this.offPush = null;
+    if (this.repaint) clearTimeout(this.repaint);
+    this.repaint = null;
+    this.live?.release();
     this.ctx.feed?.release?.('options');
     this.token++;
   }
@@ -413,10 +422,21 @@ export class OptionsView {
 
   // ---- live refresh ----------------------------------------------------------------------------------------------------------------------
 
-  /** With a live feed, keep asking for fresh prices while the page is open. */
+  /** With a live feed, keep the prices fresh while the page is open: redrawn on each pushed change when the socket pushes them, and read again every
+   *  `REFRESH_MS` regardless (the quotes route when nothing is pushed, and a backstop when something is). */
   private arm(): void {
     if (this.feed.synthetic || !this.visible || this.refresher) return;
     this.refresher = setInterval(() => void this.refreshQuotes(), REFRESH_MS);
+    const live = this.feed === this.live ? this.live : null;
+    if (live?.onUpdate && !this.offPush) {
+      this.offPush = live.onUpdate(() => {
+        if (this.repaint) return;
+        this.repaint = setTimeout(() => {
+          this.repaint = null;
+          void this.refreshQuotes();
+        }, REPAINT_MS);
+      });
+    }
   }
 
   private async refreshQuotes(): Promise<void> {

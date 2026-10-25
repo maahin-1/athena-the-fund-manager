@@ -106,10 +106,38 @@ async fn session_once(
     let mut beat = interval(HEARTBEAT);
     let mut sync = interval(SYNC_EVERY);
     loop {
-        tokio::select! {
+        // a page's new symbol or contract is subscribed the moment it is asked for; the round every `SYNC_EVERY` lets go of what nobody wants any more
+        let resync = tokio::select! {
             _ = shutdown.cancelled() => return Ok(()),
-            _ = beat.tick() => { tx.send(Message::Text("ping".into())).await.map_err(|_| "send failed")?; }
-            _ = sync.tick() => {
+            _ = beat.tick() => { tx.send(Message::Text("ping".into())).await.map_err(|_| "send failed")?; false }
+            _ = sync.tick() => true,
+            _ = hub.wants_changed() => true,
+            _ = derivs.wants_changed() => true,
+            incoming = rx.next() => match incoming {
+                Some(Ok(Message::Binary(bytes))) => {
+                    if let Ok(tick) = decode(&bytes) {
+                        if tick.exchange_ms > 100_000_000_000 {
+                            hub.record_lag(chrono::Utc::now().timestamp_millis() - tick.exchange_ms);
+                        }
+                        if tick.exchange_type == NSE_CASH {
+                            if let Some(symbol) = master.symbol(&tick.token) {
+                                if let Some(quote) = Quote::from_tick(symbol, &tick) {
+                                    hub.update(quote, Instant::now());
+                                }
+                            }
+                        } else if let Some(segment) = segment_of(tick.exchange_type) {
+                            derivs.update(tick.exchange_type, DerivQuote::from_tick(segment, tick.exchange_type, &tick));
+                        }
+                    }
+                    false
+                }
+                Some(Ok(Message::Close(_))) | None => return Err("the feed closed"),
+                Some(Ok(_)) => false,
+                Some(Err(_)) => return Err("the feed failed"),
+            },
+        };
+        if resync {
+            {
                 let wanted: HashSet<String> = hub.wanted_symbols().into_iter().filter(|s| master.token(s).is_some()).collect();
                 let add: Vec<String> = wanted.difference(&subscribed).filter_map(|s| master.token(s).map(String::from)).collect();
                 let remove: Vec<String> = subscribed.difference(&wanted).filter_map(|s| master.token(s).map(String::from)).collect();
@@ -122,24 +150,6 @@ async fn session_once(
                 if !add_derivs.is_empty() { tx.send(message(1, &add_derivs)).await.map_err(|_| "send failed")?; }
                 if !remove_derivs.is_empty() { tx.send(message(0, &remove_derivs)).await.map_err(|_| "send failed")?; }
                 subscribed_derivs = wanted_derivs;
-            }
-            incoming = rx.next() => match incoming {
-                Some(Ok(Message::Binary(bytes))) => {
-                    if let Ok(tick) = decode(&bytes) {
-                        if tick.exchange_type == NSE_CASH {
-                            if let Some(symbol) = master.symbol(&tick.token) {
-                                if let Some(quote) = Quote::from_tick(symbol, &tick) {
-                                    hub.update(quote, Instant::now());
-                                }
-                            }
-                        } else if let Some(segment) = segment_of(tick.exchange_type) {
-                            derivs.update(tick.exchange_type, DerivQuote::from_tick(segment, tick.exchange_type, &tick));
-                        }
-                    }
-                }
-                Some(Ok(Message::Close(_))) | None => return Err("the feed closed"),
-                Some(Ok(_)) => {}
-                Some(Err(_)) => return Err("the feed failed"),
             }
         }
     }

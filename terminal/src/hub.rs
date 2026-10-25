@@ -1,16 +1,21 @@
 //! The hub: the latest quote per symbol, which symbols each page watches, and the frames sent to pages.
 //! A frame holds only the quotes that changed since that page last received them, merged per symbol.
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use tokio::sync::Notify;
 
 use crate::quote::{Quote, Source};
 
 /// A streamed quote is used while its last message is at most this old; after that the polled quote may take over.
 pub const FRESH: Duration = Duration::from_secs(15);
-/// Most symbols streamed at once. Angel One's forum and WebSocket 2.0 announcement give 1000 token subscriptions per session (counted per token and
-/// mode) and 3 connections per client code, so 50 in one connection and one mode is far inside the limit (found 2026-10-14; recheck the current docs).
-pub const MAX_STREAMED: usize = 50;
+/// Most symbols streamed at once. Angel One's WebSocket 2.0 announcement and forum give 1000 token subscriptions per session (counted per token and mode)
+/// and 3 connections per client code (rechecked 2026-10-25). Cash symbols take up to 600 and derivatives up to 300 (`deriv_quotes::MAX_WANTED`), so the one
+/// connection in one mode stays under 1000; symbols beyond the cap fall back to the exchange's snapshot.
+pub const MAX_STREAMED: usize = 600;
+/// How many recent stream delays (receipt time minus the exchange's own time) are kept for the status figures.
+pub const LAG_KEPT: usize = 2000;
 
 pub type ClientId = u64;
 
@@ -32,10 +37,20 @@ struct Inner {
     next_client: ClientId,
     quotes: HashMap<String, Entry>,
     clients: HashMap<ClientId, Client>,
+    lag: VecDeque<i64>,
 }
 
+/// The quotes, the pages' wants, and a signal raised when what the pages want changes, so the stream subscribes at once rather than on its next round.
 #[derive(Clone, Default)]
-pub struct Hub(Arc<Mutex<Inner>>);
+pub struct Hub(Arc<Mutex<Inner>>, Arc<Notify>);
+
+/// The stream's delay over the recent ticks: the median, the 95th percentile and how many ticks they cover, in milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct Lag {
+    pub p50: i64,
+    pub p95: i64,
+    pub n: usize,
+}
 
 pub struct Frame(pub Vec<Quote>);
 
@@ -74,8 +89,42 @@ impl Hub {
         if let Some(c) = g.clients.get_mut(&client) {
             let set: HashSet<String> = symbols.iter().map(|s| s.trim().to_ascii_uppercase()).filter(|s| !s.is_empty()).collect();
             c.sent.retain(|s, _| set.contains(s));
+            let grew = set.iter().any(|s| !c.set.contains(s));
+            let shrank = c.set.iter().any(|s| !set.contains(s));
             c.set = set;
+            if grew || shrank {
+                self.1.notify_one(); // the stream subscribes the new symbols now, not on its next round
+            }
         }
+    }
+
+    /// Resolves when a page's wants changed since the last time it resolved (a change made while nobody waits is kept for the next wait).
+    pub fn wants_changed(&self) -> tokio::sync::futures::Notified<'_> {
+        self.1.notified()
+    }
+
+    /// Keep one tick's delay: when it was received less the exchange's own time on it. A negative delay (clocks apart) or one over a minute (a stale packet,
+    /// as after the close) is not a measure of the feed and is left out.
+    pub fn record_lag(&self, ms: i64) {
+        if !(0..=60_000).contains(&ms) {
+            return;
+        }
+        let mut g = self.0.lock().unwrap();
+        if g.lag.len() == LAG_KEPT {
+            g.lag.pop_front();
+        }
+        g.lag.push_back(ms);
+    }
+
+    pub fn lag(&self) -> Option<Lag> {
+        let g = self.0.lock().unwrap();
+        if g.lag.is_empty() {
+            return None;
+        }
+        let mut v: Vec<i64> = g.lag.iter().copied().collect();
+        v.sort_unstable();
+        let at = |q: f64| v[((v.len() - 1) as f64 * q).round() as usize];
+        Some(Lag { p50: at(0.5), p95: at(0.95), n: v.len() })
     }
 
     pub fn update(&self, quote: Quote, now: Instant) {
@@ -227,7 +276,7 @@ mod tests {
         hub.watch(a, &["TCS".into(), "sbin".into()]);
         hub.watch(b, &["SBIN".into(), "INFY".into()]);
         assert_eq!(hub.wanted_symbols(), vec!["INFY", "SBIN", "TCS"]);
-        let many: Vec<String> = (0..80).map(|i| format!("S{i:03}")).collect();
+        let many: Vec<String> = (0..MAX_STREAMED + 30).map(|i| format!("S{i:04}")).collect();
         hub.watch(a, &many);
         assert_eq!(hub.wanted_symbols().len(), MAX_STREAMED);
     }
@@ -287,6 +336,29 @@ mod tests {
         changed.volume = Some(5.0);
         hub.update(changed, t0 + Duration::from_secs(11));
         assert!(hub.frame(c).is_some());
+    }
+
+    #[test]
+    fn a_change_of_wants_is_signalled_and_a_repeat_is_not() {
+        let hub = Hub::new();
+        let c = hub.register_client();
+        hub.watch(c, &["SBIN".into()]);
+        let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        rt.block_on(async {
+            tokio::time::timeout(Duration::from_millis(50), hub.wants_changed()).await.expect("signalled");
+            hub.watch(c, &["sbin".into()]);
+            assert!(tokio::time::timeout(Duration::from_millis(50), hub.wants_changed()).await.is_err(), "the same set again is no change");
+        });
+    }
+
+    #[test]
+    fn the_lag_figures_leave_out_impossible_delays() {
+        let hub = Hub::new();
+        assert_eq!(hub.lag(), None);
+        for ms in [-5, 10, 20, 30, 40, 1000, 70_000] {
+            hub.record_lag(ms);
+        }
+        assert_eq!(hub.lag(), Some(Lag { p50: 30, p95: 1000, n: 5 }));
     }
 
     #[test]

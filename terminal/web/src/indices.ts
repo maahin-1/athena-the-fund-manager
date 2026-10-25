@@ -33,7 +33,7 @@ export interface IndexSnapshot {
 }
 
 /** While trading the snapshot changes about every five seconds; outside trading it does not change, so look once a minute. */
-export const POLL_OPEN_MS = 5_000;
+export const POLL_OPEN_MS = 1_000; // the server holds the snapshot in memory, so asking often costs nothing; the snapshot itself is refreshed every 5 s
 export const POLL_SHUT_MS = 60_000;
 export const POLL_RETRY_MS = 3_000;
 

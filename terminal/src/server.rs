@@ -24,6 +24,8 @@ use crate::hub::Hub;
 use crate::layouts::{LayoutError, LayoutStore};
 
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+/// How often a page's socket renews the contracts it named (they are let go after `deriv_quotes::WANTED_FOR` without a renewal).
+pub const DERIV_RENEW: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct AppState {
@@ -94,6 +96,8 @@ fn status_json(status: &FeedStatus) -> serde_json::Value {
 async fn api_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     let mut v = status_json(&state.status.borrow());
     v["clients"] = state.hub.client_count().into();
+    // how late the broker's ticks arrive: receipt time less the exchange's own time on the tick, over the recent ticks (null before any tick)
+    v["stream_lag_ms"] = serde_json::to_value(state.hub.lag()).unwrap_or(serde_json::Value::Null);
     Json(v)
 }
 
@@ -654,11 +658,26 @@ async fn client_loop(mut socket: WebSocket, state: AppState) {
     }
     let mut tick = interval(FRAME_INTERVAL);
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    // the futures and options this page named on its socket: each change is pushed with the share quotes, and the wants are renewed while the page holds them
+    let mut deriv_keys: Vec<crate::deriv_quotes::Key> = Vec::new();
+    let mut deriv_sent: std::collections::HashMap<crate::deriv_quotes::Key, u64> = std::collections::HashMap::new();
+    let mut renewed = std::time::Instant::now();
     loop {
         tokio::select! {
             _ = tick.tick() => {
                 if let Some(frame) = hub.frame(id) {
                     if socket.send(Message::Text(frame.json().into())).await.is_err() { break; }
+                }
+                if !deriv_keys.is_empty() && state.live_derivs && matches!(*state.status.borrow(), FeedStatus::On) {
+                    if renewed.elapsed() >= DERIV_RENEW {
+                        state.deriv_quotes.want(&deriv_keys, std::time::Instant::now());
+                        renewed = std::time::Instant::now();
+                    }
+                    let rows = state.deriv_quotes.changed(&deriv_keys, &mut deriv_sent);
+                    if !rows.is_empty() {
+                        let text = serde_json::json!({"type": "d", "sm": unix_ms(), "d": rows}).to_string();
+                        if socket.send(Message::Text(text.into())).await.is_err() { break; }
+                    }
                 }
             }
             changed = status.changed() => {
@@ -674,6 +693,13 @@ async fn client_loop(mut socket: WebSocket, state: AppState) {
                             let symbols: Vec<String> = v.get("symbols").and_then(|s| s.as_array())
                                 .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).take(200).collect()).unwrap_or_default();
                             hub.watch(id, &symbols);
+                        } else if v.get("type").and_then(|t| t.as_str()) == Some("derivs") {
+                            // a list the server cannot read names nothing: the page keeps polling the quotes route, as before
+                            let keys = crate::deriv_quotes::parse_socket_keys(v.get("keys").and_then(|k| k.as_str()).unwrap_or("")).unwrap_or_default();
+                            deriv_sent.retain(|k, _| keys.contains(k));
+                            state.deriv_quotes.want(&keys, std::time::Instant::now());
+                            renewed = std::time::Instant::now();
+                            deriv_keys = keys;
                         }
                     }
                 }

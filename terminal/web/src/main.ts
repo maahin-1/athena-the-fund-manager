@@ -512,7 +512,8 @@ class App implements AppContext {
 
   private paintHealth(): void {
     const s = this.feed.status;
-    const delay = s.latencyMs === null ? '' : ` · ${s.latencyMs} ms`;
+    // server to page, then exchange to page (shown only while live ticks arrive): the second is the whole delay a price has when it is drawn
+    const delay = (s.latencyMs === null ? '' : ` · ${s.latencyMs} ms`) + (s.ageMs === null ? '' : ` · tick age ${s.ageMs} ms`);
     let text = '● offline';
     let cls = 'bad';
     if (s.socket === 'connecting') [text, cls] = ['● connecting', 'warn'];

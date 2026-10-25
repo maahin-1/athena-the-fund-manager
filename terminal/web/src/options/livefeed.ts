@@ -1,3 +1,4 @@
+import type { DerivRow } from '../feed';
 import type { Quote } from './chain';
 import { keyOf, type ContractKey, type OptionFeed } from './synthetic';
 
@@ -10,23 +11,29 @@ const MAX_ASKED = 100;
 /** A newest exchange time older than this means the market is shut (or the contract is idle) and the prices are the last ones sent. */
 const FRESH_MS = 120_000;
 
-export interface LiveQuoteRow {
-  seg: string;
-  token: string;
-  last: number | null;
-  bid: number | null;
-  ask: number | null;
-  volume: number;
-  oi: number;
-  oip: number;
-  t: number | null;
+export type LiveQuoteRow = DerivRow;
+
+/** The page's socket, when it can push futures and options (the `Feed`). */
+export interface PushSource {
+  readonly derivs: ReadonlyMap<string, DerivRow>;
+  readonly pushing: boolean;
+  needDerivs(owner: string, keys: string[]): void;
+  onDerivs(fn: (rows: DerivRow[]) => void): () => void;
 }
+
+/** A contract asked for is kept on the socket's list this long after the last ask, so the chain, the futures and the volatility curve share one list. */
+export const PUSH_KEEP_MS = 30_000;
+const OWNER = 'options';
 
 export interface LiveFeed extends OptionFeed {
   /** Whether the server has a broker stream to ask. False under the fake feed or while the broker is not connected. */
   probe(): Promise<boolean>;
   /** The exchange time (ms) of the newest quote seen, or null. */
   newest(): number | null;
+  /** Called on each pushed change of a contract this feed was asked about (only with a push source). */
+  onUpdate?(fn: () => void): () => void;
+  /** Let go of every contract named on the socket (the page was left). */
+  release(): void;
 }
 
 export interface LiveOptions {
@@ -34,6 +41,8 @@ export interface LiveOptions {
   /** The price of the underlying itself (an index value or a share price) when the page has one, else null. */
   spotOf(underlying: string): number | null;
   now?: () => number;
+  /** The socket: while it pushes, quotes are read from what it has pushed and the quotes route is not asked. */
+  push?: PushSource;
 }
 
 /** The change in open interest, in contracts, from the stream's change in percent: the open interest is `previous × (1 + pct/100)`. */
@@ -67,8 +76,40 @@ export function liveFeed(o: LiveOptions): LiveFeed {
     return (await r.json()) as { live: boolean; quotes: LiveQuoteRow[] };
   }
 
+  /** Contracts named on the socket, with when each was last asked for. */
+  const asked = new Map<string, number>();
+  function name(refs: string[]): void {
+    const t = now();
+    let added = false;
+    for (const r of refs) {
+      if (!asked.has(r)) added = true;
+      asked.set(r, t);
+    }
+    let dropped = false;
+    for (const [r, at] of asked) if (t - at > PUSH_KEEP_MS) (asked.delete(r), (dropped = true));
+    if (added || dropped) o.push?.needDerivs(OWNER, [...asked.keys()]);
+  }
+
+  function note(seen: number | null): void {
+    if (seen !== null && (newest === null || seen > newest)) {
+      if (newest !== null) advancedAt = now();
+      newest = seen;
+    }
+  }
+
   return {
     synthetic: false,
+    onUpdate: o.push
+      ? (fn) =>
+          o.push!.onDerivs((rows) => {
+            if (rows.some((r) => asked.has(`${r.seg}:${r.token}`))) fn();
+          })
+      : undefined,
+    release() {
+      if (asked.size === 0) return;
+      asked.clear();
+      o.push?.needDerivs(OWNER, []);
+    },
     async probe() {
       try {
         live = (await ask('')).live;
@@ -87,6 +128,18 @@ export function liveFeed(o: LiveOptions): LiveFeed {
       for (const k of keys) if (k.ref) byRef.set(`${k.ref.segment}:${k.ref.token}`, k);
       const refs = [...byRef.keys()];
       let seen: number | null = null; // the newest time in this call's answers
+      if (o.push?.pushing && live) {
+        name(refs); // asking is what keeps them on the stream; what has been pushed so far is the answer
+        for (const ref of refs) {
+          const row = o.push.derivs.get(ref);
+          const key = byRef.get(ref);
+          if (!row || !key) continue;
+          out.set(keyOf(key), quoteOf(row, key.ref?.lot ?? 1));
+          if (row.t !== null && (seen === null || row.t > seen)) seen = row.t;
+        }
+        note(seen);
+        return out;
+      }
       for (let i = 0; i < refs.length; i += MAX_ASKED) {
         const answer = await ask(refs.slice(i, i + MAX_ASKED).join(','));
         live = answer.live;
@@ -100,10 +153,7 @@ export function liveFeed(o: LiveOptions): LiveFeed {
           if (row.t !== null && (seen === null || row.t > seen)) seen = row.t;
         }
       }
-      if (seen !== null && (newest === null || seen > newest)) {
-        if (newest !== null) advancedAt = now();
-        newest = seen;
-      }
+      note(seen);
       return out;
     },
     badge() {
