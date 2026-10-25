@@ -86,6 +86,9 @@ HOLIDAY_WARNING = (
     "NSE's holiday list could not be loaded ({error}); the trading calendar counts only weekends as non-trading days, "
     "so data-freshness checks can be a day off around exchange holidays."
 )
+INDEX_PE_WARNING = (
+    "The index P/E history could not be loaded ({error}); the stock-against-index P/E comparison is left out until it loads."
+)
 
 
 @dataclass(frozen=True)
@@ -122,7 +125,10 @@ def live_sources(env_file: Path | str = DEFAULT_ENV_FILE, warehouse: Path | str 
     calendar = load_calendar(store, years) if years else TradingCalendar(frozenset())
     resolver = InstrumentResolver(InstrumentIndex.from_store(store, calendar=calendar), confirm_related=True, symbol_changes=SymbolChanges())
     chain = ohlcv_chain([JugaadPriceAdapter(), YahooPriceAdapter()], calendar)
-    IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
+    try:
+        IndexValuationLoader(store).refresh(since=ist_date(utc_now()) - timedelta(days=INDEX_VALUATION_DAYS))
+    except Exception as exc:  # the source sometimes answers with a page that is not data; the rest of the service still works without it
+        warnings = (*warnings, INDEX_PE_WARNING.format(error=f"{type(exc).__name__}: {str(exc)[:120]}"))
     events, actions = live_price_checks()
     live_bars = history_fetcher(chain)
     served = WarehouseFirst(warehouse, live_bars, events, actions, HISTORY_DAYS) if warehouse is not None else None

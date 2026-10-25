@@ -50,7 +50,9 @@ class IndexCloseLoader:
         default_index: str = PRICE_INDEX,
         fetch: Callable[[str, date, date], list[dict]] = default_fetch,
         clock: Callable[[], datetime] = utc_now,
+        source: str = SOURCE,
     ) -> None:
+        self._source = source
         self._store = store
         self._dataset = dataset
         self._default_index = default_index
@@ -58,7 +60,7 @@ class IndexCloseLoader:
         self._clock = clock
 
     def describe(self) -> dict:
-        return {self._dataset: {"cadence": "daily", "source": SOURCE, "series": ["close"]}}
+        return {self._dataset: {"cadence": "daily", "source": self._source, "series": ["close"]}}
 
     def refresh(self, dataset: str | None = None, since: Any = None, **params: Any) -> RefreshResult:
         dataset = dataset or self._dataset
@@ -79,10 +81,10 @@ class IndexCloseLoader:
             if last_day is not None and day <= last_day:
                 continue
             self._store.put(
-                Record(self._dataset, index_name, _ist_midnight_utc(day), SOURCE, {"close": close})
+                Record(self._dataset, index_name, _ist_midnight_utc(day), self._source, {"close": close})
             )
             written += 1
-        return RefreshResult(self._dataset, written, now, SOURCE)
+        return RefreshResult(self._dataset, written, now, self._source)
 
     def read(self, dataset: str, key: str, **params: Any) -> Record:
         record = self._store.latest(dataset, key)

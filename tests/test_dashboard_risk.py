@@ -108,3 +108,28 @@ def test_an_empty_store_gives_a_packet_with_everything_missing_not_a_crash():
     packet = risk_packet(resolution("SBIN", "equity"), asset_bars("SBIN", NIFTY), empty, NOW)
     assert packet["metrics"].keys() <= {"volatility_annualized", "max_drawdown"}
     assert {"beta", "alpha_annualized", "sharpe"} <= set(packet["missing"])
+
+
+def test_the_index_series_come_from_the_warehouse_without_the_network_and_a_failed_total_return_index_is_a_note(tmp_path, monkeypatch):
+    from athena.dashboard import risk
+    from athena.loaders import index_close
+    from athena.warehouse.warehouse import Warehouse
+
+    path = tmp_path / "w.duckdb"
+    with Warehouse(path) as w:
+        for i, day in enumerate(DAYS[-30:]):
+            w.put_index_day(day, [("Nifty 50", None, None, None, 24_000.0 + i, 20.0, 3.0, 1.2), ("Nifty 1D Rate Index", None, None, None, 2_400.0 + i / 10, None, None, None)], NOW)
+
+    def no_network(*_):
+        raise AssertionError("the index site was asked")
+
+    def site_down(*_):
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setattr(index_close.IndexCloseLoader.__init__, "__defaults__", (risk.PRICE_DATASET, risk.PRICE_INDEX, no_network, index_close.utc_now, index_close.SOURCE))
+    store = DataStore(":memory:")
+    notes = risk.refresh_risk_data_from(store, DAYS[-30], path, clock=lambda: NOW, tri_fetch=site_down)
+    world = risk_world_from_store(store)
+    assert world.price_index[DAYS[-1]] == 24_029.0 and len(world.rate) == 30
+    assert store.latest(risk.PRICE_DATASET, risk.PRICE_INDEX).source == risk.WAREHOUSE_SOURCE
+    assert len(notes) == 1 and "total-return index" in notes[0]

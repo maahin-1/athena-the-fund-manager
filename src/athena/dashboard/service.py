@@ -12,7 +12,7 @@ from athena.backtest.rules import RULES, Rule, SeriesRule
 from athena.clock import utc_now
 from athena.cli import build_orchestrator, live_sources
 from athena.contracts import AthenaError, Bar
-from athena.dashboard.risk import RiskWorld, refresh_risk_data, risk_packet, risk_world_from_store
+from athena.dashboard.risk import RiskWorld, refresh_risk_data_from, risk_packet, risk_world_from_store
 from athena.dashboard.backtest_view import BacktestView, build_backtest_view
 from athena.dashboard.view import DashboardView, build_view
 from athena.live.angel import AngelFeed
@@ -112,7 +112,7 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     valuation history, are loaded once when the service is built, so a session left open across days should be
     restarted."""
     sources = live_sources(env_file, warehouse=DEFAULT_WAREHOUSE)
-    refresh_risk_data(sources.store, since=ist_date(utc_now()) - timedelta(days=365 * BACKTEST_YEARS))
+    risk_notes = refresh_risk_data_from(sources.store, ist_date(utc_now()) - timedelta(days=365 * BACKTEST_YEARS), DEFAULT_WAREHOUSE)
     orchestrator = build_orchestrator(
         sources.resolver, sources.llm_router, sources.chain, fetch_bars=sources.bars, fundamentals=sources.fundamentals,
         news=sources.news, events=sources.history.events_found, price_flags=sources.history.price_flags,
@@ -121,7 +121,7 @@ def live_service(env_file: Path | str = DEFAULT_ENV_FILE) -> DashboardService:
     long_history = lru_cache(maxsize=8)(checked_long_history)
     return DashboardService(
         orchestrator, sources.bars, risk_world_from_store(sources.store), fundamentals=sources.fundamentals,
-        long_history=long_history, backtest_notes=checked_long_history.notes, price_notes=lambda symbol: sources.history.notes(symbol) + (sources.served.notes(symbol) if sources.served else ()) + sources.warnings,
+        long_history=long_history, backtest_notes=checked_long_history.notes, price_notes=lambda symbol: sources.history.notes(symbol) + (sources.served.notes(symbol) if sources.served else ()) + sources.warnings + tuple(risk_notes),
         event_notes=EventConfirmer(sources.news, sources.history.events_found) if sources.news is not None else None,
         market_db=DEFAULT_WAREHOUSE, verdicts=live_runner(DEFAULT_WAREHOUSE, router=sources.llm_router), live=LiveQuotes(feed=AngelFeed.from_settings()),
     )
