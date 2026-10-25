@@ -36,6 +36,8 @@ export interface Council {
   conviction: number | null;
   why: string;
   reliedOn: string[];
+  /** What each fact id on the evidence sheet stands for (name and figure); empty for a council stored before the figures were kept. */
+  facts: Record<string, string>;
   wouldChange: string;
   lookAgainDays: number | null;
   limited: string | null;
@@ -98,6 +100,23 @@ function readSide(side: string, v: unknown): DebateSide | null {
   return { side, case: text(d.case), evidence: strings(d.evidence), weakest: text(d.weakest_point), failed: typeof d.failed === 'string' ? d.failed : null };
 }
 
+/** A fact as a reader would say it: "roe latest 48.7%", the figure in the unit the packet gave (a fraction is shown as a percentage). */
+export function factLabel(f: Record<string, unknown>): string {
+  const name = text(f.name).replace(/_/g, ' ');
+  const value = f.value;
+  if (typeof value !== 'number') return value === null || value === undefined ? `${name} (no figure)` : `${name} ${String(value)}`;
+  const unit = text(f.unit);
+  const shown = unit === 'fraction' ? `${+(value * 100).toPrecision(4)}%` : `${+value.toPrecision(4)}${unit && unit !== 'ratio' ? ` ${unit}` : ''}`;
+  return `${name} ${shown}`;
+}
+
+function readFacts(v: unknown): Record<string, string> {
+  if (typeof v !== 'object' || v === null) return {};
+  const out: Record<string, string> = {};
+  for (const [id, f] of Object.entries(v as Record<string, unknown>)) if (typeof f === 'object' && f !== null) out[id] = factLabel(f as Record<string, unknown>);
+  return out;
+}
+
 function readCouncil(v: unknown): Council | null {
   if (typeof v !== 'object' || v === null) return null;
   const c = v as Record<string, unknown>;
@@ -113,6 +132,7 @@ function readCouncil(v: unknown): Council | null {
     conviction: numberOrNull(judge.conviction),
     why: text(judge.why),
     reliedOn: strings(judge.relied_on),
+    facts: readFacts(c.facts),
     wouldChange: text(judge.would_change_my_mind),
     lookAgainDays: numberOrNull(judge.look_again_days),
     limited: typeof judge.limited === 'string' ? judge.limited : null,

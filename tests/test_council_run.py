@@ -34,6 +34,7 @@ def test_on_a_conflict_the_council_debates_and_judges_beside_the_blend_which_sta
     council = payload["council"]
     assert payload["decision"]["type"] == "REVIEW" and council["judge_model"] == "judge-model"
     assert council["debate"]["bull"]["case"] == "Up from 100 (T1)." and council["judge"]["stance"] == "Hold"
+    assert council["facts"]["T1"] == {"name": "last_close", "value": 100, "unit": council["facts"]["T1"]["unit"], "window": council["facts"]["T1"]["window"]}  # what a cited id stands for is kept
     assert "T1 last_close = 100" in judge_llm.asked[0] and "BULL CASE: Up from 100 (T1)." in judge_llm.asked[0]
     assert payload["verdict"]["verdict"] in ("Overweight", "Hold", "Buy")  # the blend's own rating, untouched by the council
 

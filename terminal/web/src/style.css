@@ -664,6 +664,7 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 .fval-implied { color: var(--muted, #9ca3af); }
 .council { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--accent, #3b82f6); background: rgba(127, 127, 127, 0.07); }
 .council .why { padding: 4px 0; }
+abbr.fact { text-decoration: underline dotted; cursor: help; }
 .debate { margin: 6px 0 2px; }
 .debate summary { cursor: pointer; color: var(--fg-dim); font-size: 11px; }
 .debate-side { margin: 6px 0 0 8px; }

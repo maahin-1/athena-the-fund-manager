@@ -59,3 +59,22 @@ describe('decision and council on a stored verdict', () => {
     expect(judgeFailed.council?.failed).toBe('no reply');
   });
 });
+
+describe('fact ids on a council', () => {
+  const facts = { F45: { name: 'price_to_base_model', value: 1.3567, unit: 'ratio', window: 'now' }, F15: { name: 'roe_latest', value: 0.4872, unit: 'fraction', window: 'FY26' }, F47: { name: 'beats', value: null, unit: 'count', window: null } };
+
+  it('says what each cited fact is, with its figure, when the council kept them', () => {
+    const v = readVerdict(data({ ...base, council: { judge_model: 'm', debate: null, judge, facts } }))!;
+    expect(v.council?.facts).toEqual({ F45: 'price to base model 1.357', F15: 'roe latest 48.72%', F47: 'beats (no figure)' });
+    const box = document.createElement('div');
+    box.append(...decisionAndCouncil(v));
+    expect(box.textContent).toContain('relied on price to base model 1.357; roe latest 48.72%');
+    expect(box.querySelector('abbr.fact')?.getAttribute('title')).toBe('price to base model 1.357');
+  });
+
+  it('falls back to the ids for a council stored before the figures were kept', () => {
+    const v = readVerdict(data({ ...base, council: { judge_model: 'm', debate: null, judge } }))!;
+    expect(v.council?.facts).toEqual({});
+    expect(decisionAndCouncil(v).map((e) => e.textContent).join(' ')).toContain('relied on F45, F15 (fact ids on the evidence sheet)');
+  });
+});

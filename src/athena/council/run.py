@@ -33,4 +33,5 @@ def convene(council: Council, sheet: Mapping[str, Any]) -> dict[str, Any] | None
     if not wanted(council, sheet):
         return None
     held = debate.hold(sheet, council.debate_llm)
-    return {"mode": council.mode, "judge_model": council.judge_name, "debate": held, "judge": judge.decide(sheet, held, council.judge_llm)}
+    facts = {f["id"]: {k: f.get(k) for k in ("name", "value", "unit", "window")} for f in sheet["facts"]}  # what each cited id stands for, so a reader need not know the sheet
+    return {"mode": council.mode, "judge_model": council.judge_name, "debate": held, "judge": judge.decide(sheet, held, council.judge_llm), "facts": facts}
