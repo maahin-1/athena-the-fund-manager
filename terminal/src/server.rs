@@ -41,6 +41,7 @@ pub struct AppState {
     pub analyse: Arc<crate::analyse_worker::AnalyseWorker>,
     pub fundamentals: Arc<FundamentalsJobs>,
     pub flow_board: Arc<crate::flow_board::FlowBoard>,
+    pub chart_explain: Arc<crate::chart_explain::ChartExplain>,
     pub indices: crate::indices::IndexStore,
     pub search: Arc<crate::search::SearchCache>,
     pub fund_fetch: Arc<crate::fund_fetch::FundFetch>,
@@ -408,6 +409,17 @@ async fn api_fund_export(State(state): State<AppState>, Path(symbol): Path<Strin
         )
             .into_response(),
         Err(e) => fund_error(e),
+    }
+}
+
+/// A plain-language reading of the chart on the page, from a facts sheet worked out in code (see `athena.charting.explain`). A POST: it can cost a model call.
+async fn api_chart_explain(State(state): State<AppState>, body: Bytes) -> Response {
+    use crate::chart_explain::ExplainError;
+    match state.chart_explain.explain(&body).await {
+        Ok(doc) => Json(doc).into_response(),
+        Err(ExplainError::BadRequest) => (StatusCode::BAD_REQUEST, "the request must be a JSON object of at most 400 KB").into_response(),
+        Err(ExplainError::Busy) => (StatusCode::TOO_MANY_REQUESTS, "another explanation is running; try again in a moment").into_response(),
+        Err(ExplainError::Failed(why)) => (StatusCode::BAD_GATEWAY, why).into_response(),
     }
 }
 
@@ -814,6 +826,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/fund/:symbol", get(api_fund))
         .route("/api/valuation/:symbol", get(api_valuation))
         .route("/api/flow/board", get(api_flow_board))
+        .route("/api/chart/explain", axum::routing::post(api_chart_explain))
         .route("/api/notebook", get(notebook_get).put(notebook_put))
         .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
@@ -862,7 +875,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), chart_explain: Arc::new(crate::chart_explain::ChartExplain::new(vec!["no-such-program-xyz".into()])), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -1281,6 +1294,16 @@ mod tests {
         assert_eq!(client.get(format!("{base}/valuation/TCS")).send().await.unwrap().status(), 502); // no valuation module is configured in this test
         assert_eq!(client.get(format!("{base}/flow/board")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         assert_eq!(client.get(format!("{base}/flow/board")).send().await.unwrap().status(), 502); // the stand-in program for the board does not exist
+        let post = |origin: Option<&str>, body: &str| {
+            let mut r = client.post(format!("{base}/chart/explain")).body(body.to_string());
+            if let Some(o) = origin {
+                r = r.header("Origin", o);
+            }
+            r.send()
+        };
+        assert_eq!(post(Some("http://evil.test"), "{}").await.unwrap().status(), 403);
+        assert_eq!(post(None, "[1]").await.unwrap().status(), 400);
+        assert_eq!(post(None, "{}").await.unwrap().status(), 502); // the stand-in program for the explainer does not exist
         stop.cancel();
     }
 

@@ -683,3 +683,13 @@ abbr.fact { text-decoration: underline dotted; cursor: help; }
 .note-symbol { background: none; border: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; padding: 0; }
 .note-time { flex: 1; }
 .note-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* chart explanation */
+.lab-explain { margin: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-panel); max-height: 38vh; overflow: auto; }
+.lab-explain-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.lab-explain-body { padding: 6px 8px; }
+.explain-read { margin: 0 0 6px; line-height: 1.5; }
+.explain-cite { color: var(--accent); cursor: pointer; text-decoration: none; font-size: 11px; }
+.explain-facts summary { cursor: pointer; color: var(--fg-dim); }
+.explain-fact { padding: 1px 4px; font-size: 12px; white-space: pre-wrap; }
+.explain-fact.hit { background: var(--grid); }

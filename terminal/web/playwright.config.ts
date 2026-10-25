@@ -14,6 +14,7 @@ export default defineConfig({
   webServer: {
     command: '..\\target\\debug\\athena-terminal.exe --fake-feed --port 8701 --web-dir dist --warehouse ..\\..\\.athena\\warehouse.duckdb --layouts-dir e2e-data\\layouts --fund-store e2e-fund\\f.duckdb --fund-python ..\\..\\.venv\\Scripts\\python.exe --indicators-dir e2e\\indicators --indicator-runner ..\\..\\src\\athena\\indicators_user\\runner.py --derivs-master e2e-derivs\\derivs_master.json --derivs-offline --derivs-store e2e-derivs\\derivs.duckdb',
     url: 'http://127.0.0.1:8701/',
+    env: { ATHENA_EXPLAIN_MODEL: 'off' }, // the chart explanation test must not spend a model call
     reuseExistingServer: false,
     timeout: 30_000,
   },

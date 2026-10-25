@@ -9,6 +9,7 @@ mod derivs;
 mod fake;
 mod fund_fetch;
 mod indices;
+mod chart_explain;
 mod flow_board;
 mod fundamentals;
 mod hub;
@@ -264,11 +265,12 @@ async fn main() {
             .with_fetches(fund_fetch.finished.clone()),
     );
     let flow_board = Arc::new(flow_board::FlowBoard::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.derivs_store.clone()).with_helpers(helpers.clone()));
+    let chart_explain = Arc::new(chart_explain::ChartExplain::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
     let search = Arc::new(search::SearchCache::new(bars.warehouse.clone()));
     let pyind = pyind::PyInd::new(args.fund_python.as_deref().unwrap_or(&args.python), &args.indicator_runner, &args.indicators_dir);
     let derivs = derivs::DerivsStore::new();
     tokio::spawn(derivs::run_loader(derivs.clone(), reqwest::Client::new(), args.derivs_master.clone(), args.derivs_offline, shutdown.clone()));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, flow_board, indices: index_store, lists, search, fund_fetch, pyind, derivs, deriv_quotes, live_derivs: !args.fake_feed };
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, flow_board, chart_explain, indices: index_store, lists, search, fund_fetch, pyind, derivs, deriv_quotes, live_derivs: !args.fake_feed };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))

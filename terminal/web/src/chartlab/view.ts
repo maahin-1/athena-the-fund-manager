@@ -20,6 +20,7 @@ import { FormulaStore, serverFormulaIO, type FormulaIO } from '../formula/store'
 import { build, sourceOf } from './resample';
 import { lightweightRenderer, type ChartRenderer, type RendererFactory } from './render';
 import { deserialize, History, serialize, StateError, Templates, type KeyValue } from './store';
+import { buildRequest, explainProblem, factLine, readExplanation, splitCitations, type Explanation } from './explain';
 import { DrawingController } from './drawings/controller';
 import { buildObjects } from './drawings/objects';
 import { buildProps } from './drawings/props';
@@ -133,6 +134,8 @@ export class ChartLabView {
   private makeRenderer: RendererFactory;
   private storage: KeyValue | null;
   private toolbar = el('div', 'lab-bar');
+  private explainBox = el('div', 'lab-explain');
+  private explaining = false;
   private wrap = el('div', 'lab-chart');
   private host = el('div', 'lab-host');
   private legends = el('div', 'lab-legends');
@@ -219,7 +222,8 @@ export class ChartLabView {
     if (this.cell) this.main.append(this.wrap);
     else this.main.append(this.wrap, this.side);
     this.buildReplay();
-    this.element.append(this.toolbar, this.replayBar, sub, this.popover, this.main, this.note);
+    this.explainBox.hidden = true;
+    this.element.append(this.toolbar, this.explainBox, this.replayBar, sub, this.popover, this.main, this.note);
     if (!this.cell) document.addEventListener('keydown', this.onKey);
     this.wrap.addEventListener('mouseenter', () => (this.pointerIn = true));
     this.wrap.addEventListener('mouseleave', () => {
@@ -909,12 +913,13 @@ export class ChartLabView {
       this.paintTemplates();
     });
     const snapshot = this.button('Snapshot', 'Download the chart as a PNG picture', () => this.snapshot());
+    const explain = this.button('Explain', 'A plain-language reading of the bars shown and the lines you drew, from figures worked out in code (may use one model call)', () => void this.explain());
     this.badge.title = 'Market status';
     if (this.cell) this.toolbar.append(this.symbolInput, this.intervalRow, this.intervalInput, this.typeSelect, indicators);
     else {
       this.toolbar.append(
         this.symbolInput, this.intervalRow, this.intervalInput, this.recentRow, this.typeSelect, this.profileButton, this.profileRows, this.replayButton, indicators, this.compareInput, this.scaleRow, this.adjButton, this.undoButton, this.redoButton,
-        this.templateSelect, snapshot, this.badge,
+        this.templateSelect, snapshot, explain, this.badge,
       );
     }
     this.paintTemplates();
@@ -946,6 +951,70 @@ export class ChartLabView {
     } catch (e) {
       this.say(e instanceof StateError ? e.message : 'the template could not be loaded');
     }
+  }
+
+  /** Send the bars on show and the drawings to the server and show what comes back: the reading, if the model gave one that passed the checks, and always the facts sheet. */
+  private async explain(): Promise<void> {
+    if (this.explaining) return;
+    const bars = this.model.displayBars();
+    if (bars.length < 20) return this.say('Too few bars on show to explain: at least 20 are needed.');
+    this.explaining = true;
+    this.explainBox.hidden = false;
+    this.explainBox.replaceChildren(el('div', 'note', 'Working out the figures and asking for a reading…'));
+    try {
+      const r = await fetch('/api/chart/explain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(buildRequest(this.symbol, this.tf, bars, this.drawings?.list ?? [])) });
+      if (!r.ok) {
+        this.explainBox.replaceChildren(el('div', 'note', explainProblem(r.status)));
+        return;
+      }
+      const got = readExplanation(await r.json());
+      if (!got) this.explainBox.replaceChildren(el('div', 'note', explainProblem(502)));
+      else this.paintExplanation(got);
+    } catch {
+      this.explainBox.replaceChildren(el('div', 'note', explainProblem(502)));
+    } finally {
+      this.explaining = false;
+    }
+  }
+
+  private paintExplanation(got: Explanation): void {
+    const head = el('div', 'lab-explain-head');
+    head.append(el('b', '', `Chart reading: ${got.symbol} ${got.interval}`));
+    const close = el('button', 'btn', 'Close');
+    close.type = 'button';
+    close.addEventListener('click', () => (this.explainBox.hidden = true));
+    head.append(close);
+    const body = el('div', 'lab-explain-body');
+    if (got.read) {
+      const p = el('p', 'explain-read');
+      for (const part of splitCitations(got.read)) {
+        if (part.id) {
+          const link = el('a', 'explain-cite', part.text);
+          link.href = `#${part.id}`;
+          link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const line = this.explainBox.querySelector<HTMLElement>(`[data-fact="${part.id}"]`);
+            line?.scrollIntoView({ block: 'nearest' });
+            line?.classList.add('hit');
+            setTimeout(() => line?.classList.remove('hit'), 1500);
+          });
+          p.append(link);
+        } else p.append(document.createTextNode(part.text));
+      }
+      body.append(p, el('div', 'note', `Written by ${got.model ?? 'a model'} from the facts below; it does no arithmetic and every figure in it is checked against them. Not advice.`));
+    } else {
+      body.append(el('div', 'note', got.notes[0] ?? 'No reading was written; the facts are below.'));
+    }
+    const facts = el('details', 'explain-facts');
+    facts.open = !got.read;
+    facts.append(el('summary', '', `The facts (${got.facts.length}), worked out in code`));
+    for (const f of got.facts) {
+      const line = el('div', 'explain-fact', `${f.id}  ${factLine(f)}`);
+      line.dataset.fact = f.id;
+      facts.append(line);
+    }
+    body.append(facts);
+    this.explainBox.replaceChildren(head, body);
   }
 
   private snapshot(): void {
