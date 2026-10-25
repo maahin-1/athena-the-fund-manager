@@ -77,7 +77,7 @@ def test_a_run_loads_weekdays_once_records_holidays_and_resumes_without_asking_a
         assert [u for u in asked if any(d in u for d in ("01AUG", "02AUG", "03AUG", "04AUG"))] == before  # the days already recorded are not asked for again
         cov = store.coverage()
         assert cov["days"] == 4 and cov["with_file"] == 1
-        assert store.futures("ABC")[0] == (DAY, 101.0, 1000.0, 500.0)  # the nearest expiry on the day
+        assert store.futures("ABC")[0] == (DAY, 101.0, 1300.0, 500.0)  # the nearest expiry close and volume, open interest over the two expiries held
         assert len(store.option_rows("ABC", DAY)) == 2 and store.symbols() == ["ABC"]
 
 
@@ -116,3 +116,73 @@ def test_the_scan_finds_a_build_up_on_the_latest_day_from_the_store(tmp_path):
         events, held, ratio = scan.events_for(store, "ABC")
         assert held == 70 and ratio is None and [e.kind for e in events if e.kind != "oi_spike"] == ["long_build_up"]
         assert scan.scan(store)[0].symbol == "ABC" and scan.events_for(store, "NOPE") == ([], 0, None)
+
+
+def _roll_rows():
+    """A stock whose open interest drains from the near month into the next one over the expiry week, then the next month becomes the nearest. Price is flat, so nothing moved."""
+    near, far, later = date(2026, 9, 29), date(2026, 10, 27), date(2026, 11, 24)
+    rows = []
+    for day, (a, b, c) in {
+        date(2026, 9, 24): (80.0, 60.0, 0.0),
+        date(2026, 9, 25): (60.0, 80.0, 0.0),
+        date(2026, 9, 28): (30.0, 110.0, 0.0),
+        date(2026, 9, 29): (10.0, 130.0, 0.0),
+        date(2026, 9, 30): (0.0, 140.0, 15.0),
+        date(2026, 10, 1): (0.0, 141.0, 16.0),
+    }.items():
+        if a:
+            rows.append((day, near, 100.0, a, 1.0))
+        rows.append((day, far, 101.0, b, 1.0))
+        if c:
+            rows.append((day, later, 102.0, c, 1.0))
+    return rows
+
+
+def test_a_roll_from_one_expiry_to_the_next_is_not_a_move():
+    from athena.derivs.store import continuous
+
+    rows = _roll_rows()
+    series = continuous(rows)
+    assert [s[0] for s in series] == sorted({r[0] for r in rows})
+    closes = [s[1] for s in series]
+    held = [s[2] for s in series]
+    assert max(closes) / min(closes) == pytest.approx(1.0, abs=1e-9)  # a flat price stays flat across the roll
+    assert held[-1] == pytest.approx(157.0)  # the last day total over the expiries held
+    assert max(abs(b / a - 1) for a, b in zip(held, held[1:])) < 0.12
+    nearest = {}
+    for day, expiry, _, oi, _ in rows:
+        if day not in nearest or expiry < nearest[day][0]:
+            nearest[day] = (expiry, oi)
+    old = [nearest[d][1] for d in sorted(nearest) if nearest[d][1] > 0]
+    assert max(b / a for a, b in zip(old, old[1:])) > 10  # read the old way (the nearest expiry each day) the same rows jump by more than 1,000% on the roll day
+
+
+def test_a_day_with_nothing_in_common_with_the_day_before_carries_no_change():
+    from athena.derivs.store import continuous
+
+    rows = [(date(2026, 1, 1), date(2026, 1, 29), 100.0, 50.0, 1.0), (date(2026, 1, 2), date(2026, 3, 26), 110.0, 70.0, 1.0)]
+    series = continuous(rows)
+    assert series[0][1] == pytest.approx(series[1][1]) == pytest.approx(110.0)
+    assert series[0][2] == pytest.approx(series[1][2]) == pytest.approx(70.0)
+    assert continuous([]) == []
+
+
+def test_the_scan_reports_only_symbols_with_data_on_the_latest_day_of_the_store(tmp_path):
+    from datetime import timedelta
+
+    from athena.flow import scan
+
+    expiry = date(2030, 1, 30)
+    days = [date(2026, 1, 1) + timedelta(days=i) for i in range(70)]
+    with DerivsStore(tmp_path / "d.duckdb") as store:
+        for i, day in enumerate(days):
+            wobble = ((i * 7) % 5 - 2) / 1000
+            rows = []
+            for symbol, last in (("ABC", 69), ("OLD", 68)):  # OLD has no row on the final day: it left the futures market
+                if i > last:
+                    continue
+                close, oi = (100.0 * 1.03, 1000.0 * 1.06) if i == last else (100.0 * (1 + wobble), 1000.0 * (1 + wobble * 2))
+                rows.append((symbol, "FUTSTK", expiry, close, close, 10.0, oi, 0.0))
+            store.put_day(day, {"futures": rows, "totals": [], "strikes": []})
+        assert scan.events_for(store, "OLD")[0]  # asked for by name, the stale symbol still answers
+        assert {e.symbol for e in scan.scan(store)} == {"ABC"}

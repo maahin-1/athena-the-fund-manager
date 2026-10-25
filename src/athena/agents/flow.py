@@ -10,7 +10,9 @@ The events were found by fixed rules in code and each carries its own figures; y
 2. Size matters: the z figures say how unusual the move is for this stock. Two or three events in the same direction over several days count for much more than one.
 3. A put-call ratio far above its usual level means more put positioning (protection or bearish bets); far below, more call positioning. It is context for the direction, not a signal alone.
    A max-pain strike that has drifted up or down says where option writers would like the price to settle by expiry; it matters in the last days before expiry, little before.
-4. Mixed events, one weak event, or none: neutral with low confidence. Reserve high confidence for several recent events in one direction.
+4. Mixed events, one weak event, or none: neutral with low confidence. A test over 2020 to 2026 on about 310 stocks found the effects small (a long build-up was followed by about
+   +0.4 percent over 20 days against the median stock, a long unwinding by about -0.6 percent over 5 days; none was reliable), so several recent events in one direction earn moderate
+   confidence at most.
 5. Open interest has no direction without price. An open-interest spike alone is attention, not a side.
 Reason ONLY from the data provided and treat as_of as the present day. If a figure is listed as missing, say so and qualify your conclusion. Never state a price target: describe the
 positioning, give a base case and name the main risk."""

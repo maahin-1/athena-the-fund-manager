@@ -58,18 +58,20 @@ class DerivsStore:
             raise
 
     def futures(self, symbol: str, instrument: str = "FUTSTK") -> list[tuple[date, float, float, float]]:
-        """The symbol's nearest-expiry futures by day: `(day, close, oi, volume)`, oldest first. The nearest expiry on each day is the one used."""
-        return [
-            (d, c, oi, v)
-            for d, c, oi, v in self._con.execute(
-                "SELECT day, arg_min(close, expiry), arg_min(oi, expiry), arg_min(volume, expiry) FROM fut_bars WHERE symbol = ? AND instrument = ? GROUP BY day ORDER BY day",
-                [symbol, instrument],
-            ).fetchall()
-        ]
+        """The symbol's futures by day as one continuous series: `(day, close, oi, volume)`, oldest first. Each day-to-day change is measured on the contracts held on both days (see
+        `continuous`), so a roll from one expiry to the next is not a move; the last day's close is the nearest expiry's own and its open interest the total over the held expiries."""
+        rows = self._con.execute(
+            "SELECT day, expiry, close, oi, volume FROM fut_bars WHERE symbol = ? AND instrument = ? ORDER BY day, expiry", [symbol, instrument]
+        ).fetchall()
+        return continuous(rows)
 
     def option_rows(self, symbol: str, since: date) -> list[tuple[date, date, float, str, float]]:
         """`(day, expiry, strike, option, oi)` for the nearest-expiry strikes held since a day."""
         return self._con.execute("SELECT day, expiry, strike, option, oi FROM opt_strikes WHERE symbol = ? AND day >= ? ORDER BY day", [symbol, since]).fetchall()
+
+    def latest_day(self) -> date | None:
+        """The last day with futures rows (a holiday recorded after it does not count)."""
+        return self._con.execute("SELECT max(day) FROM fut_bars").fetchone()[0]
 
     def coverage(self) -> dict[str, Any]:
         row = self._con.execute("SELECT count(*), min(day), max(day), sum(CASE WHEN has_file THEN 1 ELSE 0 END) FROM derivs_days").fetchone()
@@ -77,3 +79,37 @@ class DerivsStore:
 
     def symbols(self, instrument: str = "FUTSTK") -> Sequence[str]:
         return [r[0] for r in self._con.execute("SELECT DISTINCT symbol FROM fut_bars WHERE instrument = ? ORDER BY symbol", [instrument]).fetchall()]
+
+
+def continuous(rows: Sequence[tuple[date, date, float, float, float]]) -> list[tuple[date, float, float, float]]:
+    """A roll-free series from `(day, expiry, close, oi, volume)` rows, oldest first.
+
+    The exchange file holds the nearest two expiries. Taking the nearest one each day makes the series jump at every roll (open interest 83M, 58M, 26M, 11M over the expiry week, then
+    145M when the next month becomes the nearest), and a detector reads that as a move. Instead each day's change is taken over the expiries present on both that day and the one
+    before: the close's change on the nearest of them, the open interest's change over their total. The changes are chained into a level and scaled so the last day matches what the
+    exchange reported (the nearest expiry's close, the total open interest). A day with nothing in common with the one before it carries no change."""
+    days: dict[date, dict[date, tuple[float, float, float]]] = {}
+    for day, expiry, close, oi, volume in rows:
+        days.setdefault(day, {})[expiry] = (close, oi, volume)
+    order = sorted(days)
+    if not order:
+        return []
+    price, held = [1.0], [1.0]
+    for before, today in zip(order, order[1:]):
+        common = sorted(set(days[before]) & set(days[today]))
+        p = o = 1.0
+        if common:
+            first = common[0]
+            if days[before][first][0] > 0:
+                p = days[today][first][0] / days[before][first][0]
+            base = sum(days[before][e][1] for e in common)
+            if base > 0:
+                o = sum(days[today][e][1] for e in common) / base
+        price.append(price[-1] * p)
+        held.append(held[-1] * o)
+    last = days[order[-1]]
+    nearest = min(last)
+    price_scale = last[nearest][0] / price[-1]
+    total = sum(v[1] for v in last.values())
+    oi_scale = total / held[-1] if held[-1] > 0 else 0.0
+    return [(day, price[i] * price_scale, held[i] * oi_scale, days[day][min(days[day])][2]) for i, day in enumerate(order)]

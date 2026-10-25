@@ -31,9 +31,11 @@ def events_for(store: DerivsStore, symbol: str, instrument: str = "FUTSTK") -> t
 
 
 def scan(store: DerivsStore, instrument: str = "FUTSTK") -> list[d.Event]:
+    """The events on the store's latest day, strongest first. A symbol whose own latest day is older (it left the futures market, or its file stopped) has nothing to say about today."""
     out: list[d.Event] = []
+    latest = store.latest_day()
     for symbol in store.symbols(instrument):
-        out += events_for(store, symbol, instrument)[0]
+        out += [e for e in events_for(store, symbol, instrument)[0] if e.day == latest]
     return sorted(out, key=lambda e: -max((abs(v) for k, v in e.facts.items() if k.endswith("_z") or k == "z"), default=0.0))
 
 
