@@ -196,6 +196,10 @@ class FundamentalsStore:
             out.setdefault(end, {})[key] = (shares, holders)
         return out
 
+    def holding_filed(self, symbol: str) -> dict[date, datetime]:
+        """When each stored quarter's shareholding pattern was filed, by quarter end."""
+        return {end: when for end, when in self._con.execute("SELECT period_end, min(filed) FROM shareholding WHERE symbol = ? GROUP BY period_end", [symbol]).fetchall()}
+
     def documents(self, symbol: str, kind: str, limit: int = 100) -> list[dict[str, Any]]:
         """The symbol's documents of one kind, newest first."""
         rows = self._con.execute(
