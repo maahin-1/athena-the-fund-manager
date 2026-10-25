@@ -26,11 +26,12 @@ MAX_ARG = 300
 
 
 def operations() -> dict[str, Callable[[Sequence[str]], int]]:
+    from athena.flow import board
     from athena.fundamentals import page
     from athena.valuation import page as valuation
     from athena.warehouse import chart_bars
 
-    return {"page": page.main, "valuation": valuation.main, "chart_bars": chart_bars.main}
+    return {"page": page.main, "valuation": valuation.main, "chart_bars": chart_bars.main, "flow_board": board.main}
 
 
 def handle(ops: dict[str, Callable[[Sequence[str]], int]], request: dict[str, Any]) -> dict[str, Any]:

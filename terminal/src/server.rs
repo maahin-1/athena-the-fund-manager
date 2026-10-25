@@ -40,6 +40,7 @@ pub struct AppState {
     pub verdicts: VerdictJobs,
     pub analyse: Arc<crate::analyse_worker::AnalyseWorker>,
     pub fundamentals: Arc<FundamentalsJobs>,
+    pub flow_board: Arc<crate::flow_board::FlowBoard>,
     pub indices: crate::indices::IndexStore,
     pub search: Arc<crate::search::SearchCache>,
     pub fund_fetch: Arc<crate::fund_fetch::FundFetch>,
@@ -407,6 +408,17 @@ async fn api_fund_export(State(state): State<AppState>, Path(symbol): Path<Strin
         )
             .into_response(),
         Err(e) => fund_error(e),
+    }
+}
+
+/// The futures and options board: every underlying with futures on the latest day of the derivatives history, with what the detectors found (see `athena.flow.board`).
+async fn api_flow_board(State(state): State<AppState>) -> Response {
+    use crate::flow_board::BoardError;
+    match state.flow_board.board().await {
+        Ok(doc) => Json(doc).into_response(),
+        Err(BoardError::NoData) => (StatusCode::NOT_FOUND, "no derivatives history is stored yet").into_response(),
+        Err(BoardError::Busy) => (StatusCode::SERVICE_UNAVAILABLE, "the derivatives file is being loaded; try again in a moment").into_response(),
+        Err(BoardError::Failed(why)) => (StatusCode::BAD_GATEWAY, why).into_response(),
     }
 }
 
@@ -784,6 +796,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/fund-fetch/:symbol", axum::routing::post(fund_fetch_start))
         .route("/api/fund/:symbol", get(api_fund))
         .route("/api/valuation/:symbol", get(api_valuation))
+        .route("/api/flow/board", get(api_flow_board))
         .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
         .route("/api/verdict/:symbol", axum::routing::post(verdict_start))
@@ -831,7 +844,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -1230,6 +1243,8 @@ mod tests {
         assert_eq!(client.get(format!("{base}/valuation/TCS?basis=both")).send().await.unwrap().status(), 400);
         assert_eq!(client.get(format!("{base}/valuation/TCS")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         assert_eq!(client.get(format!("{base}/valuation/TCS")).send().await.unwrap().status(), 502); // no valuation module is configured in this test
+        assert_eq!(client.get(format!("{base}/flow/board")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        assert_eq!(client.get(format!("{base}/flow/board")).send().await.unwrap().status(), 502); // the stand-in program for the board does not exist
         stop.cancel();
     }
 

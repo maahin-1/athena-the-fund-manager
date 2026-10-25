@@ -10,4 +10,5 @@ export default function seed(): void {
   rmSync(resolve(here, '..', 'e2e-data'), { recursive: true, force: true }); // every run starts with no saved layouts or watchlists
   const python = resolve(root, '.venv', 'Scripts', 'python.exe');
   execFileSync(python, [resolve(root, 'scripts', 'seed_fund_fixture.py'), resolve(here, '..', 'e2e-fund', 'f.duckdb')], { stdio: 'inherit' });
+  execFileSync(python, [resolve(root, 'scripts', 'seed_derivs_store.py'), resolve(here, '..', 'e2e-derivs', 'derivs.duckdb')], { stdio: 'inherit' }); // the futures history the F&O board reads
 }

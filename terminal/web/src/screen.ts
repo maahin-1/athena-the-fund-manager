@@ -2,6 +2,7 @@ import { el, type AppContext } from './panels/base';
 import { ColumnsMenu, QueryBar, SavedBar } from './screens/controls';
 import { toCsv } from './screens/csv';
 import { CalendarView } from './screens/calendar';
+import { FnoView } from './screens/fno';
 import { HeatmapView } from './screens/heatmap';
 import { formatCell } from './screens/format';
 import { SavedScreens, serverScreensIO, type SavedScreen } from './screens/store';
@@ -51,16 +52,18 @@ export class ScreenView {
     watched: () => new Set(this.ctx.watchlist.items),
     onSelect: (symbol) => this.select(symbol, this.rows.find((r) => r.symbol === symbol) ?? { symbol, name: symbol }),
   });
-  private mode: 'table' | 'heatmap' | 'calendar' = 'table';
+  private fno = new FnoView({ onSelect: (symbol) => this.select(symbol, this.rows.find((r) => r.symbol === symbol) ?? { symbol, name: symbol }) });
+  private mode: 'table' | 'heatmap' | 'calendar' | 'fno' = 'table';
   private modeRow = el('div', 'smodes');
   private cleanBox = el('input');
 
   constructor(private ctx: AppContext) {
     this.element.hidden = true;
     this.buildControls();
-    this.element.append(this.note, this.modeRow, this.query.element, this.savedBar.element, this.presetRow, this.presetNote, this.filterBox, this.actions, this.tools, this.count, this.tableHost, this.heat.element, this.cal.element);
+    this.element.append(this.note, this.modeRow, this.query.element, this.savedBar.element, this.presetRow, this.presetNote, this.filterBox, this.actions, this.tools, this.count, this.tableHost, this.heat.element, this.cal.element, this.fno.element);
     this.heat.element.hidden = true;
     this.cal.element.hidden = true;
+    this.fno.element.hidden = true;
   }
 
   /** Show the page; the table is fetched once and kept for five minutes. */
@@ -91,7 +94,7 @@ export class ScreenView {
   }
 
   private buildControls(): void {
-    for (const [mode, label] of [['table', 'Table'], ['heatmap', 'Heatmap'], ['calendar', 'Calendar']] as const) {
+    for (const [mode, label] of [['table', 'Table'], ['heatmap', 'Heatmap'], ['calendar', 'Calendar'], ['fno', 'F&O']] as const) {
       const b = el('button', 'btn', label);
       b.dataset.mode = mode;
       b.addEventListener('click', () => {
@@ -279,9 +282,11 @@ export class ScreenView {
     this.tools.hidden = this.mode !== 'table';
     this.heat.element.hidden = this.mode !== 'heatmap';
     this.cal.element.hidden = this.mode !== 'calendar';
-    this.count.hidden = this.mode === 'calendar';
+    this.fno.element.hidden = this.mode !== 'fno';
+    this.count.hidden = this.mode === 'calendar' || this.mode === 'fno';
     if (this.mode === 'heatmap') this.heat.render(found, {}, this.rows);
     if (this.mode === 'calendar') void this.cal.show().then(() => this.cal.refresh());
+    if (this.mode === 'fno') void this.fno.show();
     const shown = found.slice(0, MAX_SHOWN);
     this.count.textContent = `${found.length.toLocaleString('en-IN')} match${found.length === 1 ? '' : 'es'}${this.mode === 'table' && found.length > shown.length ? `; showing the first ${shown.length}, sorted by ${COLUMNS[this.sortBy]?.[0] ?? this.sortBy}` : ''}.`;
 

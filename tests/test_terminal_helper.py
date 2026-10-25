@@ -44,13 +44,14 @@ def test_each_request_gets_what_the_command_prints_and_failures_are_replies_not_
     assert replies[6] == {"id": None, "ok": False, "error": "bad request"}
 
 
-def test_the_real_operations_are_the_three_commands_the_server_ran():
+def test_the_real_operations_are_the_commands_the_server_ran():
     ops = terminal_helper.operations()
+    from athena.flow import board
     from athena.fundamentals import page
     from athena.valuation import page as valuation
     from athena.warehouse import chart_bars
 
-    assert ops == {"page": page.main, "valuation": valuation.main, "chart_bars": chart_bars.main}
+    assert ops == {"page": page.main, "valuation": valuation.main, "chart_bars": chart_bars.main, "flow_board": board.main}
 
 
 def test_warming_runs_a_page_and_a_valuation_and_ignores_their_failure():
