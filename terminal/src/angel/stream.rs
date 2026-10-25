@@ -236,6 +236,9 @@ mod tests {
                         subscribes.push(t.to_string());
                         let packet = test_packet("3045", 1_760_000_000_000, 81240, 80270, &[(1, 1200, 81245), (0, 900, 81250)]);
                         let _ = ws.send(Message::Binary(packet.into())).await;
+                        // let the packet be read before the socket goes: dropped at once, a ping the client sends next meets a reset, and Windows then throws away
+                        // what the client had not yet read
+                        tokio::time::sleep(Duration::from_millis(200)).await;
                         break; // drop the socket after the first subscribe so a test can see the reconnect
                     }
                 }

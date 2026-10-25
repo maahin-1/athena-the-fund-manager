@@ -2,7 +2,7 @@ import {
   CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, LineStyle,
   type IChartApi, type ISeriesApi, type SeriesType, type UTCTimestamp,
 } from 'lightweight-charts';
-import { applyTick, tickFitsChart, type Bar } from '../bars';
+import { applyTick, tickFitsChart, VolumeSteps, type Bar } from '../bars';
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import { bollinger, ema, INDICATOR_NAMES, macd, rsi, sma, type Series } from '../indicators';
@@ -268,13 +268,15 @@ export class ChartPanel extends Panel {
     if (b.v) cell('Vol', compact(b.v));
   }
 
+  private volumes = new VolumeSteps();
+
   protected onQuotes(quotes: Quote[]): void {
     const q = quotes.find((x) => x.s === this.symbol);
     if (this.disposed || !q || !this.candles || this.bars.length === 0) return;
     const ts = q.t ? q.t / 1000 : Date.now() / 1000;
     const last = this.bars[this.bars.length - 1];
     if (!tickFitsChart(last, q.l, ts, this.tf)) return;
-    const next = applyTick(last, q.l, ts, this.tf);
+    const next = applyTick(last, q.l, ts, this.tf, this.volumes.step(q.s, q.v));
     if (next === last) return;
     if (next.t === last.t) this.bars[this.bars.length - 1] = next;
     else this.bars.push(next);

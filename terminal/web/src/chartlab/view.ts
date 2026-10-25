@@ -1,5 +1,5 @@
 import { attachSuggest } from '../suggest';
-import type { Bar } from '../bars';
+import { VolumeSteps, type Bar } from '../bars';
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import { marketState } from '../market';
@@ -1273,10 +1273,12 @@ export class ChartLabView {
     this.placeLegends();
   }
 
+  private volumes = new VolumeSteps();
+
   private onQuotes(quotes: Quote[]): void {
     if (!this.visible) return;
     const q = quotes.find((x) => x.s === this.symbol);
-    if (q) this.model.tick(q.l, q.t ? q.t / 1000 : Date.now() / 1000);
+    if (q) this.model.tick(q.l, q.t ? q.t / 1000 : Date.now() / 1000, this.volumes.step(q.s, q.v));
   }
 
   dispose(): void {

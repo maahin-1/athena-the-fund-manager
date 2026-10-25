@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
 
+use crate::live_bars::LiveBars;
 use crate::quote::{Quote, Source};
 
 /// A streamed quote is used while its last message is at most this old; after that the polled quote may take over.
@@ -42,7 +43,7 @@ struct Inner {
 
 /// The quotes, the pages' wants, and a signal raised when what the pages want changes, so the stream subscribes at once rather than on its next round.
 #[derive(Clone, Default)]
-pub struct Hub(Arc<Mutex<Inner>>, Arc<Notify>);
+pub struct Hub(Arc<Mutex<Inner>>, Arc<Notify>, LiveBars);
 
 /// The stream's delay over the recent ticks: the median, the 95th percentile and how many ticks they cover, in milliseconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -127,7 +128,15 @@ impl Hub {
         Some(Lag { p50: at(0.5), p95: at(0.95), n: v.len() })
     }
 
+    /// Today's one-minute bars built from the quotes the hub has received.
+    pub fn live_bars(&self) -> &LiveBars {
+        &self.2
+    }
+
     pub fn update(&self, quote: Quote, now: Instant) {
+        // every price the hub is given goes into today's bars, at the exchange's time when the quote has one
+        let at = quote.exchange_ms.filter(|ms| *ms > 100_000_000_000).map(|ms| ms / 1000).unwrap_or_else(|| chrono::Utc::now().timestamp());
+        self.2.record(&quote.symbol, quote.last, quote.volume, at);
         let mut g = self.0.lock().unwrap();
         let previous_stream_at = g.quotes.get(&quote.symbol).and_then(|e| e.stream_at);
         let stream_at = match quote.source {

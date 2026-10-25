@@ -24,6 +24,8 @@ use crate::hub::Hub;
 use crate::layouts::{LayoutError, LayoutStore};
 
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+/// How long a request for intraday bars waits for a fetch that is running before it answers with what there is.
+pub const INTRADAY_WAIT: Duration = Duration::from_secs(4);
 /// How often a page's socket renews the contracts it named (they are let go after `deriv_quotes::WANTED_FOR` without a renewal).
 pub const DERIV_RENEW: Duration = Duration::from_secs(5);
 
@@ -148,15 +150,18 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
             },
         }
     } else if yahoo_params(&tf).is_some() {
-        let (bars, loading) = state.bars.intraday.get(&symbol, &tf);
-        let note = if loading {
+        // a first request waits a moment for the history rather than answering "loading" and having the page ask again
+        let (bars, loading) = state.bars.intraday.get_waiting(&symbol, &tf, INTRADAY_WAIT).await;
+        let live = crate::live_bars::width(&tf).map(|w| state.hub.live_bars().bars(&symbol, w)).unwrap_or_default();
+        let note = if loading && live.is_empty() {
             "loading".to_string()
-        } else if bars.is_empty() {
+        } else if bars.is_empty() && live.is_empty() {
             format!("No {tf} bars for {symbol}: the free intraday source has none for it. Daily bars only.")
         } else {
             String::new()
         };
-        (bars, "yahoo", note)
+        let source = if live.is_empty() { "yahoo" } else { "yahoo, with today's bars from the live stream" };
+        (crate::live_bars::merge(bars, &live), source, note)
     } else {
         return StatusCode::BAD_REQUEST.into_response();
     };

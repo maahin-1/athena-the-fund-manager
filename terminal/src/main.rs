@@ -12,6 +12,7 @@ mod indices;
 mod fundamentals;
 mod hub;
 mod layouts;
+mod live_bars;
 mod search;
 mod poll;
 mod pyind;

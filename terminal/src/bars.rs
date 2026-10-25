@@ -143,6 +143,18 @@ impl Intraday {
         Intraday { inner: Arc::new(Mutex::new(YahooInner::default())), fetch }
     }
 
+    /// As `get`, but when nothing is cached and a fetch is running, waits up to `wait` for it.
+    pub async fn get_waiting(&self, symbol: &str, tf: &str, wait: Duration) -> (Vec<Bar>, bool) {
+        let deadline = Instant::now() + wait;
+        loop {
+            let (bars, loading) = self.get(symbol, tf);
+            if !bars.is_empty() || !loading || Instant::now() >= deadline {
+                return (bars, loading);
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
     /// `(bars, loading)`: the cached bars (possibly old, possibly none) and whether a fetch is running.
     pub fn get(&self, symbol: &str, tf: &str) -> (Vec<Bar>, bool) {
         let key = (symbol.to_ascii_uppercase(), tf.to_string());
@@ -440,6 +452,22 @@ mod tests {
         assert!(!loading);
         let _ = intraday.get("SBIN", "1m");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_first_request_can_wait_for_the_fetch_and_a_slow_one_is_not_waited_for_past_the_limit() {
+        let fetch: Fetcher = Arc::new(move |s, _t| {
+            Box::pin(async move {
+                tokio::time::sleep(Duration::from_millis(if s == "SLOW" { 2000 } else { 50 })).await;
+                Some(vec![Bar { t: 1, o: 1.0, h: 1.0, l: 1.0, c: 1.0, v: 1.0 }])
+            })
+        });
+        let intraday = Intraday::new(fetch);
+        let (bars, loading) = intraday.get_waiting("SBIN", "1m", Duration::from_secs(1)).await;
+        assert_eq!(bars.len(), 1);
+        assert!(!loading);
+        let (bars, loading) = intraday.get_waiting("SLOW", "1m", Duration::from_millis(100)).await;
+        assert!(bars.is_empty() && loading);
     }
 }
 

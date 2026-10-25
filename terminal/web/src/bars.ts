@@ -73,6 +73,19 @@ export function tickFitsChart(last: Bar | undefined, price: number, tsSec: numbe
 }
 
 /** The bar to draw after a trade at `price`: the last bar updated, or a new bar when the trade falls in a later one. */
+/** Turns each quote's running day volume into the volume traded since the previous quote, for the bar the quote falls in. The first quote of a symbol only sets
+ *  where the total starts (0), and a total that goes down (a new day) starts again. */
+export class VolumeSteps {
+  private totals = new Map<string, number>();
+
+  step(symbol: string, total: number | null | undefined): number {
+    if (typeof total !== 'number' || !Number.isFinite(total)) return 0;
+    const before = this.totals.get(symbol);
+    this.totals.set(symbol, total);
+    return before === undefined || total < before ? 0 : total - before;
+  }
+}
+
 export function applyTick(last: Bar | undefined, price: number, tsSec: number, tf: Interval, volume = 0): Bar {
   const t = barTime(tsSec, tf);
   if (last && last.t === t) {

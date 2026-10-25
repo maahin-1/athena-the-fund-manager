@@ -100,3 +100,17 @@ describe('the options feed with a push source', () => {
     expect(urls.at(-1)).toBe('/api/derivs/quotes?tokens=NFO%3A7');
   });
 });
+
+describe('live volume for the forming bar', () => {
+  it('is what the running day total grew by since the last quote', async () => {
+    const { VolumeSteps } = await import('../src/bars');
+    const v = new VolumeSteps();
+    expect(v.step('SBIN', 1000)).toBe(0); // the first quote only sets the start
+    expect(v.step('SBIN', 1600)).toBe(600);
+    expect(v.step('INFY', 50)).toBe(0);
+    expect(v.step('SBIN', null)).toBe(0);
+    expect(v.step('SBIN', 1700)).toBe(100);
+    expect(v.step('SBIN', 20)).toBe(0); // a new day
+    expect(v.step('SBIN', 30)).toBe(10);
+  });
+});
