@@ -20,10 +20,6 @@ def known_by(as_of: date) -> datetime:
     return datetime.combine(as_of, MARKET_CLOSE, tzinfo=IST)
 
 
-def _is_lender(info: Mapping[str, Any]) -> bool:
-    return info.get("sector") == "Financial Services"
-
-
 def statements_as_of(
     refs: Sequence[FilingRef],
     load: Callable[[FilingRef], Filing],

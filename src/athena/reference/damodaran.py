@@ -18,7 +18,6 @@ from athena.reference.store import ReferenceStore, StatRow
 SHEET = "Industry Averages"
 SOURCE = "damodaran"
 FIRM_COUNT = {"number_of_firms", "number_of_firm", "no_of_firms", "number_firms"}
-TOTAL_ROWS = ("Total Market", "Total Market (without financials)")
 
 
 @dataclass
@@ -96,6 +95,3 @@ def load_industry_dir(
         report.files += 1
     return report
 
-
-def total_market(store: ReferenceStore, on_or_before: date | None = None, region: str = "India") -> dict[str, tuple[float, int | None]]:
-    return store.industry_stats("Total Market", region=region, on_or_before=on_or_before)

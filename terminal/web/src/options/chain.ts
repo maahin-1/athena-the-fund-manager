@@ -157,19 +157,3 @@ export function atmIv(rows: StrikeRow[], forward: number | null, T: number, r: n
   if (p.ok) values.push(p.iv);
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
-
-export interface TermPoint {
-  expiry: string;
-  T: number;
-  iv: number;
-}
-
-/** The at-the-money volatility of each expiry, in order of expiry; an expiry with none is left out. */
-export function termStructure(expiries: { expiry: string; T: number; forward: number | null; rows: StrikeRow[] }[], r: number): TermPoint[] {
-  const out: TermPoint[] = [];
-  for (const e of [...expiries].sort((a, b) => a.T - b.T)) {
-    const iv = atmIv(e.rows, e.forward, e.T, r);
-    if (iv !== null) out.push({ expiry: e.expiry, T: e.T, iv });
-  }
-  return out;
-}

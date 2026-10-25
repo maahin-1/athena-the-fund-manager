@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { price } from '../src/options/black76';
-import { atmIv, atmStrike, forwardOf, maxPain, parityForward, pcr, quotePrice, smile, termStructure, type Quote, type StrikeRow } from '../src/options/chain';
+import { atmIv, atmStrike, forwardOf, maxPain, parityForward, pcr, quotePrice, smile, type Quote, type StrikeRow } from '../src/options/chain';
 import { breakEvens, curve, extremes, netDebit, netGreeks, payoffAtExpiry, payoffNow, slopeAbove, type Leg, type Market } from '../src/options/payoff';
 
 const q = (oi: number, extra: Partial<Quote> = {}): Quote => ({ last: 1, bid: null, ask: null, volume: 0, oi, oiChange: 0, ...extra });
@@ -172,15 +172,6 @@ describe('at-the-money volatility and its term structure', () => {
     rows[3].call = null;
     expect(atmIv(rows, 100, 0.1, r)).toBeNull();
     expect(atmIv(rows, null, 0.1, r)).toBeNull();
-  });
-
-  it('gives the at-the-money volatility of each expiry in order, leaving out one with none', () => {
-    const near = { expiry: '2026-11-03', T: 0.02, forward: 100, rows: smiling(100, 0.02, r) };
-    const far = { expiry: '2026-12-29', T: 0.2, forward: 100, rows: smiling(100, 0.2, r) };
-    const empty = { expiry: '2027-03-30', T: 0.4, forward: 100, rows: [] };
-    const t = termStructure([far, empty, near], r);
-    expect(t.map((p) => p.expiry)).toEqual(['2026-11-03', '2026-12-29']);
-    expect(t[0].iv).toBeCloseTo(0.2, 6);
   });
 });
 

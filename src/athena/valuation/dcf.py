@@ -11,7 +11,7 @@
 Every function is pure arithmetic on its arguments. The golden test feeds the workbook's sample company and checks each of the 10 years and the bridge to the saved results."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 YEARS = 10
 FADE_YEARS = 5
@@ -215,9 +215,3 @@ def implied_return(price: float, x: DcfInputs, high: float = 0.60, tolerance: fl
             break
     return (low + high) / 2
 
-
-@dataclass(frozen=True)
-class Scenario:
-    name: str
-    inputs: DcfInputs
-    result: DcfResult = field(repr=False)

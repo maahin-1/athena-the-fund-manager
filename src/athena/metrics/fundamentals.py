@@ -26,7 +26,6 @@ STALE_QUARTER_DAYS = 200  # a quarter is filed within 45 days of its end, so a n
 YEAR_WINDOW = (350, 380)  # days between a quarter and the same quarter a year earlier
 MIN_INDEX_HISTORY = 250  # trading days needed before an index percentile means anything
 VALUATION, QUALITY, EARNINGS = "valuation", "quality", "earnings"
-GROUPS = (VALUATION, QUALITY, EARNINGS)
 
 
 class R(NamedTuple):

@@ -105,22 +105,3 @@ def ic_summary(result: StudyResult, tier: str, dates: Sequence[str], signal: str
         out[variant] = summarize_ic([by_date[d][tier][signal]["ic"] for d in dates if d in by_date and signal in by_date[d][tier]])
     return out
 
-
-def spread_summary(result: StudyResult, tier: str, dates: Sequence[str], signal: str = SIGNAL) -> dict[str, float | None]:
-    return {
-        variant: _mean([by_date[d][tier][signal]["spread"] for d in dates if d in by_date and signal in by_date[d][tier]])
-        for variant, by_date in result.forward.items()
-    }
-
-
-LEVEL_KEYS = ("median_price_to_base", "median_fcff", "median_lender", "inside_range", "above_range", "lender_justified_pb_median", "lender_below_book", "n")
-
-
-def level_summary(result: StudyResult, dates: Sequence[str]) -> dict[str, dict[str, float | None]]:
-    return {variant: {k: _mean([by_date[d][k] for d in dates if d in by_date]) for k in LEVEL_KEYS} for variant, by_date in result.levels.items()}
-
-
-def benchmark_ic(result: StudyResult, tier: str, dates: Sequence[str]) -> dict[str, dict[str, float | None]]:
-    """The plain value factors (the same whatever the variant), taken from the baseline's rows."""
-    base = result.forward["baseline"]
-    return {s: summarize_ic([base[d][tier][s]["ic"] for d in dates if d in base and s in base[d][tier]]) for s in ("earnings yield", "book to price")}

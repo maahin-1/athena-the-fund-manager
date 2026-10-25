@@ -8,7 +8,6 @@ from typing import Any
 from athena.evaluation.outcomes import INLINE, OUTPERFORM, SIGNAL_FOR, UNDERPERFORM
 
 SIGNALS = ("bullish", "neutral", "bearish")
-LABEL_FOR = {signal: label for label, signal in SIGNAL_FOR.items()}
 HIGH_CONFIDENCE = 70
 
 

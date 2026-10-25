@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from bisect import bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -145,7 +144,3 @@ def month_ends(first: date, last: date) -> list[date]:
         day = nxt
     return days
 
-
-def last_trading_day(days: Sequence[date], on_or_before: date) -> date | None:
-    i = bisect_right(days, on_or_before)
-    return days[i - 1] if i else None

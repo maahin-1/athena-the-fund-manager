@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from athena.evaluation.golden import GOLDEN_DIR
-from athena.news.hub import NewsHub
 from athena.news.model import NewsItem
-from athena.news.packet import WINDOW_DAYS, build_news_packet
+from athena.news.packet import build_news_packet
 
 NEWS_CASES = GOLDEN_DIR / "news_cases.json"
 
@@ -55,9 +54,3 @@ def case_from_json(raw: dict[str, Any]) -> NewsCase:
 def load_news_cases(path: Path | None = None) -> list[NewsCase]:
     return [case_from_json(raw) for raw in json.loads((path or NEWS_CASES).read_text(encoding="utf-8"))]
 
-
-def freeze_news(hub: NewsHub, symbol: str, company: str, as_of: date) -> tuple[tuple[NewsItem, ...], tuple[str, ...]]:
-    """The 30 days of news up to `as_of` as the hub finds them now, for freezing into a golden case. Returns the items and
-    the notes the hub gave (a source that was off or down)."""
-    result = hub.fetch(symbol, company, as_of - timedelta(days=WINDOW_DAYS), as_of)
-    return result.items, result.notes

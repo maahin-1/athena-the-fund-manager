@@ -230,8 +230,8 @@ impl Derivs {
         Ok(json!({ "underlying": underlying, "futures": list }))
     }
 
-    /// A contract by its token, for the live feed to name what it is streaming (used when derivative tokens are subscribed, which awaits a market session).
-    #[allow(dead_code)]
+    /// A contract by its token: the tests check with it which rows of the list were kept.
+    #[cfg(test)]
     pub fn by_token(&self, token: &str) -> Option<&Contract> {
         self.contracts.iter().find(|c| c.token == token)
     }

@@ -21,3 +21,7 @@ terminal/web/playwright-report/
 terminal/web/e2e-fund/
 terminal/web/e2e/indicators/.enabled.json
 terminal/web/e2e-derivs/
+# local run output and tool folders, never published
+logs/
+.playwright-mcp/
+/node_modules/

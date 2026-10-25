@@ -81,4 +81,3 @@ export function macd(values: number[], fast: number, slow: number, signal: numbe
 
 /** Indicators the chart offers, by the names a layout stores. */
 export const INDICATOR_NAMES = ['EMA 20', 'SMA 50', 'Bollinger 20', 'RSI 14', 'MACD'] as const;
-export type IndicatorName = (typeof INDICATOR_NAMES)[number];

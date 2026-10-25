@@ -16,7 +16,6 @@ MIN_RETURNS = 126  # half a year: fewer daily returns than this is not a risk ch
 LIQUIDITY_DAYS = 20
 STOCK_MEASURES = ("volatility", "drawdown", "var_95", "cvar_95")
 PRICE_MEASURES = (*STOCK_MEASURES, "liquidity")  # what needs the price download
-MONEY_MEASURES = ("position", "concentration", "liquidity")
 GAPS = "the price history has gaps"
 
 

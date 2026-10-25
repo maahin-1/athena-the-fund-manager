@@ -30,7 +30,6 @@ _FINANCIAL = (
     (1.5, "A2/A", 0.007751), (2.0, "A1/A+", 0.007003), (2.5, "Aa2/AA", 0.005506), (3.0, "Aaa/AAA", 0.004),
 )
 TABLES: dict[str, tuple[tuple[float, str, float], ...]] = {"large": _LARGE, "small": _SMALL, "financial": _FINANCIAL}
-SPREAD_BY_RATING: dict[str, float] = {rating: spread for _, rating, spread in _LARGE}
 
 
 @dataclass(frozen=True)
