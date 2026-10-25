@@ -42,6 +42,7 @@ pub struct AppState {
     pub fundamentals: Arc<FundamentalsJobs>,
     pub flow_board: Arc<crate::flow_board::FlowBoard>,
     pub chart_explain: Arc<crate::chart_explain::ChartExplain>,
+    pub sentiment: Arc<crate::sentiment::SentimentJobs>,
     pub indices: crate::indices::IndexStore,
     pub search: Arc<crate::search::SearchCache>,
     pub fund_fetch: Arc<crate::fund_fetch::FundFetch>,
@@ -409,6 +410,27 @@ async fn api_fund_export(State(state): State<AppState>, Path(symbol): Path<Strin
         )
             .into_response(),
         Err(e) => fund_error(e),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SentimentQuery {
+    tone: Option<String>,
+}
+
+/// What the exchange, the press and (when set up) Reddit said about one stock, and on request a model's reading of the news (see `athena.sentiment.page`). Display only.
+async fn api_sentiment(State(state): State<AppState>, Path(symbol): Path<String>, Query(q): Query<SentimentQuery>) -> Response {
+    use crate::sentiment::SentimentError;
+    let tone = match q.tone.as_deref() {
+        None | Some("0") => false,
+        Some("1") => true,
+        Some(_) => return (StatusCode::BAD_REQUEST, "tone must be 0 or 1").into_response(),
+    };
+    match state.sentiment.page(&symbol.to_ascii_uppercase(), tone).await {
+        Ok(doc) => Json(doc).into_response(),
+        Err(SentimentError::BadSymbol) => (StatusCode::BAD_REQUEST, "not a symbol").into_response(),
+        Err(SentimentError::Busy) => (StatusCode::TOO_MANY_REQUESTS, "two sentiment pages are already running; try again in a moment").into_response(),
+        Err(SentimentError::Failed(why)) => (StatusCode::BAD_GATEWAY, why).into_response(),
     }
 }
 
@@ -827,6 +849,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/valuation/:symbol", get(api_valuation))
         .route("/api/flow/board", get(api_flow_board))
         .route("/api/chart/explain", axum::routing::post(api_chart_explain))
+        .route("/api/sentiment/:symbol", get(api_sentiment))
         .route("/api/notebook", get(notebook_get).put(notebook_put))
         .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
@@ -875,7 +898,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), chart_explain: Arc::new(crate::chart_explain::ChartExplain::new(vec!["no-such-program-xyz".into()])), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), chart_explain: Arc::new(crate::chart_explain::ChartExplain::new(vec!["no-such-program-xyz".into()])), sentiment: Arc::new(crate::sentiment::SentimentJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -1301,6 +1324,10 @@ mod tests {
             }
             r.send()
         };
+        assert_eq!(client.get(format!("{base}/sentiment/TCS")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        assert_eq!(client.get(format!("{base}/sentiment/a;b")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/sentiment/TCS?tone=2")).send().await.unwrap().status(), 400);
+        assert_eq!(client.get(format!("{base}/sentiment/TCS")).send().await.unwrap().status(), 502); // the stand-in program for the page does not exist
         assert_eq!(post(Some("http://evil.test"), "{}").await.unwrap().status(), 403);
         assert_eq!(post(None, "[1]").await.unwrap().status(), 400);
         assert_eq!(post(None, "{}").await.unwrap().status(), 502); // the stand-in program for the explainer does not exist

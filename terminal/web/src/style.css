@@ -693,3 +693,16 @@ abbr.fact { text-decoration: underline dotted; cursor: help; }
 .explain-facts summary { cursor: pointer; color: var(--fg-dim); }
 .explain-fact { padding: 1px 4px; font-size: 12px; white-space: pre-wrap; }
 .explain-fact.hit { background: var(--grid); }
+
+/* sentiment page */
+.sentiment { padding: 8px 12px; overflow: auto; height: 100%; }
+.sent-bar { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.sent-symbol { width: 140px; }
+.sent-head { font-weight: 600; margin: 4px 0; }
+.sent-section { font-weight: 600; margin: 12px 0 4px; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+.sent-news td { padding: 2px 8px; vertical-align: top; }
+.sent-title a { color: var(--fg); text-decoration: none; }
+.sent-title a:hover { color: var(--accent); text-decoration: underline; }
+.sent-tone { border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; margin: 6px 0; background: var(--bg-panel); }
+.sent-post { border-bottom: 1px solid var(--border); padding: 4px 0; }
+.sent-caveat { margin-top: 12px; }

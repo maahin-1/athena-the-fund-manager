@@ -6,6 +6,7 @@ export type Command =
   | { kind: 'list'; name: string } // switch watchlist
   | { kind: 'remove'; symbol: string }
   | { kind: 'research'; symbol: string | null } // the Research page, on a stock when one is given
+  | { kind: 'sentiment'; symbol: string | null } // the Sentiment page, on a stock when one is given
   | { kind: 'fund'; symbol: string | null; section?: string } // the Fundamentals page, on a stock when one is given, scrolled to a section when named
   | { kind: 'lab'; symbol: string | null } // the Chart Lab page, on a stock when one is given
   | { kind: 'details'; symbol: string | null } // the Details panel of the Terminal, on a stock when one is given
@@ -64,6 +65,7 @@ export function parse(input: string, ctx: CommandContext): Command {
     const saved = ctx.layouts.find((l) => l.toUpperCase() === words[0].toUpperCase());
     if (saved) return { kind: 'layout', name: saved };
     if (head === 'RESEARCH') return { kind: 'research', symbol: null };
+    if (head === 'SENTIMENT' || head === 'SENT') return { kind: 'sentiment', symbol: null };
     if (head === 'FUND') return { kind: 'fund', symbol: null };
     if (head === 'PEERS') return { kind: 'fund', symbol: null, section: 'Peers' };
     if (head === 'LAB') return { kind: 'lab', symbol: null };
@@ -73,6 +75,10 @@ export function parse(input: string, ctx: CommandContext): Command {
     if (head === 'GRID') return { kind: 'grid' };
     if (head === 'OPTIONS' || head === 'CHAIN') return { kind: 'options', symbol: null };
     return SYMBOL.test(head) ? { kind: 'symbol', symbol: head } : fail(`"${words[0]}" is not a symbol`);
+  }
+  if ((head === 'SENTIMENT' || head === 'SENT') && words.length === 2) {
+    const symbol = words[1].toUpperCase();
+    return SYMBOL.test(symbol) ? { kind: 'sentiment', symbol } : fail(`"${words[1]}" is not a symbol`);
   }
   if (head === 'RESEARCH' && words.length === 2) {
     const symbol = words[1].toUpperCase();
