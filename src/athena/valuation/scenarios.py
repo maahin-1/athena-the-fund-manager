@@ -18,7 +18,7 @@ from datetime import date
 
 from athena.reference.store import ReferenceStore
 from athena.valuation import capital as cap
-from athena.valuation import dcf, excess_return
+from athena.valuation import dcf, dilution, distress, excess_return
 from athena.valuation.industry import IndustryContext
 from athena.valuation.inputs import CompanyInputs
 from athena.valuation.wacc import LENDER_LAYOUTS, CompanyCapital
@@ -47,6 +47,10 @@ class Policy:
     moat_margin: float = 0.05  # after-tax return on capital must beat the base cost of capital by this much ...
     moat_years: int = 3  # ... in each of this many latest financial years
     detail: bool = True  # False skips the implied growth and the grid (the calibration needs neither)
+    failure: bool = True  # blend the going-concern value with a failure value: the chance comes from the synthetic rating, the proceeds are a share of book capital (see `distress`)
+    failure_horizon: int = 10  # years the chance of failure is taken over (1 to 10)
+    failure_share: float = 0.5  # share of value (or of book capital) the operating assets fetch if the firm fails
+    failure_tie: str = "value"  # "value": the share is of the going-concern value, so failure can never be worth more than survival; "book": of book capital, as an uncapped amount
 
 
 DEFAULT_POLICY = Policy()
@@ -195,8 +199,18 @@ def _value_operating(
         if share <= 0 or roic_own is None:
             return None
         return terminal_floor + share * max(0.0, min(roic_own, ROIC_CAP) - terminal_floor)
+    esop = _option_claim(store, company, rf_inr, tax_marginal.value, on_date)
+    listed = store.input(f"listed_investments:{company.symbol}", on_date)
+    non_operating = company.investments or 0.0
+    if listed is not None and listed.value >= 0:
+        non_operating = listed.value
+        flags.append(f"investments taken at Rs {listed.value:,.0f} cr, the owner's market value of the listed holdings (input dated {listed.as_of}), in place of their book value of Rs {(company.investments or 0.0):,.0f} cr")
+    failed = distress.failure(capital.rating or "", company.invested_capital, policy.failure_horizon, policy.failure_share, policy.failure_tie) if policy.failure and capital.rating else None
+    if failed is not None and own_margin <= 0:
+        flags.append("operating loss: the chance of failure is taken from the BB row used for the cost of capital; a loss-making firm's real chance is likely higher")
     flags += [
-        "debt, minority interests and investments are at book value; employee options are not modelled; lease liabilities are not in debt",
+        "debt and minority interests are at book value" + ("" if listed is not None else ", investments too (the filings give no market value of what a company holds)") + "; lease liabilities are not in debt",
+        *((esop[1],) if esop else ("employee options are not modelled: the filings do not give them (set esop_options:SYMBOL and esop_strike:SYMBOL to include them)",)),
         *(() if industry.mapping_method == "segment mix" else ("the benchmarks are one industry's: a company in several businesses is not weighted by its business mix",)),
         "the industry growth, margin and capital figures are Damodaran's India tables, in dollars; growth is turned into rupees by the inflation gap",
     ]
@@ -208,7 +222,9 @@ def _value_operating(
             revenue=company.revenue, growth_year1=g, growth_years_2_5=g, margin_year1=own_margin, target_margin=m, margin_convergence_year=convergence[name],
             sales_to_capital_1_5=s2c, sales_to_capital_6_10=s2c, effective_tax_rate=effective, marginal_tax_rate=tax_marginal.value, cost_of_capital=coc[name],
             riskfree_rate=rf_inr, mature_equity_premium=erp_mature.value, debt=company.borrowings, cash=company.cash_and_bank, shares=share_crore,
-            minority_interests=minority, non_operating_assets=company.investments or 0.0, terminal_growth=terminal_growth, terminal_roic=terminal_roic_for(name),
+            minority_interests=minority, non_operating_assets=non_operating, terminal_growth=terminal_growth, terminal_roic=terminal_roic_for(name),
+            probability_of_failure=failed.probability if failed else 0.0, distress_proceeds=(failed.proceeds or 0.0) if failed else 0.0,
+            distress_share_of_value=failed.share if failed and failed.tie == "value" else None, option_value=esop[0] if esop else 0.0,
         )
 
     try:
@@ -241,6 +257,7 @@ def _value_operating(
         f"sales to capital {s2c:.2f} (company {_num(s2c_company)}, industry {_num(industry.get('sales_to_capital'))}); effective tax {effective:.1%} moving to {tax_marginal.value:.1%}",
         f"cost of capital {coc['base']:.1%} for years 1 to 5 (range {coc['bull']:.1%} to {coc['bear']:.1%}), fading to {rf_inr + erp_mature.value:.1%}; terminal growth {rf_inr:.1%}, return on capital equal to the cost of capital",
         *capital.assumptions,
+        *((failed.sentence(),) if failed else ()),
     )
     if moat and terminal_roic_for("bull") is not None:
         assumptions += (
@@ -345,6 +362,21 @@ def _target_margin(rule: str, own: float, industry: float) -> float:
     if rule == "persist":
         return max(own, mean)
     return mean
+
+
+def _option_claim(store: ReferenceStore, company: CompanyInputs, riskfree: float, tax_rate: float, on_date: date) -> tuple[float, str] | None:
+    """The owner's employee-option inputs for this company as a claim in crore after tax, with the sentence that says so; None when the owner has given none. The count (in shares)
+    and the strike (rupees) are per company (`esop_options:SYMBOL`, `esop_strike:SYMBOL`); the life in years and the volatility are shared inputs with stated defaults."""
+    count, strike = store.input(f"esop_options:{company.symbol}", on_date), store.input(f"esop_strike:{company.symbol}", on_date)
+    if count is None or strike is None or count.value <= 0 or strike.value <= 0 or not company.price or not company.shares:
+        return None
+    life, vol = _optional(store, "esop_years", on_date, 5.0), _optional(store, "esop_volatility", on_date, 0.35)
+    claim = dilution.option_claim(company.price, strike.value, life, vol, 0.0, riskfree, count.value, company.shares, tax_rate)
+    crore = claim.after_tax / SHARES_PER_CRORE
+    return crore, (
+        f"employee options: {count.value:,.0f} at a strike of Rs {strike.value:,.2f} (the owner's inputs dated {count.as_of}, life {life:g} years, volatility {vol:.0%}) are a claim of Rs {crore:,.0f} cr "
+        "after tax, taken off the equity value"
+    )
 
 
 def _optional(store: ReferenceStore, key: str, on_date: date, default: float) -> float:

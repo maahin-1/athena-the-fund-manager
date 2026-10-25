@@ -44,6 +44,7 @@ class DcfInputs:
     nol_start: float = 0.0
     probability_of_failure: float = 0.0
     distress_proceeds: float = 0.0  # value of operating assets if the firm fails (an amount, not a percentage)
+    distress_share_of_value: float | None = None  # when given, the proceeds are this share of the going-concern value instead (the workbook's "V" choice), and `distress_proceeds` is ignored
 
 
 @dataclass(frozen=True)
@@ -137,7 +138,8 @@ def run_fcff(x: DcfInputs) -> DcfResult:
     value_terminal = fcff_terminal / (coc_terminal - g_terminal)
     pv_terminal = value_terminal * factor
     operating = pv_sum + pv_terminal
-    blended = operating * (1 - x.probability_of_failure) + x.distress_proceeds * x.probability_of_failure
+    proceeds = x.distress_proceeds if x.distress_share_of_value is None else x.distress_share_of_value * operating
+    blended = operating * (1 - x.probability_of_failure) + proceeds * x.probability_of_failure
     equity = blended - x.debt - x.minority_interests + x.cash + x.non_operating_assets
     common = equity - x.option_value
     return DcfResult(

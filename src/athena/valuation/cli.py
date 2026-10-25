@@ -18,7 +18,7 @@ from athena.contracts import AthenaError
 from athena.fundamentals.store import DEFAULT_PATH as FUNDAMENTALS, open_read
 from athena.reference.store import DEFAULT_PATH as REFERENCE, ReferenceStore
 from athena.valuation import industry as ind
-from athena.valuation import inputs, ledger, mix, scenarios, wacc
+from athena.valuation import inputs, ledger, mix, own_tables, scenarios, wacc
 
 WAREHOUSE = Path(".athena") / "warehouse.duckdb"
 SANE_COST_OF_CAPITAL = (0.06, 0.30)  # a rupee cost of capital outside this is listed for a look, not hidden
@@ -227,6 +227,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     snap = sub.add_parser("snapshot", help="record every company's value range in the ledger")
     snap.add_argument("--date", default=None, help="YYYY-MM-DD (default today)")
     snap.set_defaults(run=cmd_snapshot)
+    own = sub.add_parser("own-tables", help="build industry tables from the filings as they stood on each date (default: the date of Damodaran's tables and today)")
+    own.add_argument("--date", action="append", help="YYYY-MM-DD; repeat for several")
+    own.set_defaults(run=lambda a: own_tables.run_tables(a.reference, a.fundamentals, a.warehouse, a.date))
+    gap = sub.add_parser("own-divergence", help="set our industry tables against Damodaran's and write the report")
+    gap.add_argument("--date", action="append", help="YYYY-MM-DD (default: the date of Damodaran's tables)")
+    gap.add_argument("--out", default=str(own_tables.DEFAULT_REPORT))
+    gap.set_defaults(run=lambda a: own_tables.run_divergence(a.reference, a.date, a.out))
     scored = sub.add_parser("ledger-score", help="score the ledger's snapshots that are old enough")
     scored.add_argument("--months", type=int, default=12)
     scored.set_defaults(run=cmd_ledger_score)

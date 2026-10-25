@@ -99,3 +99,11 @@ def test_the_implied_return_is_the_one_rate_at_which_the_cash_flows_are_worth_th
     assert again.value_per_share == pytest.approx(price, abs=1e-4)
     assert dcf.implied_return(12.0, ALMARAI) < rate < dcf.implied_return(6.0, ALMARAI)  # a higher price earns a lower return
     assert dcf.implied_return(1e9, ALMARAI) is None and dcf.implied_return(-5.0, ALMARAI) is None  # outside what any rate can give
+
+
+def test_failure_proceeds_tied_to_the_going_concern_value_blend_to_operating_times_one_less_half_the_chance():
+    plain = dcf.run_fcff(ALMARAI)
+    tied = dcf.run_fcff(replace(ALMARAI, probability_of_failure=0.2, distress_share_of_value=0.5, distress_proceeds=99999.0))  # the amount is ignored when a share of value is given
+    assert tied.operating_assets == pytest.approx(plain.operating_assets * 0.9)  # the blended operating value
+    amount = dcf.run_fcff(replace(ALMARAI, probability_of_failure=0.2, distress_proceeds=1000.0))
+    assert amount.operating_assets == pytest.approx(plain.operating_assets * 0.8 + 1000.0 * 0.2)

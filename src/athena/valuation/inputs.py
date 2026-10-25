@@ -133,10 +133,23 @@ def load_company_inputs(
     if not income and not balance_raw:
         return None
     company: dict[str, Any] = store.company(symbol) or {}
+    return inputs_from_lines(symbol, basis, company, income, balance_raw, history.lines(store, symbol, basis, "cashflow", table), price)
+
+
+def inputs_from_lines(
+    symbol: str,
+    basis: str,
+    company: dict[str, Any],
+    income: dict[tuple[date, date], dict[str, float]],
+    balance_raw: dict[tuple[date, date], dict[str, float]],
+    cashflow: dict[tuple[date, date], dict[str, float]],
+    price: float | None = None,
+) -> CompanyInputs | None:
+    """The same inputs from statement lines already in hand (so a table of lines as they stood on an earlier day can be used): `company` gives `layout` and `shares`."""
     fy = ratios.annual(income)
     quarters = ratios.quarterly(income)
     balance = {end: got for (_, end), got in balance_raw.items()}
-    cash = ratios.annual(history.lines(store, symbol, basis, "cashflow", table))
+    cash = ratios.annual(cashflow)
     latest_balance = balance[max(balance)] if balance else {}
 
     values: dict[str, float | None] = {}
