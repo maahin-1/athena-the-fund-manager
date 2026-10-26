@@ -33,21 +33,22 @@ from athena.fundamentals.universe import Member, universe
 
 SOURCE = "annual-report"
 MAX_BYTES = 80_000_000
+MAX_FILES = 4  # PDFs read from one archive
 MIN_DAYS, MAX_DAYS = 340, 380  # a period this long is a year
 Year = dict[str, dict[str, float]]
 
 
-def pdf_bytes(blob: bytes) -> bytes:
-    """The report as a PDF: a zip (the exchange packs older reports) gives its largest PDF. Anything else must already be one."""
+def pdf_files(blob: bytes) -> list[bytes]:
+    """The report as PDFs: a zip (the exchange packs older reports, some in several files) gives each PDF in it, largest first. Anything else must already be one."""
     if blob[:2] == b"PK":
         with zipfile.ZipFile(io.BytesIO(blob)) as archive:
             pdfs = sorted((i for i in archive.infolist() if i.filename.lower().endswith(".pdf")), key=lambda i: i.file_size, reverse=True)
             if not pdfs:
                 raise AthenaError("the archive holds no PDF")
-            return archive.read(pdfs[0])
+            return [archive.read(i) for i in pdfs[:MAX_FILES]]
     if blob[:4] != b"%PDF":
         raise AthenaError("not a PDF")
-    return blob
+    return [blob]
 
 
 def pdf_pages(data: bytes) -> list[str]:
@@ -90,7 +91,7 @@ def reference_from_store(store: FundamentalsStore, symbol: str) -> tuple[str, di
 
 
 def chain(
-    reports: Sequence[Mapping[str, Any]], reference: Mapping[date, Year], read_pages: Callable[[str], list[str]], llm: Any, back_to: int = 2016,
+    reports: Sequence[Mapping[str, Any]], reference: Mapping[date, Year], read_pages: Callable[[str], list[str]], llm: Any, back_to: int = 2016, basis: str = "",
 ) -> dict[str, Any]:
     """Go back through the company's reports, newest first, starting at the one whose financial year ends in the reference's earliest year. Returns `{"kept": {year end: year}, "steps": [...]}`.
     A step that does not prove itself ends the chain."""
@@ -108,14 +109,19 @@ def chain(
         steps.append(step)
         try:
             pages = read_pages(report["url"])
-            blocks = find_statements(pages)
+            blocks = find_statements(pages, basis)
             if not blocks:
                 step["result"] = "no statements found in the pages"
                 break
-            years = normalise(extract(blocks, llm))
+            try:
+                years = normalise(extract(blocks, llm))
+            except ValueError:  # a reply that is not the JSON asked for: one more try, the model is not deterministic
+                years = normalise(extract(blocks, llm))
         except (AthenaError, ValueError, OSError) as exc:
             step["result"] = f"unreadable: {exc}"
             break
+        step["read"] = {str(d): {k: len(v) for k, v in y.items()} for d, y in years.items()}  # lines read per year, to see why a report did not prove itself
+        step["pages"] = {k: len(v) for k, v in blocks.items()}
         verdict = accept(years, known)
         step["overlap"] = {str(d): {k: v for k, v in o.items() if k != "off"} | {"off": o["off"][:4]} for d, o in verdict["overlap"].items()}
         if not verdict["kept"]:
@@ -148,7 +154,7 @@ class Reader:
         blob = response.content
         if len(blob) > MAX_BYTES:
             raise AthenaError("the report is too large")
-        return pdf_pages(pdf_bytes(blob))
+        return [page for data in pdf_files(blob) for page in pdf_pages(data)]
 
 
 def ingest_symbol(member: Member, results: Any, store_path: str | Path, *, llm: Any, dry_run: bool, back_to: int, log: list[dict[str, Any]], **_: Any) -> Report:
@@ -165,7 +171,7 @@ def ingest_symbol(member: Member, results: Any, store_path: str | Path, *, llm: 
         report.notes.append("no annual figures or no reports to start from")
         report.skipped += 1
         return report
-    result = chain(reports, reference, Reader(results).pages, llm, back_to)
+    result = chain(reports, reference, Reader(results).pages, llm, back_to, basis)
     log.append({"symbol": member.symbol, "basis": basis, "kept": sorted(str(d) for d in result["kept"]), "steps": result["steps"]})
     for step in result["steps"]:
         if step["result"].startswith("unreadable"):

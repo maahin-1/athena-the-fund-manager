@@ -13,11 +13,11 @@ from athena.fundamentals.store import FundamentalsStore
 Y22, Y21, Y20 = date(2022, 3, 31), date(2021, 3, 31), date(2020, 3, 31)
 
 
-def statement_page(kind, n=30):
-    return f"Consolidated {kind}\n" + " ".join(str(1000 + i) for i in range(n))
+def statement_page(kind, own, n=30):
+    return f"Consolidated {kind}\n{own}\n" + " ".join(str(1000 + i) for i in range(n))
 
 
-PAGES = [statement_page("Statement of Profit and Loss"), statement_page("Balance Sheet")]
+PAGES = [statement_page("Statement of Profit and Loss", "Total expenses Profit before tax"), statement_page("Balance Sheet", "EQUITY AND LIABILITIES Total assets")]
 
 
 def reply(years, base=1000):
@@ -55,21 +55,30 @@ def test_fiscal_end_reads_the_exchanges_title():
     assert ar.fiscal_end("FY2021-22") == 2022 and ar.fiscal_end("FY1999-2000") == 2000 and ar.fiscal_end("Annual report") is None
 
 
-def test_a_zip_gives_its_largest_pdf_and_anything_else_that_is_not_a_pdf_is_refused():
+def test_a_zip_gives_each_pdf_largest_first_and_anything_else_that_is_not_a_pdf_is_refused():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("small.pdf", b"%PDF-1 small")
         z.writestr("big.pdf", b"%PDF-1 " + b"x" * 100)
         z.writestr("note.txt", b"hello")
-    assert ar.pdf_bytes(buf.getvalue()).endswith(b"x" * 100)
-    assert ar.pdf_bytes(b"%PDF-1.4 body") == b"%PDF-1.4 body"
+    got = ar.pdf_files(buf.getvalue())
+    assert len(got) == 2 and got[0].endswith(b"x" * 100) and got[1] == b"%PDF-1 small"
+    assert ar.pdf_files(b"%PDF-1.4 body") == [b"%PDF-1.4 body"]
     with pytest.raises(AthenaError, match="not a PDF"):
-        ar.pdf_bytes(b"<html>")
+        ar.pdf_files(b"<html>")
     empty = io.BytesIO()
     with zipfile.ZipFile(empty, "w") as z:
         z.writestr("a.txt", b"x")
     with pytest.raises(AthenaError, match="no PDF"):
-        ar.pdf_bytes(empty.getvalue())
+        ar.pdf_files(empty.getvalue())
+
+
+def test_a_reply_that_is_not_json_is_asked_for_once_more_and_then_ends_the_chain():
+    ok = reply(["2022-03-31", "2021-03-31"], 1000)
+    out = ar.chain(REPORTS, {Y22: year(1000)}, lambda url: PAGES, Model("not json at all", ok), back_to=2022)
+    assert sorted(out["kept"]) == [Y21]
+    out = ar.chain(REPORTS, {Y22: year(1000)}, lambda url: PAGES, Model("nope", "still nope"), back_to=2022)
+    assert out["kept"] == {} and out["steps"][0]["result"].startswith("unreadable")
 
 
 def test_the_chain_starts_at_the_report_whose_year_the_filings_hold_and_each_kept_year_becomes_the_next_reference():

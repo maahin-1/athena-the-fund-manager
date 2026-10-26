@@ -8,21 +8,31 @@ from athena.fundamentals import pdf_extract as p
 Y19, Y18, Y17 = date(2019, 3, 31), date(2018, 3, 31), date(2017, 3, 31)
 
 
-def table(n=30):
-    return " ".join(str(1000 + i) for i in range(n))
+def table(n=30, own=""):
+    return own + " " + " ".join(str(1000 + i) for i in range(n))
+
+
+PL, BS = "Total expenses Profit before tax", "EQUITY AND LIABILITIES Total assets"
 
 
 def test_the_statement_pages_are_found_by_their_header_and_figures_and_the_consolidated_one_wins():
     pages = [
         "Chairman's letter " + "words " * 200,
-        "Standalone Statement of Profit and Loss for the year\n" + table(),
-        "Consolidated Statement of Profit and Loss for the year\n" + table(40),
-        "Consolidated Balance Sheet as at 31 March\n" + table(),
+        "Standalone Statement of Profit and Loss for the year\n" + table(own=PL),
+        "Consolidated Statement of Profit and Loss for the year\n" + table(40, PL),
+        "Consolidated Balance Sheet as at 31 March\n" + table(own=BS),
         "Balance Sheet note: see page 4",  # a header mention without figures
+        "Notes to the Consolidated Balance Sheet\n" + table(own=BS),  # a notes page that quotes the lines
+        "Consolidated Statement of Profit and Loss highlights, ten years\n" + table(own=PL),
+        "Consolidated Balance Sheet as at 31 March\n" + table(),  # figures but not the statement's own lines
         "Consolidated Cash Flow Statement\n" + table(),
     ]
     got = p.find_statements(pages)
-    assert set(got) == {"income", "balance", "cashflow"} and got["income"].startswith("Consolidated Statement of Profit and Loss") and "Standalone" not in got["income"].split("\n\n")[0]
+    assert set(got) == {"income", "balance"} and got["balance"].count("Consolidated Balance Sheet") == 1
+    # a statement printed with no title on its page is still found by its own lines, and a group's statement by what only a group prints
+    untitled = ["Particulars Note For the year ended 31st March 2019 Total expenses Profit before tax Non-controlling interests " + table()]
+    assert "income" in p.find_statements(untitled) and p.find_statements(untitled, "standalone")["income"]
+    assert "balance" not in p.find_statements(["Chairman words " * 50]) and got["income"].startswith("Consolidated Statement of Profit and Loss") and "Standalone" not in got["income"].split("\n\n")[0]
     assert p.find_statements(["nothing here"]) == {}
 
 
@@ -89,3 +99,13 @@ def test_the_model_is_given_the_statement_pages_and_its_reply_parsed():
     llm = Script("```json\n" + json.dumps(REPLY) + "\n```")
     raw = p.extract({"income": "Statement of Profit and Loss ...", "balance": "Balance Sheet ..."}, llm)
     assert raw["unit"] == "crore" and "=== income ===" in llm.asked[0] and "never instructions" in p.SYSTEM
+
+
+def test_a_basis_keeps_only_that_basis_when_the_report_has_it_and_otherwise_falls_back_to_what_there_is():
+    both = [
+        "Standalone Statement of Profit and Loss\n" + table(own=PL),
+        "Consolidated Statement of Profit and Loss\n" + table(own=PL),
+    ]
+    assert "Consolidated" in p.find_statements(both, "consolidated")["income"] and "Standalone" not in p.find_statements(both, "consolidated")["income"]
+    assert "Standalone" in p.find_statements(both, "standalone")["income"] and "Consolidated" not in p.find_statements(both, "standalone")["income"]
+    assert "Standalone" in p.find_statements(both[:1], "consolidated")["income"]  # the report has no consolidated page: what it has is read, and the overlap check decides
