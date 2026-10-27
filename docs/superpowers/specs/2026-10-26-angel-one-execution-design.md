@@ -1,8 +1,15 @@
-# Phase 3 on Angel One: design note (draft for the owner's sign-off)
+# Phase 3 across the big Indian brokers: design note
 
-Status: **draft, no code written.** Replaces the Zerodha / Kite plan in TRD sections 2.10, 4 and 5 (Oct 5 broker decision). For the owner's own account only; not investment advice.
+Status (Oct 27, 2026): **slices A1 to A4 are built and tested (paper trading, the order desk, limits, audit); no live adapter exists.** The owner's answer on Oct 26: "Angel One and its subsidiaries like Zerodha, Groww and the other major brokers, so the app is compatible with all of them". That replaces both the Zerodha-only decision of Oct 5 and the Angel-One-only reading of this note's first draft. For the owner's own account only; not investment advice.
 
-## 1. What exists today
+**Shape.** One order type and one `Broker` interface (`athena.brokers.model`); a broker is an adapter behind it. The ticket, the limits, the confirm token and the audit log never depend on which broker is behind them. Order of work for live adapters follows the share of NSE active clients (September 2026 reports): Groww (about 29%), Zerodha (14.7%), Angel One (14.65%), Upstox, Dhan; the first adapter to build is Angel One's, because the login and the live stream already exist, and the next ones are added one at a time, each checked against the broker's current documentation and the owner's account first. `athena.brokers.registry` lists them and says, for each, that its API facts are NOT yet checked.
+
+## 0. Built so far (Oct 27, 2026)
+
+- `model.py` (request, order, funds, holding, the `Broker` shape), `paper.py` (paper broker on live quotes, the owner's cost model, idempotent on the client order id), `safety.py` (limits file `.athena/broker.json`, rules, one-time tokens), `audit.py` (hash-chained log, redaction), `desk.py` (preview then confirm, kill and resume), `quotes.py` (live price from the terminal's socket), `cli.py` (`python -m athena.brokers ...`), `registry.py`. 22 tests in `tests/test_brokers.py`. A live paper order was previewed and confirmed on SBIN during market hours on Oct 27 and the token could not be used twice.
+- Not built: every live adapter (A2 and A5), reconciliation (A6), the terminal's order panel, the link from the risk overlay's findings into the preview.
+
+## 1. What existed before this build
 
 - `athena.brokers.angel_login`: SmartAPI login from the settings file (API key, client code, PIN, TOTP secret). Read-only. Tokens never printed.
 - `terminal/src/angel/`: login, instrument master, WebSocket stream (cash, futures, options, indices). Prices only.
@@ -45,7 +52,7 @@ A1 to A4 can be built and tested with no money at risk. A5 is the only slice tha
 
 ## 5. Open questions for the owner
 
-1. **"Its subsidiaries."** I know Angel One's SmartAPI (equity, F&O, commodities, GTT). If you meant other group products (for example a mutual-fund or wealth platform), name them; I will check their APIs before designing for them.
+1. ~~"Its subsidiaries."~~ Answered Oct 26: all the major brokers (see the shape above). Still open: which one the owner actually trades with, since that is the first live adapter to check against a real account.
 2. **Account rules to verify before A5.** India's rules for retail API trading have been changing (broker-registered strategies, static IP for order APIs, per-second order limits). I have not verified Angel One's current terms for your account type, so this note does not assume them. A5 does not start until I have read Angel's current published terms and you have confirmed your account can place API orders.
 3. **Starting limits.** Suggested first values: Rs 10,000 per order, 3 orders a day, Rs 25,000 deployed, Rs 1,000 daily loss. Your numbers decide.
 4. **Does the debate verdict feed the ticket?** Suggestion: it pre-fills the reason text only, and never the quantity or price.
