@@ -77,7 +77,7 @@ def test_build_router_with_all_keys_chains_nvidia_then_openrouter_then_openai(tm
     environ = {"NVIDIA_API_KEY": "k1", "OPENROUTER_API_KEY": "k2", "OPENAI_API_KEY": "k3"}
     router = build_router(env_file=tmp_path / "none.env", environ=environ)
     names = router.client_for("specialist").names
-    assert [n.split(":")[0] for n in names] == ["nvidia", "openrouter", "openai"]
+    assert [n.split(":")[0] for n in names] == ["nvidia", "openrouter", "openai", "nvidia", "openrouter"]  # the last two are the strong model, added when the mid-tier model was withdrawn
 
 
 def test_build_router_without_any_key_raises(tmp_path):

@@ -47,6 +47,9 @@ TIERS: dict[str, tuple[tuple[str, str], ...]] = {
         ("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
         ("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
         ("openai", "gpt-5.4-mini"),
+        # added Oct 27, 2026: the super model answered 404 on NVIDIA and OpenRouter and the OpenAI account has no credits, so the tier had no model left; a 404 marks a model degraded and it is skipped
+        ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
+        ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
     ),
     "strong": (
         ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
