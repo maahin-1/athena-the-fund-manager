@@ -24,7 +24,8 @@ from athena.contracts import AthenaError
 from athena.fundamentals import lines as spec
 from athena.fundamentals.documents import ANNUAL_KIND
 from athena.fundamentals.history import PREDECESSORS
-from athena.fundamentals.ingest import Report, with_predecessors
+from athena.fundamentals.ingest import Blocked, Report, with_predecessors
+from athena.fundamentals.integrated import is_block
 from athena.fundamentals.pdf_extract import accept, extract, find_statements, normalise
 from athena.fundamentals.rows import Statements
 from athena.fundamentals.runner import run_each
@@ -41,11 +42,14 @@ Year = dict[str, dict[str, float]]
 def pdf_files(blob: bytes) -> list[bytes]:
     """The report as PDFs: a zip (the exchange packs older reports, some in several files) gives each PDF in it, largest first. Anything else must already be one."""
     if blob[:2] == b"PK":
-        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-            pdfs = sorted((i for i in archive.infolist() if i.filename.lower().endswith(".pdf")), key=lambda i: i.file_size, reverse=True)
-            if not pdfs:
-                raise AthenaError("the archive holds no PDF")
-            return [archive.read(i) for i in pdfs[:MAX_FILES]]
+        try:
+            with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+                pdfs = sorted((i for i in archive.infolist() if i.filename.lower().endswith(".pdf")), key=lambda i: i.file_size, reverse=True)
+                if not pdfs:
+                    raise AthenaError("the archive holds no PDF")
+                return [archive.read(i) for i in pdfs[:MAX_FILES]]
+        except zipfile.BadZipFile as exc:  # a download cut short, or not a zip after all
+            raise AthenaError("the archive is damaged") from exc
     if blob[:4] != b"%PDF":
         raise AthenaError("not a PDF")
     return [blob]
@@ -171,7 +175,18 @@ def ingest_symbol(member: Member, results: Any, store_path: str | Path, *, llm: 
         report.notes.append("no annual figures or no reports to start from")
         report.skipped += 1
         return report
-    result = chain(reports, reference, Reader(results).pages, llm, back_to, basis)
+    try:
+        result = chain(reports, reference, Reader(results).pages, llm, back_to, basis)
+    except AthenaError as exc:
+        if is_block(exc):
+            raise Blocked(str(exc)) from exc
+        report.failed += 1
+        report.notes.append(f"stopped: {exc}")
+        return report
+    except Exception as exc:  # a report no reader foresaw: this company is listed as failed, the run goes on
+        report.failed += 1
+        report.notes.append(f"stopped: {type(exc).__name__}: {str(exc)[:120]}")
+        return report
     log.append({"symbol": member.symbol, "basis": basis, "kept": sorted(str(d) for d in result["kept"]), "steps": result["steps"]})
     for step in result["steps"]:
         if step["result"].startswith("unreadable"):

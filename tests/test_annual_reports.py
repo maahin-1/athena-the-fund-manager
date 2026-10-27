@@ -139,3 +139,8 @@ def test_kept_years_are_stored_as_annual_periods_with_the_report_as_source_and_d
         later = ar.to_statements("AAA", "consolidated", {Y21: year(901)})
         store.save_statements(later, "https://x/xbrl.xml", datetime(2022, 5, 1), source="nse-xbrl")
         assert store.lines("AAA", "consolidated", spec.INCOME)[(date(2020, 4, 1), Y21)]["sales"] == 901 * 1e7  # the exchange's own, filed later, wins
+
+
+def test_a_damaged_archive_is_an_error_the_run_can_report_not_a_crash():
+    with pytest.raises(AthenaError, match="damaged"):
+        ar.pdf_files(b"PK\x03\x04 truncated")
