@@ -128,11 +128,11 @@ def ingest_symbol(member: Member, results: Any, store_path: str | Path, **_: Any
 
 def run(
     members: Sequence[Member], results: Any, store_path: str | Path, *, resume: bool, max_age_days: int, limit: int | None, refresh: bool = False,
-    out: TextIO = sys.stdout,
+    out: TextIO = sys.stdout, job: str | None = None,
 ) -> int:
     return run_each(
         members, lambda m: ingest_symbol(m, results, store_path), store_path, key=lambda m: f"{m.symbol}#docs", resume=resume,
-        max_age_days=max_age_days, limit=limit, refresh=refresh, out=out,
+        max_age_days=max_age_days, limit=limit, refresh=refresh, out=out, job=job,
     )
 
 
@@ -149,7 +149,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.no_history:
         members = with_predecessors(members, PREDECESSORS)
     print(f"{len(members)} companies in {args.universe}", flush=True)
-    return run(members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit)
+    return run(members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, job="documents")
 
 
 if __name__ == "__main__":

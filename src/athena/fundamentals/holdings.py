@@ -111,12 +111,12 @@ def ingest_symbol(member: Member, results: Any, store_path: str | Path, *, quart
 
 def run(
     members: Sequence[Member], results: Any, store_path: str | Path, *, resume: bool, max_age_days: int, limit: int | None, quarters: int,
-    refresh: bool = False, out: TextIO = sys.stdout,
+    refresh: bool = False, out: TextIO = sys.stdout, job: str | None = None,
 ) -> int:
     """Ingest each member in turn (see `athena.fundamentals.runner`). Returns 0 when done, 3 when the exchange blocked it."""
     return run_each(
         members, lambda m: ingest_symbol(m, results, store_path, quarters=quarters, refresh=refresh), store_path, key=lambda m: f"{m.symbol}#shp",
-        resume=resume, max_age_days=max_age_days, limit=limit, refresh=refresh, out=out,
+        resume=resume, max_age_days=max_age_days, limit=limit, refresh=refresh, out=out, job=job,
     )
 
 
@@ -135,7 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.no_history:
         members = with_predecessors(members, PREDECESSORS)
     print(f"{len(members)} companies in {args.universe}", flush=True)
-    return run(members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters, refresh=args.refresh)
+    return run(members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters, refresh=args.refresh, job="holdings")
 
 
 if __name__ == "__main__":

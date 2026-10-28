@@ -51,10 +51,12 @@ def open_read(path: str | Path = DEFAULT_PATH, tries: int = 5, pause: float = 0.
 
 class FundamentalsStore:
     def __init__(
-        self, path: str | Path = DEFAULT_PATH, read_only: bool = False, tries: int = 8, pause: float = 0.5, sleep: Callable[[float], None] = time.sleep
+        self, path: str | Path = DEFAULT_PATH, read_only: bool = False, tries: int | None = None, pause: float = 0.5, sleep: Callable[[float], None] = time.sleep
     ):
         """DuckDB lets one process hold the file, and the ingest (writing) and the terminal's page builder (reading) both open it for short moments,
         so a locked file is retried `tries` times, `pause` seconds apart, before it is reported as busy."""
+        if tries is None:  # a page waits a few seconds; a long job waits two minutes for another writer to finish (a four-second wait is what crashed the documents job)
+            tries = 8 if read_only else 240
         if str(path) != ":memory:" and not read_only:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         for attempt in range(max(tries, 1)):
@@ -176,6 +178,11 @@ class FundamentalsStore:
     def filing_status(self, url: str) -> str | None:
         row = self._con.execute("SELECT status FROM filings WHERE url = ?", [url]).fetchone()
         return row[0] if row else None
+
+    def filing_state(self, url: str) -> tuple[str | None, datetime | None]:
+        """`(status, when it was recorded)` for a filing; `(None, None)` when it was never tried."""
+        row = self._con.execute("SELECT status, fetched FROM filings WHERE url = ?", [url]).fetchone()
+        return (row[0], row[1]) if row else (None, None)
 
     def lines(self, symbol: str, basis: str, statement: str) -> dict[tuple[date, date], dict[str, float]]:
         out: dict[tuple[date, date], dict[str, float]] = {}

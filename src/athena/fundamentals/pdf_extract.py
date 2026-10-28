@@ -20,6 +20,9 @@ from typing import Any, Protocol
 from athena.agents.base import parse_model_json
 
 UNITS = {"rupees": 1.0, "thousand": 1e3, "lakh": 1e5, "million": 1e6, "crore": 1e7, "billion": 1e9}
+# spellings the model copies from real reports ("lacs" was refused 11 times in the Nifty 500 run)
+UNIT_ALIASES = {"rupee": "rupees", "rs": "rupees", "inr": "rupees", "lac": "lakh", "lacs": "lakh", "lakhs": "lakh", "lakh": "lakh", "mn": "million", "mln": "million",
+                "millions": "million", "cr": "crore", "crores": "crore", "crore": "crore", "thousands": "thousand", "000": "thousand", "bn": "billion", "billions": "billion"}
 INCOME_KEYS = ("sales", "other_income", "total_expenses", "interest", "depreciation", "pbt", "tax", "net_profit", "eps")
 BALANCE_KEYS = ("equity_capital", "reserves", "borrowings", "total_assets", "current_assets", "current_liabilities", "cash", "investments")
 PER_SHARE = frozenset({"eps"})  # already in rupees a share, never scaled
@@ -95,10 +98,21 @@ def extract(blocks: Mapping[str, str], llm: Client) -> dict[str, Any]:
     return parse_model_json(llm.complete(SYSTEM, user))
 
 
+def unit_factor(text: str) -> float | None:
+    """The multiplier for the unit a report prints, however it spells it ("Rs. in crores", "lacs", "\'000", "Rs mn"). A larger unit named anywhere in the text wins over plain rupees."""
+    import re
+
+    words = [w.strip("'") for w in re.findall(r"[a-z0-9']+", text.lower().replace("\u20b9", " rs "))]
+    named = [UNIT_ALIASES.get(w, UNIT_ALIASES.get(w.rstrip("s"), w.rstrip("s") if w.rstrip("s") in {n.rstrip("s") for n in UNITS} else None)) for w in words]
+    named = [n for n in named if n]
+    big = [n for n in named if n != "rupees"]
+    pick = big[0] if big else (named[0] if named else None)
+    return next((f for name, f in UNITS.items() if name == pick), None) if pick else None
+
+
 def normalise(raw: Mapping[str, Any]) -> dict[date, dict[str, dict[str, float]]]:
     """The model's reply as `{year end: {"income": {...}, "balance": {...}}}` in rupees. A reply with an unknown unit, or without parseable dates, is an error: nothing is guessed."""
-    unit = str(raw.get("unit", "")).strip().lower().rstrip("s")
-    factor = next((f for name, f in UNITS.items() if name.rstrip("s") == unit), None)
+    factor = unit_factor(str(raw.get("unit", "")))
     if factor is None:
         raise ValueError(f"unknown unit {raw.get('unit')!r}")
     try:

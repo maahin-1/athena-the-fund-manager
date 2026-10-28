@@ -30,6 +30,7 @@ from athena.fundamentals.universe import Member, universe
 from athena.pit.nse_results import CACHE_DIR, FilingRef
 
 BLOCK_PAUSE = timedelta(minutes=30)
+GONE_FOR = timedelta(days=90)  # a filing link the exchange answered 404 for is not asked again for this long (`--refresh` asks anyway)
 STALL_AFTER = 5  # companies in a row that fail outright (nothing fetched, nothing already held) before a run stops by itself
 STALL_PAUSE = timedelta(minutes=5)
 
@@ -44,6 +45,7 @@ class Report:
     fetched: int = 0
     skipped: int = 0
     failed: int = 0
+    model_failed: int = 0  # of `failed`, the ones caused by the language model not answering: they say nothing about the exchange
     notes: list[str] = field(default_factory=list)
 
 
@@ -51,14 +53,15 @@ _blocked = is_block
 
 
 class Stall:
-    """Counts the companies in a row that failed outright. A company with nothing to fetch (delisted, no filings) is not a failure; one that got any
-    filing through resets the count. After `STALL_AFTER` the exchange has gone quiet and carrying on only fills the log with failures."""
+    """Counts the companies in a row that failed outright against the exchange. A company with nothing to fetch (delisted, no filings) is not a failure; one that got any
+    filing through resets the count; a failure caused by the language model is not the exchange's and does not count. After `STALL_AFTER` the exchange has gone quiet and carrying on
+    only fills the log with failures."""
 
     def __init__(self) -> None:
         self.count = 0
 
     def saw(self, report: Report) -> bool:
-        self.count = self.count + 1 if report.failed > 0 and report.fetched + report.skipped == 0 else 0
+        self.count = self.count + 1 if report.failed - report.model_failed > 0 and report.fetched + report.skipped == 0 else 0
         return self.count >= STALL_AFTER
 
 
@@ -126,14 +129,22 @@ def ingest_symbol(
     for ref in wanted(refs, quarters, standalone):
         basis = "consolidated" if ref.consolidated else "standalone"
         with FundamentalsStore(store_path) as store:
-            if store.filing_status(ref.url) == "ok" and not refresh:
+            status, when = store.filing_state(ref.url)
+            if status == "ok" and not refresh:
                 report.skipped += 1
                 continue
+            if status == "gone" and not refresh and when is not None and now() - when.replace(tzinfo=now().tzinfo) < GONE_FOR:
+                continue  # known dead: neither a skip nor a failure
         try:
             text = _text(results, ref, cache_dir)
         except AthenaError as exc:
             if _blocked(exc):
                 raise Blocked(str(exc)) from exc
+            if "HTTP 404" in str(exc):  # gone from the exchange: remember it, and do not count it as a failure that keeps the company on every resume list
+                with FundamentalsStore(store_path) as store:
+                    store.record_filing(ref.url, member.symbol, basis, ref.period_end, ref.annual, ref.filed, "gone", str(exc)[:200])
+                report.notes.append(f"{ref.period_end}: {exc} (remembered as gone)")
+                continue
             report.failed += 1
             report.notes.append(f"{ref.period_end}: {exc}")
             continue
@@ -164,44 +175,15 @@ def ingest_symbol(
 
 def run(
     members: Sequence[Member], results: Any, store_path: str | Path, *, resume: bool, max_age_days: int, limit: int | None,
-    quarters: int, standalone: bool, refresh: bool = False, out: TextIO = sys.stdout, cache_dir: Path = CACHE_DIR,
+    quarters: int, standalone: bool, refresh: bool = False, out: TextIO = sys.stdout, cache_dir: Path = CACHE_DIR, job: str | None = None,
 ) -> int:
-    """Ingest each member in turn. Returns 0 when done, 3 when the exchange blocked it (or a block is still running)."""
-    with FundamentalsStore(store_path) as store:
-        until = store.blocked_until()
-    if until and until > now():
-        print(f"blocked by the exchange until {until:%H:%M} UTC; not starting", file=out)
-        return 3
-    done = 0
-    stall = Stall()
-    for member in members:
-        if limit is not None and done >= limit:
-            break
-        with FundamentalsStore(store_path) as store:
-            state = store.run(member.symbol)
-        if resume and not refresh and state and state["status"] == "ok" and state["finished"] > now() - timedelta(days=max_age_days):
-            print(f"{member.symbol:<12} skipped (finished {state['finished']:%Y-%m-%d})", file=out)
-            continue
-        started = now()
-        try:
-            report = ingest_symbol(member, results, store_path, quarters=quarters, standalone=standalone, refresh=refresh, cache_dir=cache_dir)
-        except Blocked as exc:
-            with FundamentalsStore(store_path) as store:
-                store.set_run(member.symbol, "blocked", error=str(exc)[:200], blocked_until=now() + BLOCK_PAUSE)
-            print(f"{member.symbol:<12} BLOCKED ({exc}); stopping, try again after {BLOCK_PAUSE.seconds // 60} minutes", file=out)
-            return 3
-        with FundamentalsStore(store_path) as store:
-            # "partial": some filings could not be read; a later --resume tries the company again (a finished company is skipped)
-            status = "ok" if report.failed == 0 else "partial" if report.fetched + report.skipped > 0 else "failed"
-            store.set_run(member.symbol, status, filings=report.fetched + report.skipped)
-        seconds = (now() - started).total_seconds()
-        print(f"{member.symbol:<12} fetched {report.fetched:>3} skipped {report.skipped:>3} failed {report.failed:>3}  {seconds:5.0f}s", file=out)
-        for note in report.notes[:3]:
-            print(f"{'':<12} note: {note}", file=out)
-        if stall.saw(report):
-            return stop_stalled(store_path, member.symbol, member.symbol, out)
-        done += 1
-    return 0
+    """Ingest each member in turn (the loop is `athena.fundamentals.runner.run_each`). Returns 0 when done, 3 when the exchange blocked it (or a block is still running)."""
+    from athena.fundamentals.runner import run_each
+
+    return run_each(
+        members, lambda m: ingest_symbol(m, results, store_path, quarters=quarters, standalone=standalone, refresh=refresh, cache_dir=cache_dir), store_path,
+        key=lambda m: m.symbol, resume=resume, max_age_days=max_age_days, limit=limit, refresh=refresh, out=out, job=job,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -222,7 +204,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"{len(members)} companies in {args.universe}", flush=True)
     return run(
         members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters,
-        standalone=args.standalone, refresh=args.refresh,
+        standalone=args.standalone, refresh=args.refresh, job="fundamentals_ingest",
     )
 
 

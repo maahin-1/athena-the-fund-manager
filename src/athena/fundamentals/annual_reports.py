@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import re
 import sys
 import zipfile
@@ -94,8 +95,32 @@ def reference_from_store(store: FundamentalsStore, symbol: str) -> tuple[str, di
     return "", {}
 
 
+class BlocksCache:
+    """The statement pages found in a report, kept (they are a few pages, not the report) so that trying a company again after a model failure does not download and read the report again."""
+
+    def __init__(self, directory: Path | str = Path(".athena") / "annual_blocks"):
+        self._dir = Path(directory)
+
+    def _path(self, url: str, basis: str) -> Path:
+        import hashlib
+
+        return self._dir / (hashlib.sha1(f"{url}|{basis}".encode()).hexdigest()[:24] + ".json")
+
+    def get(self, url: str, basis: str) -> dict[str, str] | None:
+        try:
+            return json.loads(self._path(url, basis).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def put(self, url: str, basis: str, blocks: dict[str, str]) -> None:
+        path = self._path(url, basis)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(blocks), encoding="utf-8")
+
+
 def chain(
     reports: Sequence[Mapping[str, Any]], reference: Mapping[date, Year], read_pages: Callable[[str], list[str]], llm: Any, back_to: int = 2016, basis: str = "",
+    blocks_cache: "BlocksCache | None" = None,
 ) -> dict[str, Any]:
     """Go back through the company's reports, newest first, starting at the one whose financial year ends in the reference's earliest year. Returns `{"kept": {year end: year}, "steps": [...]}`.
     A step that does not prove itself ends the chain."""
@@ -112,8 +137,11 @@ def chain(
         step: dict[str, Any] = {"report": report["title"], "url": report["url"]}
         steps.append(step)
         try:
-            pages = read_pages(report["url"])
-            blocks = find_statements(pages, basis)
+            blocks = blocks_cache.get(report["url"], basis) if blocks_cache else None
+            if blocks is None:
+                blocks = find_statements(read_pages(report["url"]), basis)
+                if blocks and blocks_cache:
+                    blocks_cache.put(report["url"], basis, blocks)
             if not blocks:
                 step["result"] = "no statements found in the pages"
                 break
@@ -123,6 +151,7 @@ def chain(
                 years = normalise(extract(blocks, llm))
         except (AthenaError, ValueError, OSError) as exc:
             step["result"] = f"unreadable: {exc}"
+            step["model"] = isinstance(exc, AthenaError) and ("sources failed" in str(exc) or "no model" in str(exc).lower())  # the language model, not the report, is why
             break
         step["read"] = {str(d): {k: len(v) for k, v in y.items()} for d, y in years.items()}  # lines read per year, to see why a report did not prove itself
         step["pages"] = {k: len(v) for k, v in blocks.items()}
@@ -176,7 +205,7 @@ def ingest_symbol(member: Member, results: Any, store_path: str | Path, *, llm: 
         report.skipped += 1
         return report
     try:
-        result = chain(reports, reference, Reader(results).pages, llm, back_to, basis)
+        result = chain(reports, reference, Reader(results).pages, llm, back_to, basis, BlocksCache())
     except AthenaError as exc:
         if is_block(exc):
             raise Blocked(str(exc)) from exc
@@ -191,6 +220,7 @@ def ingest_symbol(member: Member, results: Any, store_path: str | Path, *, llm: 
     for step in result["steps"]:
         if step["result"].startswith("unreadable"):
             report.failed += 1
+            report.model_failed += 1 if step.get("model") else 0
             report.notes.append(f"{step['report']}: {step['result']}")
     if result["kept"] and not dry_run:
         newest = max(r["published"] for r in reports if isinstance(r.get("published"), datetime)) if reports else datetime.now()
@@ -226,13 +256,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.no_history:
         members = with_predecessors(members, PREDECESSORS)
     llm = build_router(meter=Meter()).client_for("specialist")
+    try:  # one tiny call first: a withdrawn model or an empty account is found now, not after thirty failed companies
+        llm.complete("Reply with the single word OK.", "OK?")
+    except Exception as exc:  # noqa: BLE001
+        print(f"the language model is not answering ({type(exc).__name__}: {str(exc)[:160]}); not starting. Check python -m athena.llm.probe", file=sys.stderr)
+        return 4
     log: list[dict[str, Any]] = []
     results = FundamentalsResults()
     print(f"{len(members)} companies in {args.universe}", flush=True)
     try:
         code = run_each(
             members, lambda m: ingest_symbol(m, results, args.store, llm=llm, dry_run=args.dry_run, back_to=args.back_to, log=log), args.store,
-            key=lambda m: f"{m.symbol}#ar" + ("-dry" if args.dry_run else ""), resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, out=sys.stdout,
+            key=lambda m: f"{m.symbol}#ar" + ("-dry" if args.dry_run else ""), resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, out=sys.stdout, job="annual_reports",
         )
     finally:
         path = Path(args.report)
