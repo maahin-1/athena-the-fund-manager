@@ -46,6 +46,17 @@ class ReplyCache:
         self.hits += 1
         return row[2], row[1]
 
+    def forget(self, k: str) -> None:
+        try:
+            con = self._connect()
+            try:
+                with con:
+                    con.execute("DELETE FROM replies WHERE key = ?", [k])
+            finally:
+                con.close()
+        except (sqlite3.Error, OSError):
+            pass
+
     def put(self, k: str, source: str, reply: str) -> None:
         try:
             con = self._connect()
@@ -65,6 +76,7 @@ class CachedLLM:
     def __init__(self, inner: Any, tier: str, cache: ReplyCache):
         self._inner, self._tier, self._cache = inner, tier, cache
         self._source, self._usage = "", {}
+        self._last_key = ""
 
     @property
     def names(self) -> list[str]:
@@ -79,7 +91,7 @@ class CachedLLM:
         return dict(self._usage)
 
     def complete(self, system: str, user: str) -> str:
-        k = key(self._tier, system, user)
+        k = self._last_key = key(self._tier, system, user)
         hit = self._cache.get(k)
         if hit is not None:
             self._source, self._usage = f"cache ({hit[1]})", {}
@@ -88,3 +100,8 @@ class CachedLLM:
         self._source, self._usage = "", dict(getattr(self._inner, "last_usage", {}) or {})
         self._cache.put(k, str(getattr(self._inner, "last_source", "")), reply)
         return reply
+
+    def forget_last(self) -> None:
+        """The caller found the last reply unusable (it was not the JSON asked for, or failed a check): drop it, so the same prompt is asked again and a bad reply does not stick for a week."""
+        if self._last_key:
+            self._cache.forget(self._last_key)

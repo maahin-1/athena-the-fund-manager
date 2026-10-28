@@ -8,6 +8,8 @@ and skips what is already there, so an interrupted run resumes."""
 from __future__ import annotations
 
 import argparse
+import hashlib
+import inspect
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date
@@ -37,19 +39,53 @@ def read_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def rows_for(case: PitCase, specialist: str, run: int, output: Mapping[str, Any] | None, error: str = "") -> list[dict[str, Any]]:
+def rows_for(case: PitCase, specialist: str, run: int, output: Mapping[str, Any] | None, error: str = "", extra: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     """One log row per horizon whose outcome is known: the call, and the label it is scored against."""
     usable = output is not None and output.get("data_coverage") != INSUFFICIENT
     base = {
         "symbol": case.symbol, "as_of": case.as_of.isoformat(), "specialist": specialist, "run": run, "blinded": case.blinded,
         "source": case.statements_source, "signal": output["signal"] if usable else None,
         "confidence": output.get("confidence", 0) if usable else 0, "coverage": output.get("data_coverage") if output else None, "error": error,
-        "notes": list(case.notes),
+        "notes": list(case.notes), **(extra or {}),
     }
     return [
         {**base, "horizon": horizon, "label": outcome.label, "excess": round(outcome.excess, 4)}
         for horizon, outcome in sorted(case.outcomes.items()) if outcome is not None
     ]
+
+
+def packet_hash(packet: Any) -> str:
+    """A short fingerprint of the packet an analyst was given, so two rows can be told to have seen the same evidence."""
+    return hashlib.sha256(json.dumps(packet, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def _takes_run(analyst: Any) -> bool:
+    try:
+        return "run" in inspect.signature(analyst).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+class LiveAnalyst:
+    """A specialist on the real model. The first run of a case may be served from the reply cache; every repeat is asked of a fresh specialist through a client with no cache, so a
+    repeat really is another ask and 'run agreement' measures the model, not the cache. `last_source` says which model answered."""
+
+    def __init__(self, spec: Any, client: Any, fresh_client: Callable[[], Any]):
+        self._spec, self._client, self._fresh_client = spec, client, fresh_client
+        self._fresh: Any = None
+        self.last_source = ""
+
+    def __call__(self, packet: Mapping[str, Any], run: int = 0) -> dict[str, Any]:
+        from athena.agents.base import Specialist
+
+        if run == 0:
+            llm = self._client
+        else:
+            self._fresh = self._fresh or self._fresh_client()
+            llm = self._fresh
+        output = Specialist(self._spec, llm).analyze(packet)  # a new specialist: no in-memory cache either
+        self.last_source = str(getattr(llm, "last_source", ""))
+        return output
 
 
 def run_cases(
@@ -87,10 +123,14 @@ def run_cases(
                     if packet is None:
                         rows = rows_for(case, name, run, None, "no packet for this case")
                     else:
+                        extra = {"packet_hash": packet_hash(packet)}
                         try:
-                            rows = rows_for(case, name, run, analysts[name](packet))
+                            analyst = analysts[name]
+                            output = analyst(packet, run=run) if _takes_run(analyst) else analyst(packet)
+                            extra["model"] = str(getattr(analyst, "last_source", ""))  # which model answered: a fallback mid-run is a different measurement
+                            rows = rows_for(case, name, run, output, extra=extra)
                         except AthenaError as exc:
-                            rows = rows_for(case, name, run, None, f"{type(exc).__name__}: {exc}"[:200])
+                            rows = rows_for(case, name, run, None, f"{type(exc).__name__}: {exc}"[:200], extra=extra)
                     for row in rows:
                         handle.write(json.dumps(row) + "\n")
                     made += 1
@@ -152,7 +192,13 @@ def live_builder(first: date, last: date) -> tuple[PitCaseBuilder, dict[str, Ana
 
     client = sources.llm_router.client_for("specialist")
     specs = {"quant_technical": QUANT_TECHNICAL, "valuation": VALUATION, "moat_quality": MOAT_QUALITY, "earnings_intelligence": EARNINGS_INTELLIGENCE}
-    analysts = {name: Specialist(spec, client).analyze for name, spec in specs.items()}
+    def fresh_client() -> Any:
+        from athena.llm.budget import Meter
+        from athena.llm.router import build_router
+
+        return build_router(meter=Meter()).client_for("specialist")  # no reply cache: a repeat is a real second ask
+
+    analysts = {name: LiveAnalyst(spec, client, fresh_client) for name, spec in specs.items()}
     builder = PitCaseBuilder(
         raw, adjusted, risk_world_from_store(sources.store).price_index, valuation_history(sources.store),
         lru_cache(maxsize=64)(CachedFilings(results).filings), FilingStore(results).filing, yahoo,

@@ -22,4 +22,4 @@ OPTIONAL = (
     "mutual_fund_holding", "mutual_fund_change_1q", "mutual_fund_change_4q", "shareholders_change_4q",
 )
 
-OWNERSHIP = SpecialistSpec(name="Ownership", persona=PERSONA, critical=CRITICAL, optional=OPTIONAL, shows=CRITICAL + OPTIONAL)
+OWNERSHIP = SpecialistSpec(name="Ownership", persona=PERSONA, critical=CRITICAL, optional=OPTIONAL, shows=CRITICAL + OPTIONAL, max_confidence=40)

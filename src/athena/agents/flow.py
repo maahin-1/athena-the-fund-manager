@@ -20,4 +20,4 @@ positioning, give a base case and name the main risk."""
 CRITICAL = ("futures_days_held",)
 OPTIONAL = ("flow_events", "bullish_flow_events", "bearish_flow_events", "put_call_ratio")
 
-FLOW = SpecialistSpec(name="Flow", persona=PERSONA, critical=CRITICAL, optional=OPTIONAL, shows=CRITICAL + OPTIONAL)
+FLOW = SpecialistSpec(name="Flow", persona=PERSONA, critical=CRITICAL, optional=OPTIONAL, shows=CRITICAL + OPTIONAL, max_confidence=60)

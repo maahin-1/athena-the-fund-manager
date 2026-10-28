@@ -132,6 +132,41 @@ def normalise(raw: Mapping[str, Any]) -> dict[date, dict[str, dict[str, float]]]
     return out
 
 
+def printed_numbers(blocks: Mapping[str, str]) -> set[float]:
+    """Every number printed in the statement pages, as a value to two places (commas taken out, brackets and signs ignored)."""
+    found: set[float] = set()
+    for text in blocks.values():
+        for token in re.findall(r"\d[\d,]*\.?\d*", text):
+            try:
+                found.add(round(float(token.replace(",", "")), 2))
+            except ValueError:
+                continue
+    return found
+
+
+def drop_unprinted(raw: Mapping[str, Any], blocks: Mapping[str, str]) -> tuple[dict[str, Any], list[str]]:
+    """The model's reply with every figure that is not printed on the pages left out, and the names of the lines that lost a figure. The model copies; it must not be able to
+    invent. A line the pages do not show stays out rather than being guessed (this is the same idea as the grounding check on the chart explainer)."""
+    printed = printed_numbers(blocks)
+    out: dict[str, Any] = dict(raw)
+    dropped: list[str] = []
+    for statement in ("income", "balance"):
+        lines = dict(raw.get(statement) or {})
+        for key, values in lines.items():
+            if not isinstance(values, list):
+                continue
+            kept = []
+            for value in values:
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and round(abs(float(value)), 2) not in printed:
+                    dropped.append(f"{statement}.{key}={value:g}")
+                    kept.append(None)
+                else:
+                    kept.append(value)
+            lines[key] = kept
+        out[statement] = lines
+    return out, dropped
+
+
 def internal_checks(year: Mapping[str, Mapping[str, float]]) -> list[str]:
     """What accounting says must hold, as the problems found (none means it passed): profit before tax less tax is close to profit; total assets cover equity and borrowings; revenue is not negative."""
     inc, bal, problems = year["income"], year["balance"], []
@@ -148,6 +183,9 @@ def internal_checks(year: Mapping[str, Mapping[str, float]]) -> list[str]:
             problems.append("borrowings are larger than total assets")
     if "equity_capital" in bal and bal["equity_capital"] <= 0:
         problems.append("share capital is not positive")
+    for part in ("current_assets", "cash", "investments"):  # a part of the assets cannot be larger than all of them
+        if part in bal and "total_assets" in bal and bal[part] > 1.02 * bal["total_assets"]:
+            problems.append(f"{part} is larger than total assets")
     return problems
 
 

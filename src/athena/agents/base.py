@@ -39,6 +39,7 @@ class SpecialistSpec:
     critical: tuple[str, ...]
     optional: tuple[str, ...] = ()
     shows: tuple[str, ...] | None = None  # the only figures the model is shown; None means the whole packet
+    max_confidence: int | None = None  # a cap the persona states in words, enforced here: the model's own number is clamped to it
 
 
 def abstention(missing: Sequence[str], reason: str) -> dict[str, Any]:
@@ -99,6 +100,8 @@ class Specialist:
             self.model_calls += 1
             reply = self.llm.complete(system, user + feedback)
             output, errors = self._check(reply, shown, coverage, missing)
+            if errors:
+                getattr(self.llm, "forget_last", lambda: None)()  # do not let a rejected reply stay cached
             if not errors:
                 self._cache[key] = output
                 return json.loads(json.dumps(output))
@@ -147,6 +150,9 @@ class Specialist:
         if extra:
             return {}, [f"reply has keys the contract does not allow: {extra}"]
         output = {**parsed, "data_coverage": coverage.value, "missing": list(missing)}
+        cap = self.spec.max_confidence
+        if cap is not None and isinstance(output.get("confidence"), (int, float)) and not isinstance(output.get("confidence"), bool) and output["confidence"] > cap:
+            output["confidence"] = cap
         errors = validate_specialist_output(output)
         if errors:
             return {}, errors

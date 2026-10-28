@@ -27,7 +27,7 @@ from athena.fundamentals.documents import ANNUAL_KIND
 from athena.fundamentals.history import PREDECESSORS
 from athena.fundamentals.ingest import Blocked, Report, with_predecessors
 from athena.fundamentals.integrated import is_block
-from athena.fundamentals.pdf_extract import accept, extract, find_statements, normalise
+from athena.fundamentals.pdf_extract import accept, drop_unprinted, extract, find_statements, normalise
 from athena.fundamentals.rows import Statements
 from athena.fundamentals.runner import run_each
 from athena.fundamentals.store import DEFAULT_PATH, FundamentalsStore
@@ -146,9 +146,13 @@ def chain(
                 step["result"] = "no statements found in the pages"
                 break
             try:
-                years = normalise(extract(blocks, llm))
+                raw = extract(blocks, llm)
             except ValueError:  # a reply that is not the JSON asked for: one more try, the model is not deterministic
-                years = normalise(extract(blocks, llm))
+                raw = extract(blocks, llm)
+            raw, dropped = drop_unprinted(raw, blocks)  # a figure that is not on the pages is not kept, whoever wrote it
+            years = normalise(raw)
+            if dropped:
+                step["dropped"] = dropped[:12]
         except (AthenaError, ValueError, OSError) as exc:
             step["result"] = f"unreadable: {exc}"
             step["model"] = isinstance(exc, AthenaError) and ("sources failed" in str(exc) or "no model" in str(exc).lower())  # the language model, not the report, is why

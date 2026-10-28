@@ -17,7 +17,8 @@ def statement_page(kind, own, n=30):
     return f"Consolidated {kind}\n{own}\n" + " ".join(str(1000 + i) for i in range(n))
 
 
-PAGES = [statement_page("Statement of Profit and Loss", "Total expenses Profit before tax"), statement_page("Balance Sheet", "EQUITY AND LIABILITIES Total assets")]
+FIGURES = " 900 20 800 30 200 60 138 100 300 1600"  # every figure the fake model copies is printed on the pages, as the extraction now requires
+PAGES = [statement_page("Statement of Profit and Loss", "Total expenses Profit before tax" + FIGURES), statement_page("Balance Sheet", "EQUITY AND LIABILITIES Total assets" + FIGURES)]
 
 
 def reply(years, base=1000):

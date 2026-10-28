@@ -9,6 +9,8 @@ import requests
 from athena.llm.errors import ProviderError
 
 RETRYABLE_STATUSES = {408, 425, 429, 500, 502, 503, 504}
+# a 429 that means "your account has no quota or credits" is not a rate limit: waiting and asking again three times only wastes seconds, and the model is unusable until the owner acts
+QUOTA_MARKS = ("insufficient_quota", "no credits", "exceeded your current quota", "out of credits", "billing", "payment required")
 
 
 class OpenAICompatibleClient:
@@ -85,7 +87,7 @@ class OpenAICompatibleClient:
                         raise
                     failure = exc
                     continue
-            retryable = response.status_code in RETRYABLE_STATUSES
+            retryable = response.status_code in RETRYABLE_STATUSES and not (response.status_code in (402, 429) and any(m in str(response.text).lower() for m in QUOTA_MARKS))
             failure = ProviderError(
                 f"{self.name}: HTTP {response.status_code} {self._scrub(response.text)}",
                 status=response.status_code,

@@ -49,7 +49,7 @@ class Meter:
 
     def calls_this_month(self, tier: str) -> int:
         month = _month(self._clock())
-        return sum(1 for r in self.rows() if r.get("tier") == tier and str(r.get("at", "")).startswith(month))
+        return sum(1 for r in self.rows() if r.get("tier") == tier and not r.get("failed") and str(r.get("at", "")).startswith(month))
 
     def check(self, tier: str) -> None:
         """Raises `BudgetExceeded` when one more call would pass the tier's ceiling for the month."""
@@ -57,17 +57,27 @@ class Meter:
         if isinstance(limit, int) and self.calls_this_month(tier) >= limit:
             raise BudgetExceeded(f"the {tier} tier has made {self.calls_this_month(tier)} calls this month; your ceiling in {self._budget} is {limit}")
 
-    def record(self, tier: str, source: str, chars_in: int, chars_out: int, usage: dict[str, int] | None = None) -> None:
+    def record(
+        self, tier: str, source: str, chars_in: int, chars_out: int, usage: dict[str, int] | None = None, failures: list[str] | None = None,
+    ) -> None:
         self._usage.parent.mkdir(parents=True, exist_ok=True)
         row = {"at": self._clock().isoformat(), "tier": tier, "model": source, "chars_in": chars_in, "chars_out": chars_out, **(usage or {})}
+        if failures:
+            row["failures"] = [str(f)[:200] for f in failures]  # the models tried before this one answered, and why each did not
         with self._usage.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row) + "\n")
+
+    def record_failure(self, tier: str, error: str) -> None:
+        """A call that no model answered. It is kept for the owner to read and is not counted against the ceiling (it used no model)."""
+        self._usage.parent.mkdir(parents=True, exist_ok=True)
+        with self._usage.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"at": self._clock().isoformat(), "tier": tier, "failed": True, "error": str(error)[:400]}) + "\n")
 
     def summary(self) -> dict[str, dict[str, Any]]:
         month = _month(self._clock())
         out: dict[str, dict[str, Any]] = defaultdict(lambda: {"calls": 0, "chars_in": 0, "chars_out": 0, "prompt_tokens": 0, "completion_tokens": 0, "models": defaultdict(int)})
         for r in self.rows():
-            if str(r.get("at", "")).startswith(month):
+            if str(r.get("at", "")).startswith(month) and not r.get("failed"):
                 t = out[r["tier"]]
                 t["calls"] += 1
                 t["chars_in"] += int(r.get("chars_in", 0))
@@ -98,8 +108,13 @@ class MeteredLLM:
 
     def complete(self, system: str, user: str) -> str:
         self._meter.check(self._tier)
-        reply = self._inner.complete(system, user)
-        self._meter.record(self._tier, self.last_source, len(system) + len(user), len(reply), self.last_usage)
+        try:
+            reply = self._inner.complete(system, user)
+        except Exception as exc:
+            self._meter.record_failure(self._tier, f"{type(exc).__name__}: {exc}")
+            raise
+        failures = [f"{name}: {why}" for name, why in getattr(self._inner, "last_failures", ())]
+        self._meter.record(self._tier, self.last_source, len(system) + len(user), len(reply), self.last_usage, failures)
         return reply
 
 

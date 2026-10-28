@@ -11,7 +11,8 @@ import requests
 
 from athena.llm.client import OpenAICompatibleClient
 from athena.llm.envfile import DEFAULT_ENV_FILE, read_setting
-from athena.llm.router import PROVIDERS, TIERS
+from athena.fallback import HealthRegistry
+from athena.llm.router import HEALTH_PATH, PROVIDERS, TIERS
 
 PROBE_SYSTEM = "You are a connectivity check."
 PROBE_USER = "Reply with the single word OK."
@@ -67,7 +68,10 @@ def main(argv: list[str] | None = None) -> int:
     if not results:
         print("no provider key is set")
         return 1
+    health = HealthRegistry(HEALTH_PATH)
     for r in results:
+        if r.ok:
+            health.mark_healthy(f"{r.provider}:{r.model}")  # it works now: stop skipping it
         print(f"{'OK  ' if r.ok else 'FAIL'} {r.provider:10s} {r.model:45s} {r.seconds:5.1f}s  {r.detail}")
     return 0 if all(r.ok for r in results) else 2
 

@@ -37,6 +37,8 @@ PROVIDERS: dict[str, ProviderSpec] = {
 
 # Tier -> models in fallback order. Checked on 5 Oct 2026; NVIDIA lists more models than an account
 # can call, so the chain falls through on 404 and timeouts.
+HEALTH_PATH = Path(".athena") / "llm_health.json"  # models found unusable, shared by every process, each entry expiring after six hours
+
 TIERS: dict[str, tuple[tuple[str, str], ...]] = {
     "cheap": (
         ("nvidia", "openai/gpt-oss-20b"),
@@ -129,6 +131,7 @@ def build_router(
     tiers: Mapping[str, Sequence[tuple[str, str]]] = TIERS,
     meter: Meter | None = None,
     cache: ReplyCache | None = None,
+    health_path: Path | str | None = HEALTH_PATH,
     **client_options: object,
 ) -> StaticRouter:
     """Build every tier from the providers whose keys are set. Raises if no key is set at all."""
@@ -136,6 +139,7 @@ def build_router(
     if not any(keys.values()):
         raise AthenaError("no LLM provider key is set (NVIDIA_API_KEY, OPENROUTER_API_KEY or OPENAI_API_KEY)")
     built: dict[str, FallbackLLM] = {}
+    health = HealthRegistry(health_path)  # one list for all tiers: a model is the same model whichever tier asks
     for tier, entries in tiers.items():
         clients = []
         for provider, model in entries:
@@ -150,5 +154,5 @@ def build_router(
                 )
             )
         if clients:
-            built[tier] = FallbackLLM(clients)
+            built[tier] = FallbackLLM(clients, health)
     return StaticRouter(built, meter=meter, cache=cache)
