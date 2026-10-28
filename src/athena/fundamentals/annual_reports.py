@@ -136,6 +136,7 @@ def chain(
     for end_year, report in eligible:
         step: dict[str, Any] = {"report": report["title"], "url": report["url"]}
         steps.append(step)
+        stage = "report"  # what was being done when something fails: reading the report, or asking the model
         try:
             blocks = blocks_cache.get(report["url"], basis) if blocks_cache else None
             if blocks is None:
@@ -145,6 +146,7 @@ def chain(
             if not blocks:
                 step["result"] = "no statements found in the pages"
                 break
+            stage = "model"
             try:
                 raw = extract(blocks, llm)
             except ValueError:  # a reply that is not the JSON asked for: one more try, the model is not deterministic
@@ -153,9 +155,10 @@ def chain(
             years = normalise(raw)
             if dropped:
                 step["dropped"] = dropped[:12]
-        except (AthenaError, ValueError, OSError) as exc:
-            step["result"] = f"unreadable: {exc}"
-            step["model"] = isinstance(exc, AthenaError) and ("sources failed" in str(exc) or "no model" in str(exc).lower())  # the language model, not the report, is why
+        except Exception as exc:  # noqa: BLE001 - a PDF library error on a damaged report is that report's problem, not the run's
+            step["result"] = f"unreadable: {type(exc).__name__ + ': ' if not isinstance(exc, (AthenaError, ValueError)) else ''}{str(exc)[:200]}"
+            step["model"] = stage == "model"  # the language model gave nothing usable (down, or not the JSON asked for), not the report
+            step["network"] = stage == "report" and isinstance(exc, AthenaError) and bool(re.search(r"HTTP (4(08|29)|5\d\d)|no reply|timed? ?out|connection", str(exc), re.I))  # the exchange, not this report
             break
         step["read"] = {str(d): {k: len(v) for k, v in y.items()} for d, y in years.items()}  # lines read per year, to see why a report did not prove itself
         step["pages"] = {k: len(v) for k, v in blocks.items()}
@@ -223,8 +226,9 @@ def ingest_symbol(member: Member, results: Any, store_path: str | Path, *, llm: 
     log.append({"symbol": member.symbol, "basis": basis, "kept": sorted(str(d) for d in result["kept"]), "steps": result["steps"]})
     for step in result["steps"]:
         if step["result"].startswith("unreadable"):
-            report.failed += 1
-            report.model_failed += 1 if step.get("model") else 0
+            if step.get("model") or step.get("network"):
+                report.failed += 1
+                report.model_failed += 1 if step.get("model") else 0
             report.notes.append(f"{step['report']}: {step['result']}")
     if result["kept"] and not dry_run:
         newest = max(r["published"] for r in reports if isinstance(r.get("published"), datetime)) if reports else datetime.now()
@@ -251,6 +255,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-age-days", type=int, default=3650)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--back-to", type=int, default=2016, help="the oldest financial-year end to read back to")
+    parser.add_argument("--role", default="resolver", choices=("specialist", "resolver"), help="which model tier copies the figures: resolver (cheap and fast, the default: a copying task, and every kept year is proven against the filings) or specialist (mid)")
+    parser.add_argument("--max-tokens", type=int, default=12000, help="the most a reply may use; a reasoning model spends most of it thinking, and a reply cut off is not JSON")
     parser.add_argument("--dry-run", action="store_true", help="read and check, store nothing")
     parser.add_argument("--no-history", action="store_true")
     parser.add_argument("--report", default=".athena/reports/annual-reports.json")
@@ -259,7 +265,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     members = universe(args.universe)
     if not args.no_history:
         members = with_predecessors(members, PREDECESSORS)
-    llm = build_router(meter=Meter()).client_for("specialist")
+    llm = build_router(meter=Meter(), max_tokens=args.max_tokens).client_for(args.role)
     try:  # one tiny call first: a withdrawn model or an empty account is found now, not after thirty failed companies
         llm.complete("Reply with the single word OK.", "OK?")
     except Exception as exc:  # noqa: BLE001
