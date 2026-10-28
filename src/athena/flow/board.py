@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 from collections import Counter
+from datetime import timedelta
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from athena.derivs.store import DEFAULT_PATH, DerivsStore
 from athena.flow import detectors as d
 from athena.flow.scan import events_for
 
+WINDOW_DAYS = 150  # the detectors compare with the last 60 days; 150 calendar days leaves room for holidays and the 20-day changes
 INSTRUMENTS = (("FUTSTK", "stock"), ("FUTIDX", "index"))
 
 
@@ -40,12 +42,12 @@ def board(store: DerivsStore) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     if latest is None:
         return {"day": None, "rows": rows, "events": {}, "universe": 0}
+    options = store.option_rows_all(latest - timedelta(days=120))  # one scan of each table for the whole board, not one per underlying
     for instrument, kind in INSTRUMENTS:
-        for symbol in store.symbols(instrument):
-            series = store.futures(symbol, instrument)
+        for symbol, series in store.futures_all(instrument, latest - timedelta(days=WINDOW_DAYS)).items():
             if len(series) < 2 or series[-1][0] != latest:  # it left the futures market, or its file stopped: nothing to say about the latest day
                 continue
-            events, _, ratio = events_for(store, symbol, instrument, series)
+            events, _, ratio = events_for(store, symbol, instrument, series, options.get(symbol, []))
             rows.append(_row(symbol, kind, series, events, ratio))
     counts = Counter(e["kind"] for r in rows for e in r["events"])
     rows.sort(key=lambda r: (-(len(r["events"])), -(r["oi"] or 0.0)))

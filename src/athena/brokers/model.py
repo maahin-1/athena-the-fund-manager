@@ -120,6 +120,8 @@ class Price:
     last: float
     bid: float | None = None
     ask: float | None = None
+    source: str = ""  # where the quote came from ("stream" is live); empty means the caller did not say, and is not checked
+    age_seconds: float | None = None  # how old the exchange's time on it is; None means not known, and is not checked
 
 
 class Broker(Protocol):

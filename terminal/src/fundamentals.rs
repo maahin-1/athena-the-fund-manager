@@ -36,7 +36,7 @@ pub enum FundError {
 
 /// An NSE symbol as the page and the ingest write it: capitals, digits, `&` and `-`.
 pub fn symbol_ok(symbol: &str) -> bool {
-    !symbol.is_empty() && symbol.len() <= 20 && symbol.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '&' || c == '-')
+    symbol.chars().next().is_some_and(|c| c != '-') && symbol.len() <= 20 && symbol.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '&' || c == '-')
 }
 
 pub fn basis_ok(basis: &str) -> bool {
@@ -286,7 +286,7 @@ else:
     #[test]
     fn symbols_and_bases_are_checked() {
         assert!(symbol_ok("TCS") && symbol_ok("M&M") && symbol_ok("BAJAJ-AUTO"));
-        for bad in ["", "tcs", "A B", "A;B", "../x", &"X".repeat(21)] {
+        for bad in ["", "tcs", "A B", "A;B", "../x", "-h", "--version", &"X".repeat(21)] {
             assert!(!symbol_ok(bad), "{bad}");
         }
         assert!(basis_ok("consolidated") && basis_ok("standalone"));

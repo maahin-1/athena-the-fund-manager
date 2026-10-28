@@ -14,15 +14,20 @@ from athena.derivs.store import DEFAULT_PATH, DerivsStore
 from athena.flow import detectors as d
 
 
-def events_for(store: DerivsStore, symbol: str, instrument: str = "FUTSTK", futures: list | None = None) -> tuple[list[d.Event], int, float | None]:
-    """`(events on the latest day, days of futures held, latest put-call ratio)` for one symbol. A caller that already has the symbol's futures series passes it."""
+def events_for(
+    store: DerivsStore, symbol: str, instrument: str = "FUTSTK", futures: list | None = None, options: list | None = None,
+) -> tuple[list[d.Event], int, float | None]:
+    """`(events on the latest day, days of futures held, latest put-call ratio)` for one symbol. A caller that already has the symbol's futures series, and its strike rows since 120 days
+    before its last day, passes them (the board does, from one scan of each table)."""
     futures = store.futures(symbol, instrument) if futures is None else futures
     if not futures:
         return [], 0, None
     rows = [d.FutDay(day, close, oi, volume) for day, close, oi, volume in futures]
     events = d.futures_events(symbol, rows)
     last = rows[-1].day
-    opts = [d.OptRow(day, expiry, strike, kind, oi) for day, expiry, strike, kind, oi in store.option_rows(symbol, last - timedelta(days=120))]
+    since = last - timedelta(days=120)
+    got = store.option_rows(symbol, since) if options is None else [r for r in options if r[0] >= since]
+    opts = [d.OptRow(day, expiry, strike, kind, oi) for day, expiry, strike, kind, oi in got]
     days = sorted({o.day for o in opts})
     ratio = d.put_call_ratio(opts, days[-1]) if days and days[-1] == last else None
     if days and days[-1] == last:

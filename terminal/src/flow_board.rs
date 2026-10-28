@@ -11,7 +11,7 @@ use tokio::process::Command;
 use tokio::sync::Semaphore;
 
 const LIMIT: Duration = Duration::from_secs(60);
-pub const KEEP_FOR: Duration = Duration::from_secs(5 * 60);
+pub const KEEP_FOR: Duration = Duration::from_secs(6 * 3600); // the history is end-of-day; a change to the file or its log drops the answer at once, so a long keep costs nothing
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum BoardError {
@@ -49,8 +49,12 @@ impl FlowBoard {
         vec!["--store".into(), self.store.to_string_lossy().into_owned()]
     }
 
+    /// When the history last changed: the newer of the file and its write-ahead log (a load that has not yet closed the file has written only the log).
     fn modified(&self) -> Option<SystemTime> {
-        std::fs::metadata(&self.store).and_then(|m| m.modified()).ok()
+        let when = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+        let mut wal = self.store.clone().into_os_string();
+        wal.push(".wal");
+        when(&self.store).max(when(std::path::Path::new(&wal)))
     }
 
     /// The board: kept, else from a helper, else from the module started for it.

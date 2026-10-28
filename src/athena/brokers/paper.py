@@ -45,14 +45,21 @@ class PaperBroker:
         if self._path.exists():
             self._state = json.loads(self._path.read_text(encoding="utf-8"))
 
+    def _reload(self) -> None:
+        """The account as it is on disk now: another process may have changed it since this one read it."""
+        if self._path.exists():
+            self._state = json.loads(self._path.read_text(encoding="utf-8"))
+
     # --- reading ---
     def _orders(self) -> list[Order]:
         return [Order.from_dict(o) for o in self._state["orders"]]
 
     def orders(self) -> list[Order]:
+        self._reload()
         return self._orders()
 
     def holdings(self) -> list[Holding]:
+        self._reload()
         return [Holding(k.split(":", 1)[1], k.split(":", 1)[0], int(v["quantity"]), float(v["average_price"])) for k, v in sorted(self._state["holdings"].items()) if v["quantity"] > 0]
 
     def _held(self, request: OrderRequest) -> int:
@@ -65,6 +72,7 @@ class PaperBroker:
         return sum(o.request.quantity for o in self._orders() if o.status == "open" and o.request.side == "SELL" and (o.request.exchange, o.request.symbol) == (request.exchange, request.symbol))
 
     def funds(self) -> Funds:
+        self._reload()
         return Funds(cash=float(self._state["cash"]), reserved=self._reserved_cash())
 
     # --- writing ---
@@ -83,6 +91,7 @@ class PaperBroker:
         return self._clock().isoformat(timespec="seconds")
 
     def place(self, request: OrderRequest, client_order_id: str) -> Order:
+        self._reload()
         for existing in self._orders():
             if existing.client_order_id == client_order_id:
                 return existing
@@ -143,6 +152,7 @@ class PaperBroker:
 
     def settle(self) -> list[Order]:
         """Look again at every open order against the current quotes. Returns the orders that filled now."""
+        self._reload()
         filled = []
         for order in self._orders():
             if order.status == "open":
@@ -155,6 +165,7 @@ class PaperBroker:
         return filled
 
     def cancel(self, order_id: str) -> Order:
+        self._reload()
         for order in self._orders():
             if order.order_id == order_id:
                 if order.status == "open":

@@ -265,7 +265,13 @@ async fn main() {
             .with_helpers(helpers.clone())
             .with_fetches(fund_fetch.finished.clone()),
     );
-    let flow_board = Arc::new(flow_board::FlowBoard::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.derivs_store.clone()).with_helpers(helpers.clone()));
+    // the board takes seconds to build: it has a helper of its own, so a Fundamentals page or a valuation never waits behind it
+    let board_helper = Arc::new(helper::Helpers::new(vec![args.fund_python.as_deref().unwrap_or(&args.python).to_string(), "-m".into(), "athena.terminal_helper".into()], 1));
+    {
+        let h = board_helper.clone();
+        tokio::spawn(async move { h.warm().await });
+    }
+    let flow_board = Arc::new(flow_board::FlowBoard::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.derivs_store.clone()).with_helpers(board_helper));
     let chart_explain = Arc::new(chart_explain::ChartExplain::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
     let sentiment = Arc::new(sentiment::SentimentJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone()));
     let search = Arc::new(search::SearchCache::new(bars.warehouse.clone()));

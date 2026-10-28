@@ -16,6 +16,16 @@ const START_LIMIT: Duration = Duration::from_secs(60);
 /// How many helpers run side by side: the page and its valuation are asked for together.
 pub const COUNT: usize = 2;
 
+/// The helpers' shared error log, started afresh when it passes two megabytes so it never grows without end.
+fn helper_log() -> Option<std::fs::File> {
+    let path = std::path::Path::new(".athena").join("terminal").join("helper.log");
+    std::fs::create_dir_all(path.parent()?).ok()?;
+    if std::fs::metadata(&path).map(|m| m.len() > 2_000_000).unwrap_or(false) {
+        let _ = std::fs::rename(&path, path.with_extension("old"));
+    }
+    std::fs::OpenOptions::new().create(true).append(true).open(path).ok()
+}
+
 struct Live {
     _child: Child, // kill_on_drop: dropping this ends the process
     stdin: ChildStdin,
@@ -40,7 +50,9 @@ impl Helpers {
 
     async fn start(&self) -> Option<Live> {
         let mut cmd = Command::new(self.command.first()?);
-        cmd.args(&self.command[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
+        // what a helper writes to its error stream is kept in a log (a crash is no longer blind); an unwritable log is simply not used
+        let stderr = helper_log().map(Stdio::from).unwrap_or_else(Stdio::null);
+        cmd.args(&self.command[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(stderr).kill_on_drop(true);
         let mut child = cmd.spawn().ok()?;
         let stdin = child.stdin.take()?;
         let mut out = BufReader::new(child.stdout.take()?).lines();

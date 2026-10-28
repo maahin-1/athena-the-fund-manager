@@ -65,6 +65,24 @@ class DerivsStore:
         ).fetchall()
         return continuous(rows)
 
+    def futures_all(self, instrument: str = "FUTSTK", since: date | None = None) -> dict[str, list[tuple[date, float, float, float]]]:
+        """Every symbol's continuous futures series from one scan of the table (`futures` once per symbol scans it again each time). With `since`, only the days from then on: a caller that
+        reads the last few weeks (the board) does not chain six years of history. The last days of the series come out the same either way, since each day's change is a ratio and the chain is
+        scaled to the last day."""
+        grouped: dict[str, list[tuple]] = {}
+        for symbol, day, expiry, close, oi, volume in self._con.execute(
+            "SELECT symbol, day, expiry, close, oi, volume FROM fut_bars WHERE instrument = ? AND day >= ? ORDER BY symbol, day, expiry", [instrument, since or date.min]
+        ).fetchall():
+            grouped.setdefault(symbol, []).append((day, expiry, close, oi, volume))
+        return {symbol: continuous(rows) for symbol, rows in grouped.items()}
+
+    def option_rows_all(self, since: date) -> dict[str, list[tuple[date, date, float, str, float]]]:
+        """Every symbol's nearest-expiry strikes since a day, from one scan of the table."""
+        grouped: dict[str, list[tuple]] = {}
+        for symbol, day, expiry, strike, option, oi in self._con.execute("SELECT symbol, day, expiry, strike, option, oi FROM opt_strikes WHERE day >= ? ORDER BY symbol, day", [since]).fetchall():
+            grouped.setdefault(symbol, []).append((day, expiry, strike, option, oi))
+        return grouped
+
     def option_rows(self, symbol: str, since: date) -> list[tuple[date, date, float, str, float]]:
         """`(day, expiry, strike, option, oi)` for the nearest-expiry strikes held since a day."""
         return self._con.execute("SELECT day, expiry, strike, option, oi FROM opt_strikes WHERE symbol = ? AND day >= ? ORDER BY day", [symbol, since]).fetchall()

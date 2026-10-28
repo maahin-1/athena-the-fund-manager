@@ -22,7 +22,7 @@ pub enum StartError {
 }
 
 pub fn symbol_ok(symbol: &str) -> bool {
-    !symbol.is_empty() && symbol.len() <= 20 && symbol.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '&' || c == '-')
+    symbol.chars().next().is_some_and(|c| c != '-') && symbol.len() <= 20 && symbol.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '&' || c == '-')
 }
 
 #[derive(Clone)]

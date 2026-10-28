@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, fields
@@ -31,6 +32,7 @@ TOKENS_PATH = Path(".athena") / "broker" / "tokens.json"
 MODES = ("read_only", "paper", "live_delivery")
 IST = timezone(timedelta(hours=5, minutes=30))
 TOKEN_SECONDS = 120
+MAX_QUOTE_AGE = 10.0  # seconds: the exchange time on a quote may lag the clock by a few seconds, a minute-old price is not a live one
 
 
 class LimitsError(ValueError):
@@ -98,6 +100,10 @@ def check(request: OrderRequest, broker: Broker, limits: Limits, price: Price | 
         f.add("deployed", after <= limits.max_deployed, f"Rs {after:,.2f} in shares after this buy against a limit of Rs {limits.max_deployed:,.2f}")
     if price is None:
         f.add("price check", False, "no live price for this symbol, so the limit price cannot be checked")
+    elif price.source and price.source != "stream":
+        f.add("price check", False, f"the price is from the {price.source}, not the live stream, so it may be delayed")
+    elif price.age_seconds is not None and price.age_seconds > MAX_QUOTE_AGE:
+        f.add("price check", False, f"the price is {price.age_seconds:.0f} seconds old (limit {MAX_QUOTE_AGE:.0f})")
     else:
         gap = abs(request.limit_price / price.last - 1)
         f.add("price check", gap <= limits.max_price_deviation, f"limit {request.limit_price:,.2f} is {gap:.1%} from the live price {price.last:,.2f} (limit {limits.max_price_deviation:.0%})")
@@ -122,7 +128,9 @@ class Tokens:
 
     def _save(self, data: dict[str, Any]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        os.replace(tmp, self._path)
 
     @staticmethod
     def _hash(token: str) -> str:

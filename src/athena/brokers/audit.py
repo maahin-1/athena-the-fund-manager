@@ -50,6 +50,12 @@ class AuditLog:
         return seq, prev
 
     def append(self, event: str, **data: Any) -> dict[str, Any]:
+        from athena.brokers.lock import exclusive
+
+        with exclusive(self.path.with_suffix(".lock")):  # reading the tail and writing the next line are one step
+            return self._append(event, data)
+
+    def _append(self, event: str, data: dict[str, Any]) -> dict[str, Any]:
         seq, prev = self._last()
         body = {"seq": seq + 1, "at": self._clock().isoformat(timespec="seconds"), "event": event, "data": redact(data), "prev": prev}
         row = {**body, "hash": _digest(prev, {k: body[k] for k in ("seq", "at", "event", "data")})}

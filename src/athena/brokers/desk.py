@@ -16,6 +16,7 @@ from typing import Any
 from athena.brokers import safety
 from athena.brokers.audit import AuditLog, redact
 from athena.brokers.model import Broker, Findings, Order, OrderRequest, Price
+from athena.brokers.lock import exclusive
 from athena.costs import model as costs
 
 QuoteSource = Callable[[str, str], Price | None]
@@ -64,6 +65,7 @@ class Desk:
     ):
         self.broker, self.limits, self._quote, self._clock, self._kill = broker, limits, quote, clock, kill_path
         self.audit = audit or AuditLog()
+        self._lock = Path(kill_path).parent / "desk.lock"
         self.tokens = tokens or safety.Tokens(clock=clock)
         self._charges = charges if charges is not None else costs.load()
 
@@ -84,6 +86,10 @@ class Desk:
         return view
 
     def confirm(self, token: str) -> Order:
+        with exclusive(self._lock):  # redeeming, checking, placing and logging are one step: a second confirm waits for this one
+            return self._confirm(token)
+
+    def _confirm(self, token: str) -> Order:
         request, why = self.tokens.redeem(token)
         if request is None:
             self.audit.append("confirm_refused", why=why)

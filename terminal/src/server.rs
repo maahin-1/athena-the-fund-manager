@@ -68,6 +68,11 @@ pub fn host_ok(host: Option<&str>, port: u16) -> bool {
     matches!(host, Some(h) if h == format!("127.0.0.1:{port}") || h == format!("localhost:{port}"))
 }
 
+/// `Sec-Fetch-Site` as a browser sets it: absent for a tool that is not a browser; `same-origin` for this page's own requests; `none` for one the person typed. Anything else is another site.
+pub fn fetch_site_ok(value: Option<&str>) -> bool {
+    matches!(value, None | Some("same-origin") | Some("none"))
+}
+
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|v| v.to_str().ok())
 }
@@ -81,13 +86,17 @@ async fn guard(State(state): State<AppState>, request: Request, next: Next) -> R
         let origin = header(headers, "origin");
         let origin_fine = match origin {
             Some(_) => origin_ok(origin, state.port),
-            None => path != "/ws",
+            // a same-origin GET carries no Origin; a request a web page makes to us from another site says so in Sec-Fetch-Site (a blind `<img src>` to a route that costs model credits)
+            None => path != "/ws" && fetch_site_ok(header(headers, "sec-fetch-site")),
         };
         if !origin_fine || !host_ok(header(headers, "host"), state.port) {
             return StatusCode::FORBIDDEN.into_response();
         }
     }
-    next.run(request).await
+    let mut response = next.run(request).await;
+    response.headers_mut().insert("content-security-policy", axum::http::HeaderValue::from_static("frame-ancestors 'none'"));
+    response.headers_mut().insert("x-content-type-options", axum::http::HeaderValue::from_static("nosniff"));
+    response
 }
 
 fn status_json(status: &FeedStatus) -> serde_json::Value {
@@ -101,6 +110,7 @@ fn status_json(status: &FeedStatus) -> serde_json::Value {
 async fn api_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     let mut v = status_json(&state.status.borrow());
     v["clients"] = state.hub.client_count().into();
+    v["live"] = state.live_derivs.into(); // false under the fake feed, whose quotes look like the stream's: an order desk must not price from them
     // how late the broker's ticks arrive: receipt time less the exchange's own time on the tick, over the recent ticks (null before any tick)
     v["stream_lag_ms"] = serde_json::to_value(state.hub.lag()).unwrap_or(serde_json::Value::Null);
     Json(v)
@@ -116,7 +126,8 @@ struct BarsQuery {
 }
 
 fn symbol_ok(symbol: &str) -> bool {
-    !symbol.is_empty() && symbol.len() <= 24 && symbol.chars().all(|c| c.is_ascii_alphanumeric() || " &-^".contains(c))
+    // the first character is a letter, a digit or the `^` of an index: never `-`, which a command line would read as a flag
+    symbol.chars().next().is_some_and(|c| c.is_ascii_alphanumeric() || c == '^') && symbol.len() <= 24 && symbol.chars().all(|c| c.is_ascii_alphanumeric() || " &-^".contains(c))
 }
 
 /// `note` followed by the sentence for each joined earlier symbol.
@@ -878,6 +889,22 @@ mod tests {
         assert!(!origin_ok(Some("http://evil.test"), 8700));
         assert!(!origin_ok(Some("http://127.0.0.1:9999"), 8700));
         assert!(!origin_ok(None, 8700));
+    }
+
+    #[test]
+    fn a_request_with_no_origin_is_accepted_only_if_it_is_not_from_another_site() {
+        assert!(fetch_site_ok(None) && fetch_site_ok(Some("same-origin")) && fetch_site_ok(Some("none")));
+        assert!(!fetch_site_ok(Some("cross-site")) && !fetch_site_ok(Some("same-site")));
+    }
+
+    #[test]
+    fn a_symbol_never_starts_like_a_command_line_flag() {
+        for good in ["SBIN", "M&M", "NIFTY 50", "^NSEI", "BAJAJ-AUTO", "3MINDIA"] {
+            assert!(symbol_ok(good), "{good}");
+        }
+        for bad in ["", "-h", "--version", " X", "A;B", "../x"] {
+            assert!(!symbol_ok(bad), "{bad}");
+        }
         assert!(host_ok(Some("127.0.0.1:8700"), 8700));
         assert!(host_ok(Some("localhost:8700"), 8700));
         assert!(!host_ok(Some("evil.test:8700"), 8700));
