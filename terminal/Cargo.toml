@@ -2,6 +2,7 @@
 name = "athena-terminal"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Athena terminal: local server that holds the live price feed and pushes it to a docked page"
 
 [dependencies]

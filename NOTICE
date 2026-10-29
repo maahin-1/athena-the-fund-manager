@@ -1,5 +1,4 @@
 Athena: open-source AI fund manager and stock research terminal
-Copyright 2026 maahin-1
+Copyright (c) 2026 maahin-1. MIT License (see LICENSE).
 
-This product includes software developed by maahin-1 (https://github.com/maahin-1/athena-the-fund-manager).
-Industry benchmark data referenced by the valuation layer is published by Aswath Damodaran (NYU Stern) and is not redistributed here.
+Third-party data: industry benchmark data referenced by the valuation layer is published by Aswath Damodaran (NYU Stern) and is not redistributed here.

@@ -1,6 +1,6 @@
 # Athena: open-source AI fund manager and stock research terminal for the Indian stock market (NSE)
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Rust](https://img.shields.io/badge/rust-axum-000000?logo=rust)
 ![TypeScript](https://img.shields.io/badge/typescript-web%20terminal-3178C6?logo=typescript&logoColor=white)
@@ -134,6 +134,10 @@ scripts\terminal.ps1          # live prices (needs Angel One settings)
 scripts\terminal.ps1 -Fake    # deterministic fake prices, no broker needed
 ```
 
+**The data keeps itself fresh while the terminal is open.** Starting the terminal also starts one background supervisor (`athena.ops.supervisor`) that runs each data job when it is due: prices, derivatives, the event calendar, index membership, statements, shareholding, documents, annual-report history, the valuation snapshot and the health checks. One job runs at a time, a job that fails or is refused waits and tries again, and everything stops when the terminal closes. Nothing is registered with the operating system. `python -m athena.ops.supervisor --list` shows when each job last ran; `.athena/jobs.json` switches a job off or changes its gap; `terminal --no-jobs` turns the supervisor off. Without the terminal, `python -m athena.ops.supervisor` does the same.
+
+**Brokers.** Paper trading is the default. Real orders work through Groww, Zerodha, Angel One, ICICI Direct and Upstox behind one desk with limits, a kill switch, a signed audit log and a confirmation typed at a console; none has been tried with a real account yet. See [docs/brokers/README.md](docs/brokers/README.md).
+
 The older Streamlit dashboard also still runs:
 
 ```powershell
@@ -206,7 +210,7 @@ Athena is a working research tool, still at the research stage.
 Athena is an open-source, self-hosted AI fund manager and research terminal for the Indian stock market. Several specialist LLM agents analyse a stock from figures computed in code. A council resolves their disagreements, and the result is shown in a live trading terminal with charts, an options chain and a screener.
 
 ### Is Athena free?
-Yes. The code is open source under Apache-2.0 and the market data comes from free public sources. The only costs are optional LLM API calls, and the free NVIDIA NIM and OpenRouter tiers work.
+Yes. The code is open source under the MIT licence and the market data comes from free public sources. The only costs are optional LLM API calls, and the free NVIDIA NIM and OpenRouter tiers work.
 
 ### Does Athena trade automatically or place orders?
 No. The broker connection only reads market data. Athena produces research verdicts; any trade is placed by a person, elsewhere.
@@ -236,6 +240,6 @@ Athena is a personal research and educational project. It is **not** investment 
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2026 maahin-1.
+Licensed under the [MIT License](LICENSE). Copyright (c) 2026 maahin-1. Versions published before the change to MIT were released under Apache-2.0, and a copy received then stays under those terms.
 
 *Keywords: AI fund manager, AI stock analysis, LLM trading agents, multi-agent investment research, Indian stock market, NSE, Nifty 50, stock screener, options chain, Greeks, Bloomberg terminal alternative, Angel One SmartAPI, XBRL fundamentals, discounted cash flow valuation, DuckDB, Rust, TypeScript, open source.*
