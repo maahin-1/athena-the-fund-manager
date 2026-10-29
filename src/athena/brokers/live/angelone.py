@@ -144,6 +144,7 @@ class AngelOneBroker(LiveBroker):
                     self._jwt = login(s["ANGEL_API_KEY"], s["ANGEL_CLIENT_CODE"], s["ANGEL_PIN"], s["ANGEL_TOTP_SECRET"]).jwt_token
                 except (AthenaError, KeyError) as exc:
                     raise BrokerApiError(f"angelone login failed: {exc}") from None
+            self._jwt = self._jwt.strip().removeprefix("Bearer ").strip()  # the SDK hands the token back already prefixed with "Bearer " (found on the first real login); the header adds its own
             if not self._jwt:
                 raise BrokerApiError("angelone login gave no token")
         return self._jwt

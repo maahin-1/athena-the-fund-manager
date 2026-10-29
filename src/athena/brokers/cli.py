@@ -6,7 +6,7 @@
     python -m athena.brokers book | orders | settle | cancel ORDER_ID  funds and holdings, the order list, look at open orders again, cancel one
     python -m athena.brokers kill | resume                             switch trading off (and cancel what is open) or back on
     python -m athena.brokers audit [--verify]                          the log of everything the desk did
-    python -m athena.brokers check                                     (live broker) log in and read the funds, to prove the settings work; places nothing
+    python -m athena.brokers check [--broker KEY]                      (live broker) log in and read the funds, to prove the settings work; places nothing
     python -m athena.brokers unresolved | resolve ID                  (live broker) orders sent whose answer was lost; a person clears one after looking at the broker's list
     python -m athena.brokers pin-limits                                a person accepts the limits file as it is now (any later edit un-pins it)
 
@@ -58,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("cancel").add_argument("order_id")
     sub.add_parser("kill")
     sub.add_parser("resume")
-    sub.add_parser("check")
+    sub.add_parser("check").add_argument("--broker", default="", help="log in to this broker (groww, zerodha, angelone, icici, upstox) even when the mode is paper; reads the funds and places nothing")
     sub.add_parser("pin-limits")
     sub.add_parser("resolve").add_argument("client_order_id")
     sub.add_parser("unresolved")
@@ -88,6 +88,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("pinned: any later edit of the limits file stops real orders until it is pinned again")
         return 0
     try:
+        if args.cmd == "check" and args.broker:
+            print(live.build(args.broker).ping())
+            return 0
         desk, broker = _desk()
         if args.cmd == "check":
             if not getattr(broker, "live", False):

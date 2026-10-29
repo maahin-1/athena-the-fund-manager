@@ -214,3 +214,17 @@ def test_unknown_status_on_a_hand_placed_row_is_skipped(tmp_path):
 def test_complete_with_a_different_filled_quantity_raises(tmp_path):
     with pytest.raises(BrokerApiError, match="filled quantity"):
         make(tmp_path, Fake(getOrderBook=ok([row(orderstatus="complete", filledshares="3", averageprice=100.5)]))).orders()
+
+
+def test_a_token_the_sdk_already_prefixed_with_bearer_is_not_prefixed_twice():
+    from athena.brokers.live.angelone import AngelOneBroker
+
+    sent = []
+
+    def transport(method, url, headers=None, params=None, json=None, data=None):
+        sent.append(headers["Authorization"])
+        return 200, {"status": True, "data": {"availablecash": "1000.50"}}
+
+    broker = AngelOneBroker(settings={"ANGEL_API_KEY": "k", "ANGEL_CLIENT_CODE": "c", "ANGEL_PIN": "p", "ANGEL_TOTP_SECRET": "s"}, transport=transport, login_fn=lambda: "Bearer abc.def.ghi")
+    assert broker.funds().cash == 1000.5
+    assert sent == ["Bearer abc.def.ghi"]
