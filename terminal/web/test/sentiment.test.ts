@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseCommand } from '../src/command';
 import { SentimentView } from '../src/sentiment';
-import { readSentiment, safeLink, sentimentProblem, toneClass, visibleNews } from '../src/sentimentlogic';
+import { citation, readSentiment, safeLink, sentimentProblem, statusClass, toneClass, visibleNews } from '../src/sentimentlogic';
 
 const doc = (over: Record<string, unknown> = {}) => ({
   symbol: 'TCS', company: 'Tata Consultancy Services Limited', as_of: '2026-10-23', window_days: 30,
@@ -135,5 +135,63 @@ describe('the Sentiment view', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     await new Promise((r) => setTimeout(r));
     expect(chosen).toEqual(['SBIN']);
+  });
+});
+
+describe('sources, tiers and citations', () => {
+  const withEvidence = () =>
+    doc({
+      news: {
+        items: [
+          { date: '2026-10-22', published: '2026-10-22T06:30:00+00:00', first_seen: '2026-10-22T07:00:00+00:00', publisher: 'Mint', source: 'publisher feed', source_id: 'mint_markets', tier: 'B', title: 'Deal', link: 'https://x/1', routine: false, used: true },
+          { date: '2026-10-22', publisher: 'Blog', source: 'publisher feed', source_id: 'blog', tier: 'Z', title: 'Odd tier', link: '', routine: false, used: true },
+        ],
+        notes: [], counts: { all: 2, used: 2, routine: 0, press: 2 },
+      },
+      market: [{ date: '2026-10-22', publisher: 'SEBI', source_id: 'sebi', tier: 'A', title: 'Order', link: 'javascript:1' }],
+      sources: [
+        { id: 'mint_markets', name: 'Mint', kind: 'press', tier: 'B', status: 'ok', reason: '', held: 35, newest: '2026-10-22T06:30:00', rows_here: 1 },
+        { id: 'moneycontrol', name: 'Moneycontrol', kind: 'press', tier: 'B', status: 'off', reason: 'stopped updating on 2024-04-23', held: 0, newest: '', rows_here: 0 },
+      ],
+    });
+
+  it('reads the citation fields, treats an unknown tier as the least trusted and drops an unsafe market link', () => {
+    const got = readSentiment(withEvidence())!;
+    expect(got.news.items[0]).toMatchObject({ sourceId: 'mint_markets', tier: 'B', published: '2026-10-22T06:30:00+00:00', firstSeen: '2026-10-22T07:00:00+00:00' });
+    expect(got.news.items[1].tier).toBe('C');
+    expect(got.market[0]).toMatchObject({ tier: 'A', link: '' });
+    expect(got.sources[1]).toMatchObject({ status: 'off', reason: 'stopped updating on 2024-04-23' });
+  });
+
+  it('is still readable from a server that sends none of it', () => {
+    const got = readSentiment(doc())!;
+    expect(got.market).toEqual([]);
+    expect(got.sources).toEqual([]);
+    expect(got.news.items[0].tier).toBe('C');
+  });
+
+  it('filters rows to one source and describes a row by its citation', () => {
+    const got = readSentiment(withEvidence())!;
+    expect(visibleNews(got.news.items, false, 'mint_markets').map((r) => r.title)).toEqual(['Deal']);
+    expect(visibleNews(got.news.items, false, '').length).toBe(2);
+    expect(citation(got.news.items[0])).toContain('Mint, tier B (a starting estimate, not a measured record); published 2026-10-22 06:30 UTC; first seen 2026-10-22 07:00 UTC');
+    expect(statusClass('ok')).toBe('up');
+    expect(statusClass('off')).toBe('flat');
+    expect(statusClass('failed')).toBe('dn');
+    expect(statusClass('stale')).toBe('dn');
+  });
+
+  it('shows each source as a chip, says why one is off, and filters when a chip is chosen', async () => {
+    const view = new SentimentView({ onSymbol() {} }, (async () => ({ ok: true, status: 200, json: async () => withEvidence() })) as unknown as typeof fetch);
+    document.body.append(view.element);
+    view.show('TCS');
+    await new Promise((r) => setTimeout(r, 0));
+    const chips = [...view.element.querySelectorAll('.sent-sources .chip')] as HTMLButtonElement[];
+    expect(chips.map((c) => c.textContent)).toEqual(['Mint · B · 1', 'Moneycontrol · B · 0']);
+    expect(chips[1].disabled).toBe(true);
+    expect(view.element.textContent).toContain('stopped updating on 2024-04-23');
+    expect(view.element.querySelectorAll('.sent-news tr').length).toBe(3); // two news rows and one market row
+    chips[0].click();
+    expect(view.element.querySelectorAll('.sent-news tr').length).toBe(2); // one news row and the market row
   });
 });

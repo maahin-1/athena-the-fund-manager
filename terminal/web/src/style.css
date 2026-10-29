@@ -706,3 +706,11 @@ abbr.fact { text-decoration: underline dotted; cursor: help; }
 .sent-tone { border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; margin: 6px 0; background: var(--bg-panel); }
 .sent-post { border-bottom: 1px solid var(--border); padding: 4px 0; }
 .sent-caveat { margin-top: 12px; }
+.sent-sources { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; align-items: center; }
+.sent-sources > .note { flex-basis: 100%; }
+.sent-sources .chip { background: transparent; cursor: pointer; font-family: inherit; }
+.sent-sources .chip:disabled { opacity: 0.45; cursor: default; }
+.sent-sources .chip.chosen { background: var(--bg-panel); font-weight: 600; }
+.tier { font-weight: 600; text-align: center; }
+.tier-A { color: var(--up); }
+.tier-C { color: var(--label); }

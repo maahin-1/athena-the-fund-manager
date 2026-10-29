@@ -1,12 +1,41 @@
 /** The Sentiment page's document (see `athena.sentiment.page`): read from the server, never trusted for its shape. Pure. */
 export interface NewsRow {
   date: string;
+  /** When it was published and when we first saw it (ISO), the citation's times; empty for a row the older path found. */
+  published: string;
+  firstSeen: string;
   publisher: string;
   source: string;
+  /** Which source gave it (a registry id), and its starting trust tier: A the exchange or a regulator, B an established publisher, C anything else. */
+  sourceId: string;
+  tier: string;
   title: string;
   link: string;
   routine: boolean;
   used: boolean;
+}
+
+/** A regulator or policy item (SEBI, RBI): about the market, not matched to a company. */
+export interface MarketRow {
+  date: string;
+  publisher: string;
+  sourceId: string;
+  tier: string;
+  title: string;
+  link: string;
+}
+
+/** One source and how it is doing. `status` is ok, stale, empty, failed, off or never tried; `reason` says why it is not ok. */
+export interface SourceRow {
+  id: string;
+  name: string;
+  kind: string;
+  tier: string;
+  status: string;
+  reason: string;
+  held: number;
+  newest: string;
+  rowsHere: number;
 }
 
 export interface PostRow {
@@ -32,11 +61,15 @@ export interface SentimentDoc {
   asOf: string;
   windowDays: number;
   news: { items: NewsRow[]; notes: string[]; counts: { all: number; used: number; routine: number; press: number } };
+  market: MarketRow[];
+  sources: SourceRow[];
   social: { enabled: boolean; notes: string[]; items: PostRow[]; bySubreddit: Record<string, number> };
   tone: Tone | null;
   caveat: string;
 }
 
+/** A tier is A, B or C; anything else is read as C (the least trusted), never as more. */
+const tierOf = (v: unknown): string => (v === 'A' || v === 'B' ? v : 'C');
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -47,7 +80,16 @@ export const safeLink = (v: unknown): string => (typeof v === 'string' && /^http
 export function readSentiment(raw: unknown): SentimentDoc | null {
   if (!isObject(raw) || typeof raw.symbol !== 'string' || !isObject(raw.news) || !isObject(raw.social)) return null;
   const items = (Array.isArray(raw.news.items) ? raw.news.items : []).filter(isObject).map(
-    (r): NewsRow => ({ date: str(r.date), publisher: str(r.publisher), source: str(r.source), title: str(r.title), link: safeLink(r.link), routine: r.routine === true, used: r.used === true }),
+    (r): NewsRow => ({
+      date: str(r.date), published: str(r.published), firstSeen: str(r.first_seen), publisher: str(r.publisher), source: str(r.source), sourceId: str(r.source_id), tier: tierOf(r.tier),
+      title: str(r.title), link: safeLink(r.link), routine: r.routine === true, used: r.used === true,
+    }),
+  );
+  const market = (Array.isArray(raw.market) ? raw.market : []).filter(isObject).map(
+    (r): MarketRow => ({ date: str(r.date), publisher: str(r.publisher), sourceId: str(r.source_id), tier: tierOf(r.tier), title: str(r.title), link: safeLink(r.link) }),
+  );
+  const sources = (Array.isArray(raw.sources) ? raw.sources : []).filter(isObject).map(
+    (r): SourceRow => ({ id: str(r.id), name: str(r.name), kind: str(r.kind), tier: tierOf(r.tier), status: str(r.status) || 'never tried', reason: str(r.reason), held: num(r.held), newest: str(r.newest), rowsHere: num(r.rows_here) }),
   );
   const posts = (Array.isArray(raw.social.items) ? raw.social.items : []).filter(isObject).map(
     (r): PostRow => ({ date: str(r.date), subreddit: str(r.subreddit), title: str(r.title), snippet: str(r.snippet), score: num(r.score), comments: num(r.comments), link: safeLink(r.link) }),
@@ -58,6 +100,7 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
   return {
     symbol: raw.symbol, company: str(raw.company), asOf: str(raw.as_of), windowDays: num(raw.window_days) || 30,
     news: { items, notes: strings(raw.news.notes), counts: { all: num(counts.all), used: num(counts.used), routine: num(counts.routine), press: num(counts.press) } },
+    market, sources,
     social: { enabled: raw.social.enabled === true, notes: strings(raw.social.notes), items: posts, bySubreddit: by },
     tone: tone && tone.signal ? tone : null,
     caveat: str(raw.caveat),
@@ -65,7 +108,20 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
 }
 
 /** The news rows to show: all of them, or only those the analysts would use (not a routine filing, and a press item that names the company). */
-export const visibleNews = (items: readonly NewsRow[], onlyUsed: boolean): NewsRow[] => (onlyUsed ? items.filter((r) => r.used) : [...items]);
+export const visibleNews = (items: readonly NewsRow[], onlyUsed: boolean, sourceId = ''): NewsRow[] =>
+  items.filter((r) => (!onlyUsed || r.used) && (!sourceId || r.sourceId === sourceId));
+
+/** How a source's status is shown: ok is plain, anything the person should know about is flagged. */
+export const statusClass = (status: string): 'up' | 'dn' | 'flat' => (status === 'ok' ? 'up' : status === 'off' || status === 'never tried' ? 'flat' : 'dn');
+
+/** The citation under a row: where it came from, how far to trust the source to begin with, and when it was published and first seen. */
+export function citation(r: Pick<NewsRow, 'publisher' | 'tier' | 'published' | 'firstSeen'>): string {
+  const when = (iso: string) => (iso ? iso.slice(0, 16).replace('T', ' ') : '');
+  const parts = [`${r.publisher}, tier ${r.tier} (a starting estimate, not a measured record)`];
+  if (r.published) parts.push(`published ${when(r.published)} UTC`);
+  if (r.firstSeen) parts.push(`first seen ${when(r.firstSeen)} UTC`);
+  return parts.join('; ');
+}
 
 export function toneClass(signal: string): 'up' | 'dn' | 'flat' {
   return signal === 'bullish' ? 'up' : signal === 'bearish' ? 'dn' : 'flat';

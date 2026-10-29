@@ -1,5 +1,5 @@
 import { el } from './panels/base';
-import { readSentiment, sentimentProblem, toneClass, visibleNews, type SentimentDoc } from './sentimentlogic';
+import { citation, readSentiment, sentimentProblem, statusClass, toneClass, visibleNews, type SentimentDoc } from './sentimentlogic';
 
 export interface SentimentHost {
   /** The symbol the user chose here, for the other pages to follow. */
@@ -21,6 +21,8 @@ export class SentimentView {
   private symbol = '';
   private doc: SentimentDoc | null = null;
   private token = 0;
+  /** A source chosen from the Sources list: only its rows are shown. */
+  private sourceId = '';
 
   constructor(private host: SentimentHost, private fetcher: typeof fetch = (...a) => fetch(...a)) {
     this.element.hidden = true;
@@ -95,6 +97,26 @@ export class SentimentView {
     }
   }
 
+  /** Every source as a chip: its tier, whether it is working, and how many rows it gave for this stock. A chip filters the list to that source; an off or failing one says why. */
+  private sourcesBox(d: SentimentDoc): HTMLElement {
+    const box = el('div', 'sent-sources');
+    box.append(text('div', 'note', 'Sources read for this page. Tier A: the exchange or a regulator; B: an established publisher; C: anything else. A tier is a starting estimate, not a measured record.'));
+    for (const s of d.sources) {
+      const chip = el('button', `chip ${statusClass(s.status)}${this.sourceId === s.id ? ' chosen' : ''}`, `${s.name} · ${s.tier} · ${s.rowsHere}`);
+      chip.type = 'button';
+      chip.title = `${s.status}${s.reason ? `: ${s.reason}` : ''}${s.held ? `; holds ${s.held} items` : ''}${s.newest ? `; newest ${s.newest.slice(0, 16).replace('T', ' ')} UTC` : ''}`;
+      chip.disabled = s.rowsHere === 0 && this.sourceId !== s.id;
+      chip.addEventListener('click', () => {
+        this.sourceId = this.sourceId === s.id ? '' : s.id;
+        this.paint();
+      });
+      box.append(chip);
+    }
+    const trouble = d.sources.filter((s) => s.status !== 'ok' && s.reason);
+    for (const s of trouble) box.append(text('div', 'note', `${s.name} (${s.id}): ${s.status}. ${s.reason}`));
+    return box;
+  }
+
   private paint(): void {
     const d = this.doc;
     if (!d) return;
@@ -112,13 +134,16 @@ export class SentimentView {
     }
 
     out.push(text('div', 'sent-section', 'News and exchange filings'));
-    const rows = visibleNews(d.news.items, this.onlyUsed.checked);
+    if (d.sources.length) out.push(this.sourcesBox(d));
+    const rows = visibleNews(d.news.items, this.onlyUsed.checked, this.sourceId);
+    if (this.sourceId) out.push(text('div', 'note', `Showing only ${this.sourceId}. Choose it again in the list above to show everything.`));
     if (rows.length === 0) out.push(text('div', 'note', 'Nothing in this window.'));
     const table = el('table', 'stable sent-news');
     for (const r of rows) {
       const tr = el('tr');
       tr.dataset.source = r.source;
-      tr.append(el('td', '', r.date), el('td', '', r.source === 'nse' ? 'filing' : 'press'), el('td', '', r.publisher));
+      tr.append(el('td', '', r.date), el('td', '', r.source === 'nse' ? 'filing' : r.source === 'regulator' ? 'regulator' : 'press'), el('td', '', r.publisher), el('td', `tier tier-${r.tier}`, r.tier));
+      tr.title = citation(r);
       const title = el('td', 'sent-title');
       if (r.link) {
         const a = el('a', '', r.title);
@@ -131,6 +156,26 @@ export class SentimentView {
       table.append(tr);
     }
     if (rows.length) out.push(table);
+
+    if (d.market.length) {
+      out.push(text('div', 'sent-section', 'Market and policy (SEBI, RBI): about the market, not matched to this company'));
+      const market = el('table', 'stable sent-news');
+      for (const m of d.market) {
+        const tr = el('tr');
+        tr.append(el('td', '', m.date), el('td', '', m.publisher), el('td', `tier tier-${m.tier}`, m.tier));
+        const title = el('td', 'sent-title');
+        if (m.link) {
+          const a = el('a', '', m.title);
+          a.href = m.link;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          title.append(a);
+        } else title.textContent = m.title;
+        tr.append(title);
+        market.append(tr);
+      }
+      out.push(market);
+    }
 
     out.push(text('div', 'sent-section', 'Reddit'));
     for (const n of d.social.notes) out.push(text('div', 'note', n));
