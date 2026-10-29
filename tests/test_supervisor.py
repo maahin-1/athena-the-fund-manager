@@ -123,3 +123,9 @@ def test_the_standard_tasks_have_unique_names_and_the_fundamentals_jobs_take_the
 def test_describe_lists_every_task(tmp_path):
     lines = sup.describe({"tasks": {}}, {"disabled": ["annual_reports"]}, NOW)
     assert len(lines) == len(sup.TASKS) and any("switched off" in line for line in lines)
+
+
+def test_a_jobs_file_written_with_a_byte_order_mark_is_still_read(tmp_path):
+    p = tmp_path / "jobs.json"
+    p.write_bytes(b"\xef\xbb\xbf" + json.dumps({"disabled": ["a"]}).encode())
+    assert sup.load_config(p) == {"disabled": ["a"]}

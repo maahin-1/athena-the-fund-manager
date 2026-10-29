@@ -56,6 +56,11 @@ def weekdays(first: date, last: date) -> list[date]:
     return out
 
 
+def snapshot_path(path: str | Path) -> Path:
+    """`.athena/warehouse.duckdb` -> `.athena/warehouse.snap.duckdb`."""
+    return Path(path).with_suffix(".snap.duckdb")
+
+
 def _open(path: str | Path, read_only: bool, wait_seconds: float, sleep: Callable[[float], None]) -> duckdb.DuckDBPyConnection:
     """DuckDB lets one process write, or many read, never both. A process that finds the file in use for the other purpose waits
     and tries again for up to `wait_seconds` (a long job holds the file only for its short writes), then raises."""
@@ -64,6 +69,11 @@ def _open(path: str | Path, read_only: bool, wait_seconds: float, sleep: Callabl
         try:
             return duckdb.connect(str(path), read_only=read_only)
         except duckdb.IOException:
+            if read_only and snapshot_path(path).is_file():  # a long job is writing: read the copy it saved when it began, at once rather than after waiting (see athena.ops.snapshot)
+                try:
+                    return duckdb.connect(str(snapshot_path(path)), read_only=True)
+                except duckdb.IOException:
+                    pass
             if waited >= wait_seconds:
                 raise
             sleep(1.0)

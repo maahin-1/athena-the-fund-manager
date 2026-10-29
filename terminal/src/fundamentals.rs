@@ -8,7 +8,6 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
-
 use duckdb::{AccessMode, Config, Connection};
 use serde_json::{json, Value};
 use tokio::process::Command;
@@ -115,8 +114,7 @@ impl FundamentalsJobs {
 
     /// Every stock's last close and the day it is from, straight from the warehouse; `None` when the file cannot be opened. A missing, zero or non-finite close is left out.
     fn read_closes(&self) -> Option<HashMap<String, (f64, String)>> {
-        let config = Config::default().access_mode(AccessMode::ReadOnly).ok()?;
-        let conn = Connection::open_with_flags(&self.warehouse, config).ok()?;
+        let conn = crate::snapshot::open_read_only(&self.warehouse).ok()?;
         let mut stmt = conn.prepare("SELECT symbol, close, CAST(data_as_of AS VARCHAR) FROM screen").ok()?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<f64>>(1)?, r.get::<_, Option<String>>(2)?))).ok()?;
         let mut out = HashMap::new();

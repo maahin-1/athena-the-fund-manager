@@ -3,7 +3,8 @@
 use std::path::Path;
 
 use chrono::NaiveDate;
-use duckdb::{AccessMode, Config, Connection};
+#[cfg(test)]
+use duckdb::Connection;
 use serde_json::{json, Value};
 
 pub const MAX_DAYS: i64 = 366;
@@ -83,8 +84,7 @@ pub fn calendar(path: &Path, from: &str, to: &str) -> Result<Value, CalendarErro
     if end < start || (end - start).num_days() > MAX_DAYS {
         return Err(CalendarError::BadRange);
     }
-    let config = Config::default().access_mode(AccessMode::ReadOnly).map_err(|_| CalendarError::Busy)?;
-    let conn = Connection::open_with_flags(path, config).map_err(|_| CalendarError::Busy)?;
+    let conn = crate::snapshot::open_read_only(path).map_err(|_| CalendarError::Busy)?;
     let (from, to) = (start.to_string(), end.to_string());
 
     let events: Vec<Value> = conn

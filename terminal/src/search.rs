@@ -6,7 +6,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use duckdb::{AccessMode, Config, Connection};
 use serde::Serialize;
 
 /// How many renames back an old symbol is followed (the price join and the statements follow the same number).
@@ -225,8 +224,7 @@ fn old_symbols(earlier: &HashMap<&str, Vec<&str>>, symbol: &str) -> Vec<String> 
 }
 
 fn load(path: &Path, live_indices: &[String]) -> Option<SearchIndex> {
-    let config = Config::default().access_mode(AccessMode::ReadOnly).ok()?;
-    let conn = Connection::open_with_flags(path, config).ok()?;
+    let conn = crate::snapshot::open_read_only(path).ok()?;
     let mut stmt = conn
         .prepare("SELECT u.symbol, u.kind, COALESCE(u.name, ''), COALESCE(u.isin, ''), COALESCE(s.traded_value_cr, 0) FROM universe u LEFT JOIN screen s ON s.symbol = u.symbol")
         .ok()?;

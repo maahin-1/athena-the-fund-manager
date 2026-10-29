@@ -23,6 +23,7 @@ mod poll;
 mod pyind;
 mod quote;
 mod server;
+mod snapshot;
 mod totp;
 mod verdict_job;
 

@@ -2,7 +2,7 @@
 //! Everything here is stored data, so it works whether or not the market is open. The file is opened read-only for each request.
 use std::path::Path;
 
-use duckdb::{AccessMode, Config, Connection, OptionalExt};
+use duckdb::{Connection, OptionalExt};
 use serde_json::{json, Map, Value};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -11,8 +11,7 @@ pub enum AnalysisError {
 }
 
 fn connect(path: &Path) -> Result<Connection, AnalysisError> {
-    let config = Config::default().access_mode(AccessMode::ReadOnly).map_err(|_| AnalysisError::Busy)?;
-    Connection::open_with_flags(path, config).map_err(|_| AnalysisError::Busy)
+    crate::snapshot::open_read_only(path).map_err(|_| AnalysisError::Busy)
 }
 
 /// The columns of the `screen` table the page shows, in order.

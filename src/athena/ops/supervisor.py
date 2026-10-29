@@ -88,7 +88,7 @@ def save_state(state: dict[str, Any], path: Path = STATE_PATH) -> None:
 def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
     """The person's own file; a bad file is ignored (the jobs run with their defaults) rather than stopping the data from updating."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))  # utf-8-sig: Windows tools write a byte-order mark, which plain utf-8 reads as bad JSON
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -155,6 +155,13 @@ class Supervisor:
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
         return subprocess.Popen([sys.executable, "-u", "-m", *task.argv], stdout=_log_file(task.name), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, creationflags=flags, env=env)
 
+    @staticmethod
+    def _snapshot() -> None:
+        """Save the warehouse as it is before a job that writes it begins, so charts and pages read the copy while the job holds the real file (see athena.ops.snapshot)."""
+        from athena.ops import snapshot
+
+        snapshot.refresh(snapshot.WAREHOUSE)
+
     def parent_gone(self) -> bool:
         return self.parent_pid > 0 and not self._alive(self.parent_pid)
 
@@ -167,6 +174,8 @@ class Supervisor:
         except JobLocked:
             return 6
         code = 1
+        if "writer:warehouse.duckdb" in task.locks:
+            self._snapshot()
         try:
             proc = self._spawn(task)
             started = time.monotonic()

@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use duckdb::{AccessMode, Config, Connection};
+use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -36,8 +36,7 @@ pub fn is_index_name(symbol: &str) -> bool {
 
 /// Newest `limit` daily bars, oldest first. A stock reads `bars`; an index name reads `index_bars` (matched ignoring case).
 pub fn daily_bars(path: &Path, symbol: &str, limit: usize) -> Result<Vec<Bar>, BarsError> {
-    let config = Config::default().access_mode(AccessMode::ReadOnly).map_err(|_| BarsError::Busy)?;
-    let conn = Connection::open_with_flags(path, config).map_err(|_| BarsError::Busy)?;
+    let conn = crate::snapshot::open_read_only(path).map_err(|_| BarsError::Busy)?;
     let sql = if is_index_name(symbol) {
         "SELECT CAST(epoch(CAST(day AS TIMESTAMP)) AS BIGINT), open, high, low, close, 0.0 FROM index_bars WHERE lower(index_name) = lower(?) ORDER BY day DESC LIMIT ?"
     } else {
@@ -316,8 +315,7 @@ pub fn daily_bars_joined(path: &Path, symbol: &str, limit: usize) -> Result<(Vec
     if is_index_name(symbol) || bars.len() >= limit || bars.is_empty() {
         return Ok((bars, Vec::new()));
     }
-    let config = Config::default().access_mode(AccessMode::ReadOnly).map_err(|_| BarsError::Busy)?;
-    let chain = Connection::open_with_flags(path, config).map(|conn| rename_chain(&conn, symbol)).unwrap_or_default();
+    let chain = crate::snapshot::open_read_only(path).map(|conn| rename_chain(&conn, symbol)).unwrap_or_default();
     let mut joined = Vec::new();
     for (step, last) in chain {
         let room = limit.saturating_sub(bars.len());
