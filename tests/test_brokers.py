@@ -153,7 +153,7 @@ def test_the_daily_order_count_the_deployed_cap_and_the_daily_loss_stop_new_orde
 
 
 def test_live_mode_needs_the_allow_list_and_a_live_adapter_and_there_is_none(tmp_path):
-    desk, _, _, _ = make(tmp_path, limits=safety.Limits(mode="live_delivery", allowlist=("TCS",)))
+    desk, _, _, _ = make(tmp_path, limits=safety.Limits(mode="live_delivery", broker="groww", allowlist=("TCS",)))
     assert rules(desk._findings(req())) == {"allowlist", "live broker"}
     assert rules(desk._findings(req(symbol="TCS"))) == {"live broker"}
 
@@ -207,12 +207,13 @@ def test_the_rules_are_checked_again_at_confirm_so_a_kill_switch_after_the_previ
 
 
 def test_the_live_mode_refuses_and_paper_mode_refuses_a_live_broker(tmp_path):
-    desk, _, _, _ = make(tmp_path, limits=safety.Limits(mode="live_delivery", allowlist=("SBIN",)))
+    desk, _, _, _ = make(tmp_path, limits=safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",)))
     assert not desk.preview(req()).ok  # no live adapter, so no token to confirm
     desk, broker, _, _ = make(tmp_path / "y")
     broker.live = True
     view = desk.preview(req())
-    with pytest.raises(Refused, match="paper but the broker is live"):
+    assert not view.ok and view.token == ""  # a live broker needs a pinned limits file, a signed log and a console, which paper mode never has
+    with pytest.raises(Refused):
         desk.confirm(view.token)
 
 
@@ -250,7 +251,7 @@ def test_the_audit_log_is_chained_and_an_edit_is_found(tmp_path):
     view = desk.preview(req())
     desk.confirm(view.token)
     log = AuditLog(tmp_path / "a.jsonl")
-    assert [r["event"] for r in log.rows()] == ["preview", "placed"] and log.verify() == (True, None)
+    assert [r["event"] for r in log.rows()] == ["preview", "placing", "placed"] and log.verify() == (True, None)
     text = (tmp_path / "a.jsonl").read_text(encoding="utf-8")
     (tmp_path / "a.jsonl").write_text(text.replace('"quantity": 5', '"quantity": 6', 1), encoding="utf-8")
     assert log.verify() == (False, 1)
@@ -269,8 +270,15 @@ def test_a_terminal_frame_gives_last_bid_and_ask_for_the_symbol_asked():
     assert frame_price({"type": "status"}, "SBIN") is None
 
 
-def test_the_registry_lists_the_big_brokers_and_says_none_is_checked_but_paper():
+def test_the_registry_matches_the_adapters_and_says_no_real_account_has_been_tried():
+    from importlib import import_module
+
+    from athena.brokers import live
+
     names = {b.key: b for b in registry.BROKERS}
-    assert {"groww", "zerodha", "angelone", "upstox", "dhan", "paper"} <= set(names)
-    assert [k for k, b in names.items() if b.checked] == ["paper"]
+    assert {"groww", "zerodha", "angelone", "icici", "upstox", "dhan", "paper"} <= set(names)
+    assert set(live.ADAPTERS) == {k for k, b in names.items() if b.docs_checked and k != "paper"}
+    assert [k for k, b in names.items() if b.live_tested] == ["paper"]  # change this only when an owner has sent a real order through an adapter
+    for key, (module, cls) in live.ADAPTERS.items():
+        assert tuple(names[key].settings) == getattr(import_module(module), cls).SETTINGS, key
     assert len(registry.describe()) == len(registry.BROKERS)

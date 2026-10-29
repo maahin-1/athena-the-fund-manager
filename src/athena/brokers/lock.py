@@ -21,6 +21,14 @@ class LockTimeout(Exception):
     pass
 
 
+def _just_made(lock: Path, seconds: float = 2.0) -> bool:
+    """A lock file made in the last moments: its owner may not have written its pid into it yet."""
+    try:
+        return time.time() - lock.stat().st_mtime < seconds
+    except OSError:
+        return False
+
+
 @contextmanager
 def exclusive(path: Path | str, wait: float = WAIT_SECONDS, poll: float = 0.05) -> Iterator[None]:
     lock = Path(path)
@@ -41,6 +49,8 @@ def exclusive(path: Path | str, wait: float = WAIT_SECONDS, poll: float = 0.05) 
                     pid = int(json.loads(lock.read_text(encoding="utf-8")).get("pid", 0))
                 except (OSError, ValueError):
                     pid = 0
+                if pid == 0 and _just_made(lock):
+                    pid = os.getpid()  # the owner has created the file and not yet written its pid: it is not gone
                 if pid != os.getpid() and not pid_alive(pid):
                     try:
                         lock.unlink()  # the owner is gone

@@ -9,6 +9,7 @@ preview, never for a looser limit. Every number has a conservative default, and 
   max_deployed         rupees held in shares after a buy
   max_daily_loss       once today's realised loss reaches this, no new order is allowed today
   max_price_deviation  a limit more than this share away from the live price is refused (a slipped decimal point)
+  broker               live_delivery only: which adapter (groww, zerodha, angelone, icici, upstox)
   allowlist            symbols a live order may name; empty means none (paper ignores it)
   trading hours        09:20 to 15:20 India time on weekdays; exchange holidays are not known here
 The kill switch is a file, `.athena/broker/KILL`: while it exists every order is refused. `python -m athena.brokers kill` creates it, `resume` removes it."""
@@ -51,6 +52,7 @@ class Limits:
     open_time: str = "09:20"
     close_time: str = "15:20"
     enforce_hours: bool = True
+    broker: str = ""  # live_delivery only: the key of the adapter in athena.brokers.live (groww, zerodha, angelone, icici, upstox)
 
     def __post_init__(self) -> None:
         if self.mode not in MODES:
@@ -60,6 +62,8 @@ class Limits:
                 raise LimitsError(f"{name} must be a number that is not negative")
         if not isinstance(self.max_orders_per_day, int) or self.max_orders_per_day < 0:
             raise LimitsError("max_orders_per_day must be a whole number that is not negative")
+        if self.mode == "live_delivery" and not self.broker:
+            raise LimitsError("mode live_delivery needs \"broker\": the adapter to use (groww, zerodha, angelone, icici or upstox)")
 
 
 def load_limits(path: Path | str = LIMITS_PATH) -> Limits:
@@ -92,10 +96,19 @@ def check(request: OrderRequest, broker: Broker, limits: Limits, price: Price | 
     placed = [o for o in broker.orders() if o.placed_at and datetime.fromisoformat(o.placed_at).astimezone(IST).date() == today]
     f.add("orders today", len(placed) < limits.max_orders_per_day, f"{len(placed)} placed today against a limit of {limits.max_orders_per_day}")
     lost = -sum(o.realised for o in placed if o.realised < 0)
-    f.add("daily loss", lost < limits.max_daily_loss if limits.max_daily_loss > 0 else lost == 0, f"Rs {lost:,.2f} realised loss today against a limit of Rs {limits.max_daily_loss:,.2f}")
+    if getattr(broker, "live", False):  # a real broker reports no realised result per order, so this rule would read Rs 0 for ever: say that it is not measured rather than pass it as if it were
+        f.add("daily loss", True, "not measured for a real broker (it reports no realised loss per order): watch your broker's own report; the order, count and deployed limits still apply")
+    else:
+        f.add("daily loss", lost < limits.max_daily_loss if limits.max_daily_loss > 0 else lost == 0, f"Rs {lost:,.2f} realised loss today against a limit of Rs {limits.max_daily_loss:,.2f}")
+    if request.side == "SELL" and getattr(broker, "live", False):  # long only: a real sale needs shares that are held and not already offered
+        held = sum(h.quantity for h in broker.holdings() if h.symbol == request.symbol)
+        offered = sum(o.request.quantity - o.filled_quantity for o in broker.orders() if o.status == "open" and o.request.side == "SELL" and o.request.symbol == request.symbol)
+        f.add("shares held", request.quantity <= held - offered, f"{held} held, {offered} already offered, this sale {request.quantity}")
     if request.side == "BUY":
         deployed = sum(h.quantity * h.average_price for h in broker.holdings())
         open_buys = sum(o.request.value for o in broker.orders() if o.status == "open" and o.request.side == "BUY")
+        if getattr(broker, "live", False):  # a buy filled today may not be in the holdings the broker reports yet: count it (counting it twice errs on the side of buying less)
+            open_buys += sum(o.average_price * o.filled_quantity for o in placed if o.status == "filled" and o.request.side == "BUY")
         after = deployed + open_buys + request.value
         f.add("deployed", after <= limits.max_deployed, f"Rs {after:,.2f} in shares after this buy against a limit of Rs {limits.max_deployed:,.2f}")
     if price is None:

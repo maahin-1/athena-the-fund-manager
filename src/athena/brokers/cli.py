@@ -1,4 +1,4 @@
-"""The order desk from a terminal. Paper trading only in this release; nothing here can reach a real broker.
+"""The order desk from a terminal. Paper trading by default; a real broker only when the limits file says `"mode": "live_delivery"` and names the `broker`, and then only with the prerequisites below.
 
     python -m athena.brokers brokers                                   which brokers Athena is meant to work with, and what is built
     python -m athena.brokers preview SBIN BUY 5 940.50 --reason "why"  check the order and, if allowed, print a one-time token
@@ -6,6 +6,11 @@
     python -m athena.brokers book | orders | settle | cancel ORDER_ID  funds and holdings, the order list, look at open orders again, cancel one
     python -m athena.brokers kill | resume                             switch trading off (and cancel what is open) or back on
     python -m athena.brokers audit [--verify]                          the log of everything the desk did
+    python -m athena.brokers check                                     (live broker) log in and read the funds, to prove the settings work; places nothing
+    python -m athena.brokers unresolved | resolve ID                  (live broker) orders sent whose answer was lost; a person clears one after looking at the broker's list
+    python -m athena.brokers pin-limits                                a person accepts the limits file as it is now (any later edit un-pins it)
+
+A real order also needs: the limits file pinned by a person, a signed audit log, and the order typed back at a console (not piped). See docs/brokers/README.md.
 
 The limits come from `.athena/broker.json`, edited by hand. The terminal must be running for live prices."""
 from __future__ import annotations
@@ -13,19 +18,26 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from typing import Any
 
-from athena.brokers import registry, safety
+from athena.brokers import human, live, registry, safety
 from athena.brokers.audit import AuditLog
 from athena.brokers.desk import BrokerError, Desk, Refused
 from athena.brokers.model import OrderError, OrderRequest
+from athena.brokers.live.base import BrokerApiError
 from athena.brokers.paper import PaperBroker
 from athena.brokers.quotes import terminal_quote
+from athena.contracts import AthenaError
 
 
-def _desk() -> tuple[Desk, PaperBroker]:
+def _desk() -> tuple[Desk, Any]:
     limits = safety.load_limits()
+    audit = AuditLog(key=human.audit_key())
+    if limits.mode == "live_delivery":
+        broker = live.build(limits.broker)
+        return Desk(broker, limits, terminal_quote, audit, human=human.console_confirm, limits_pinned=lambda: human.limits_pinned(safety.LIMITS_PATH)), broker
     broker = PaperBroker(terminal_quote)
-    return Desk(broker, limits, terminal_quote), broker
+    return Desk(broker, limits, terminal_quote, audit), broker
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -46,6 +58,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("cancel").add_argument("order_id")
     sub.add_parser("kill")
     sub.add_parser("resume")
+    sub.add_parser("check")
+    sub.add_parser("pin-limits")
+    sub.add_parser("resolve").add_argument("client_order_id")
+    sub.add_parser("unresolved")
     a = sub.add_parser("audit")
     a.add_argument("--verify", action="store_true")
     args = parser.parse_args(argv)
@@ -56,14 +72,42 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.cmd == "audit":
         log = AuditLog()
         if args.verify:
-            ok, bad = log.verify()
+            ok, bad = log.verify(human.audit_key(create=False))
             print("the audit log is intact" if ok else f"the audit log was changed at line {bad}")
             return 0 if ok else 2
         for row in log.rows()[-30:]:
             print(row["seq"], row["at"], row["event"], row["data"])
         return 0
+    if args.cmd == "pin-limits":
+        limits = safety.load_limits()
+        print(f"limits in {safety.LIMITS_PATH}: {limits}")
+        if human.ask("Type PIN to accept exactly these limits for real orders: ") != "PIN":
+            print("not pinned (this needs a person at a console)", file=sys.stderr)
+            return 1
+        human.pin_limits(safety.LIMITS_PATH)
+        print("pinned: any later edit of the limits file stops real orders until it is pinned again")
+        return 0
     try:
         desk, broker = _desk()
+        if args.cmd == "check":
+            if not getattr(broker, "live", False):
+                print("the mode is not live_delivery: the broker is the paper broker; nothing to check")
+                return 0
+            print(broker.ping())
+            return 0
+        if args.cmd == "unresolved":
+            rows = broker.unresolved() if hasattr(broker, "unresolved") else {}
+            print("\n".join(f"{k}: {v.get('request')}" for k, v in rows.items()) or "no order is waiting to be looked at")
+            return 0
+        if args.cmd == "resolve":
+            if not hasattr(broker, "resolve"):
+                print("the paper broker never has an unknown outcome")
+                return 0
+            if human.ask(f"Have you looked at {broker.name}'s own order list for {args.client_order_id}? Type RESOLVED to clear it: ") != "RESOLVED":
+                print("not cleared (this needs a person at a console)", file=sys.stderr)
+                return 1
+            print("cleared" if broker.resolve(args.client_order_id) else "no such entry")
+            return 0
         if args.cmd == "preview":
             view = desk.preview(OrderRequest(args.symbol, args.side, args.quantity, args.price, args.exchange, reason=args.reason))
             print("\n".join(view.lines()))
@@ -83,6 +127,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"{o.order_id} {o.status:<9} {o.request.side} {o.request.quantity} {o.request.symbol} limit {o.request.limit_price:,.2f}" + (f"  filled at {o.average_price:,.2f}" if o.status == "filled" else "") + (f"  {o.message}" if o.message else ""))
             return 0
         if args.cmd == "settle":
+            if not hasattr(broker, "settle"):
+                print("a real broker settles its own orders: use `orders` to see them")
+                return 0
             done = broker.settle()
             print(f"{len(done)} open order(s) filled" + "".join(f"\n  {o.order_id} {o.request.symbol} at {o.average_price:,.2f}" for o in done))
             return 0
@@ -97,7 +144,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             desk.resume()
             print("trading is on again (within the limits file)")
             return 0
-    except (Refused, BrokerError, OrderError, safety.LimitsError) as exc:
+    except (Refused, BrokerError, OrderError, safety.LimitsError, AthenaError, BrokerApiError) as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 1
     return 0

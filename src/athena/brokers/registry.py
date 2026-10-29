@@ -1,10 +1,12 @@
-"""The brokers Athena is meant to work with, and what is known about each one's API.
+"""The brokers Athena works with, and how far each one has been verified.
 
-Athena speaks one order shape (`athena.brokers.model`) and a broker is an adapter behind it. Paper trading is built. The live adapters are NOT: each one has to be checked against the broker's current
-documentation and the owner's own account before it may send an order, and none has been. The order below is the share of NSE active clients (September 2026 reports, which differ in small ways):
-Groww about 29%, Zerodha 14.7%, Angel One 14.65%, then Upstox, then Dhan.
+Athena speaks one order shape (`athena.brokers.model`) and a broker is an adapter behind it (`athena.brokers.live`). The five largest by NSE active clients (September 2026 reports, which differ in small
+ways: Groww about 29%, Zerodha 14.7%, Angel One 14.65%, ICICI Securities about 21 lakh clients, Upstox about 19 lakh) have adapters, written against each broker's published API documentation.
 
-`checked` says whether the API facts here were confirmed against the broker's own documentation; every row is False until that is done. Nothing in this file is read to decide an order."""
+  docs_checked   the endpoints, headers and fields were read from the broker's published documentation or official SDK (see docs/brokers/<key>.md for what could not be confirmed)
+  live_tested    an order has been sent through the adapter to a real account by its owner; NOBODY has done this yet for any broker, and until someone has, treat every adapter as unproven with real money
+
+Nothing in this file is read to decide an order."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,22 +16,27 @@ from dataclasses import dataclass
 class BrokerInfo:
     key: str
     name: str
-    sdk: str  # the official Python package, as the search for this note found it
-    market_data: str  # what the broker's API gives for prices, as far as known
-    built: str  # what is built in Athena
-    checked: bool = False
+    settings: tuple[str, ...]  # the settings-file names the adapter needs
+    market_data: str
+    built: str
+    docs_checked: bool = False
+    live_tested: bool = False
     notes: str = ""
 
 
 BROKERS: tuple[BrokerInfo, ...] = (
-    BrokerInfo("paper", "Paper trading", "none", "the terminal's live quotes", "orders, funds, holdings, settle, cancel (built, tested)", True, "the only broker that can be confirmed today"),
-    BrokerInfo("groww", "Groww", "growwapi", "live quotes, LTP and history are on a paid plan; orders are in the free trial", "nothing", False, "largest by active clients"),
-    BrokerInfo("zerodha", "Zerodha (Kite Connect)", "kiteconnect", "live data and history need a paid Connect plan; the plan for orders alone has to be confirmed", "login helper only (athena.brokers.kite_login)", False, "second by active clients"),
-    BrokerInfo("angelone", "Angel One (SmartAPI)", "smartapi-python", "free; the terminal already streams prices through it", "login and the live stream (read only)", False, "third by active clients; the first live adapter to build"),
-    BrokerInfo("upstox", "Upstox", "upstox-python-sdk", "to be checked", "nothing", False, "fourth; the SDK names an order API v2 and a v3"),
-    BrokerInfo("dhan", "Dhan", "dhanhq", "to be checked", "nothing", False, "fifth, fast growing"),
+    BrokerInfo("paper", "Paper trading", (), "the terminal's live quotes", "orders, funds, holdings, settle, cancel (built, tested)", True, True, "the default; no account needed"),
+    BrokerInfo("groww", "Groww", ("GROWW_ACCESS_TOKEN",), "a paid plan for live quotes; orders need the Trading API subscription", "adapter (athena.brokers.live.groww)", True, False, "largest by active clients; the token expires every day at 6 AM"),
+    BrokerInfo("zerodha", "Zerodha (Kite Connect)", ("KITE_API_KEY", "KITE_ACCESS_TOKEN"), "live data and history need a paid Connect plan", "adapter (athena.brokers.live.zerodha) and the daily login helper (athena.brokers.kite_login)", True, False, "second by active clients"),
+    BrokerInfo("angelone", "Angel One (SmartAPI)", ("ANGEL_API_KEY", "ANGEL_CLIENT_CODE", "ANGEL_PIN", "ANGEL_TOTP_SECRET"), "free; the terminal already streams prices through it", "adapter (athena.brokers.live.angelone), login and the live stream", True, False, "third by active clients; the full status list is not published, unknown statuses are refused"),
+    BrokerInfo("icici", "ICICI Direct (Breeze)", ("ICICI_APP_KEY", "ICICI_SECRET_KEY", "ICICI_SESSION_TOKEN"), "to be checked", "adapter (athena.brokers.live.icici)", True, False, "orders must come from the registered static IP"),
+    BrokerInfo("upstox", "Upstox", ("UPSTOX_ACCESS_TOKEN",), "to be checked", "adapter (athena.brokers.live.upstox)", True, False, "places and cancels through API v3; reads use v2"),
+    BrokerInfo("dhan", "Dhan", ("DHAN_CLIENT_ID", "DHAN_ACCESS_TOKEN"), "to be checked", "nothing", False, False, "next in line; add an adapter by writing one subclass (docs/brokers/README.md)"),
 )
 
 
 def describe() -> list[str]:
-    return [f"{b.name:<24} {'checked' if b.checked else 'NOT checked':<12} built: {b.built}" for b in BROKERS]
+    def state(b: BrokerInfo) -> str:
+        return "live-tested" if b.live_tested and b.key != "paper" else "docs-checked" if b.docs_checked else "not built"
+
+    return [f"{b.name:<24} {state(b):<13} built: {b.built}" for b in BROKERS]
