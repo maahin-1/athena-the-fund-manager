@@ -116,6 +116,11 @@ async fn api_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(v)
 }
 
+/// The background data jobs: what the supervisor last did and every job's status file (read from disk, so it also shows a job started by hand).
+async fn api_jobs() -> Json<serde_json::Value> {
+    Json(crate::jobs::read_jobs(std::path::Path::new(".athena/supervisor.json"), std::path::Path::new(".athena/status")))
+}
+
 #[derive(serde::Deserialize)]
 struct BarsQuery {
     symbol: String,
@@ -829,6 +834,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/ws", get(ws_upgrade))
         .route("/api/status", get(api_status))
+        .route("/api/jobs", get(api_jobs))
         .route("/api/bars", get(api_bars))
         .route("/api/analysis", get(api_analysis))
         .route("/api/known", get(api_known))

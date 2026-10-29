@@ -9,6 +9,7 @@ mod derivs;
 mod fake;
 mod fund_fetch;
 mod indices;
+mod jobs;
 mod chart_explain;
 mod flow_board;
 mod fundamentals;
@@ -52,6 +53,7 @@ struct Args {
     derivs_master: PathBuf,
     derivs_store: PathBuf,
     derivs_offline: bool,
+    no_jobs: bool,
 }
 
 fn args() -> Args {
@@ -71,6 +73,7 @@ fn args() -> Args {
         derivs_master: PathBuf::from(".athena/derivs_master.json"),
         derivs_store: PathBuf::from(".athena/derivs.duckdb"),
         derivs_offline: false,
+        no_jobs: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -119,6 +122,7 @@ fn args() -> Args {
                 }
             }
             "--derivs-offline" => out.derivs_offline = true,
+            "--no-jobs" => out.no_jobs = true,
             "--derivs-store" => {
                 if let Some(v) = it.next() {
                     out.derivs_store = PathBuf::from(v);
@@ -239,6 +243,13 @@ async fn main() {
         tokio::spawn(indices::run_refresher(index_store.clone(), reqwest::Client::new(), shutdown.clone()));
         tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), deriv_quotes.clone(), status.clone(), shutdown.clone()));
         tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
+    }
+    // the background data jobs: one supervisor, started with the terminal and ended with it (not under the fake feed, which is for trying the screen, nor with --no-jobs)
+    if !args.fake_feed && !args.no_jobs {
+        match jobs::spawn_supervisor(args.fund_python.as_deref().unwrap_or(&args.python)) {
+            Ok(_child) => println!("background data jobs: started (athena.ops.supervisor); see /api/jobs"),
+            Err(e) => println!("background data jobs: could not start ({e}); the data will not update by itself"),
+        }
     }
     // warm Python helpers for the Fundamentals page, the valuation and the adjusted daily bars, started now so the first page opened does not wait
     let helpers = Arc::new(helper::Helpers::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
