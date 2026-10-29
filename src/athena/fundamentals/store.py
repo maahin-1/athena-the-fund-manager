@@ -4,7 +4,8 @@ One DuckDB file. Python writes in short bursts (open, write one filing, close); 
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,17 @@ class FundamentalsStore:
     def set_shares(self, symbol: str, shares: float | None) -> None:
         self._con.execute("UPDATE companies SET shares = ? WHERE symbol = ?", [shares, symbol])
 
+    @contextmanager
+    def _atomic(self) -> Iterator[None]:
+        """All the statements inside happen or none do: a filing's old rows are deleted and its new ones inserted together, so a crash or a full disk between the two cannot leave a company without them."""
+        self._con.execute("BEGIN TRANSACTION")
+        try:
+            yield
+        except BaseException:
+            self._con.execute("ROLLBACK")
+            raise
+        self._con.execute("COMMIT")
+
     def save_statements(self, st: Statements, url: str, filed: datetime, source: str = "nse-xbrl") -> int:
         """Store a filing's rows. A row already held from a filing made later is kept; one from an earlier filing is replaced. Returns the number of rows offered."""
         filed = _utc(filed)
@@ -134,11 +146,12 @@ class FundamentalsStore:
             rows += [(st.symbol, st.basis, spec.BALANCE, end, end, key, value) for key, value in got.items()]
         if not rows:
             return 0
-        self._con.executemany(f"DELETE FROM statement_lines WHERE {KEY} AND filed < ?", [(*row[:6], filed) for row in rows])
-        self._con.executemany(
-            f"INSERT INTO statement_lines SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM statement_lines WHERE {KEY})",
-            [(*row, url, filed, source, *row[:6]) for row in rows],
-        )
+        with self._atomic():
+            self._con.executemany(f"DELETE FROM statement_lines WHERE {KEY} AND filed < ?", [(*row[:6], filed) for row in rows])
+            self._con.executemany(
+                f"INSERT INTO statement_lines SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM statement_lines WHERE {KEY})",
+                [(*row, url, filed, source, *row[:6]) for row in rows],
+            )
         return len(rows)
 
     def forget_filing(self, url: str) -> None:
@@ -147,10 +160,11 @@ class FundamentalsStore:
 
     def save_holding(self, symbol: str, holding: Holding, url: str, filed: datetime) -> None:
         """Store one quarter's pattern, replacing what was held for that symbol and quarter."""
-        self._con.execute("DELETE FROM shareholding WHERE symbol = ? AND period_end = ?", [symbol, holding.period_end])
         rows = [(symbol, holding.period_end, key, g.shares, g.holders, url, _utc(filed)) for key, g in holding.groups.items()]
-        if rows:
-            self._con.executemany("INSERT INTO shareholding VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+        with self._atomic():
+            self._con.execute("DELETE FROM shareholding WHERE symbol = ? AND period_end = ?", [symbol, holding.period_end])
+            if rows:
+                self._con.executemany("INSERT INTO shareholding VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
 
     def save_documents(self, symbol: str, kinds: Sequence[str], docs: Sequence[Any]) -> None:
         """Replace the symbol's documents of these kinds with `docs` (what the exchange lists now is what is kept)."""

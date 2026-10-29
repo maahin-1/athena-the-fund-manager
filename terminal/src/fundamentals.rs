@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
-use duckdb::{AccessMode, Config, Connection, OptionalExt};
+use duckdb::{AccessMode, Config, Connection};
 use serde_json::{json, Value};
 use tokio::process::Command;
 use tokio::sync::Semaphore;
@@ -22,6 +22,9 @@ pub const KEEP_FOR: Duration = Duration::from_secs(10 * 60);
 
 /// (module, arguments, fetches finished when it was made) -> (when, the document)
 type Kept = HashMap<(String, Vec<String>, u64), (Instant, Value)>;
+
+/// Every stock's last close from the warehouse `screen` table, and the modification times of the warehouse file and its write-ahead log when it was read.
+type Closes = (Option<SystemTime>, Option<SystemTime>, HashMap<String, (f64, String)>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum FundError {
@@ -57,13 +60,15 @@ pub struct FundamentalsJobs {
     /// Counts the company fetches finished from the page; an answer made before the latest one is not served.
     fetches: Arc<AtomicU64>,
     kept: std::sync::Mutex<Kept>,
+    /// All the closes at once, read when the warehouse changes: opening a 400 MB file for every page asked cost far more than the page.
+    closes: std::sync::Mutex<Option<Closes>>,
 }
 
 impl FundamentalsJobs {
     pub fn new(page: Vec<String>, export: Vec<String>, warehouse: PathBuf, store: PathBuf) -> Self {
         FundamentalsJobs {
             page, export, valuation: Vec::new(), warehouse, store, slots: Semaphore::new(AT_ONCE), counter: AtomicU64::new(0), helpers: None,
-            fetches: Arc::new(AtomicU64::new(0)), kept: std::sync::Mutex::new(HashMap::new()),
+            fetches: Arc::new(AtomicU64::new(0)), kept: std::sync::Mutex::new(HashMap::new()), closes: std::sync::Mutex::new(None),
         }
     }
 
@@ -90,14 +95,39 @@ impl FundamentalsJobs {
 
     /// The last close the warehouse holds for a stock and a note saying which day it is from; `None` for an index or an unknown symbol.
     pub fn price(&self, symbol: &str) -> Option<(f64, String)> {
+        let stamp = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+        let wal = PathBuf::from(format!("{}.wal", self.warehouse.display()));
+        let (file, log) = (stamp(&self.warehouse), stamp(&wal));
+        let mut cache = self.closes.lock().unwrap();
+        let stale = match &*cache {
+            Some((f, l, _)) => *f != file || *l != log,
+            None => true,
+        };
+        if stale {
+            // the warehouse changed (or was never read): read every close once. If it cannot be opened now (a build is writing it) the closes already held are served, not nothing.
+            if let Some(all) = self.read_closes() {
+                *cache = Some((file, log, all));
+            }
+        }
+        let (close, note) = cache.as_ref()?.2.get(symbol)?;
+        Some((*close, note.clone()))
+    }
+
+    /// Every stock's last close and the day it is from, straight from the warehouse; `None` when the file cannot be opened. A missing, zero or non-finite close is left out.
+    fn read_closes(&self) -> Option<HashMap<String, (f64, String)>> {
         let config = Config::default().access_mode(AccessMode::ReadOnly).ok()?;
         let conn = Connection::open_with_flags(&self.warehouse, config).ok()?;
-        let (close, day): (Option<f64>, Option<String>) = conn
-            .query_row("SELECT close, CAST(data_as_of AS VARCHAR) FROM screen WHERE symbol = ?", [symbol], |r| Ok((r.get(0)?, r.get(1)?)))
-            .optional()
-            .ok()??;
-        let close = close.filter(|c| c.is_finite() && *c > 0.0)?;
-        Some((close, format!("warehouse close {}", day.unwrap_or_default())))
+        let mut stmt = conn.prepare("SELECT symbol, close, CAST(data_as_of AS VARCHAR) FROM screen").ok()?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<f64>>(1)?, r.get::<_, Option<String>>(2)?))).ok()?;
+        let mut out = HashMap::new();
+        for row in rows.flatten() {
+            if let (symbol, Some(close), day) = row {
+                if close.is_finite() && close > 0.0 {
+                    out.insert(symbol, (close, format!("warehouse close {}", day.unwrap_or_default())));
+                }
+            }
+        }
+        Some(out)
     }
 
     /// The arguments after the module: the symbol, the basis, the store and the warehouse price when there is one.
@@ -291,6 +321,19 @@ else:
         }
         assert!(basis_ok("consolidated") && basis_ok("standalone"));
         assert!(!basis_ok("both") && !basis_ok("") && !basis_ok("Consolidated"));
+    }
+
+    #[test]
+    fn closes_are_read_again_when_the_warehouse_changes_and_kept_when_it_cannot_be_opened() {
+        let path = warehouse("cache");
+        let jobs = FundamentalsJobs::new(vec![], vec![], path.clone(), PathBuf::from("x"));
+        assert_eq!(jobs.price("TCS").map(|p| p.0), Some(3200.5));
+        std::thread::sleep(Duration::from_millis(50));
+        Connection::open(&path).unwrap().execute_batch("UPDATE screen SET close = 3300.0 WHERE symbol = 'TCS'; CHECKPOINT;").unwrap();
+        assert_eq!(jobs.price("TCS").map(|p| p.0), Some(3300.0), "a changed warehouse is read again");
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(jobs.price("TCS").map(|p| p.0), Some(3300.0), "the closes held are served when the file cannot be opened");
+        assert_eq!(jobs.price("ZERO"), None);
     }
 
     #[test]
