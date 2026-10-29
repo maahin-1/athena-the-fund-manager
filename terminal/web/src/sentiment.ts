@@ -1,5 +1,5 @@
 import { el } from './panels/base';
-import { citation, insiderReachNote, readSentiment, rupees, sentimentProblem, statusClass, toneClass, visibleNews, type SentimentDoc } from './sentimentlogic';
+import { citation, insiderReachNote, outcomeClass, outcomeLabel, readSentiment, rupees, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews, type ClaimView, type SentimentDoc } from './sentimentlogic';
 
 export interface SentimentHost {
   /** The symbol the user chose here, for the other pages to follow. */
@@ -104,7 +104,7 @@ export class SentimentView {
     for (const s of d.sources) {
       const chip = el('button', `chip ${statusClass(s.status)}${this.sourceId === s.id ? ' chosen' : ''}`, `${s.name} · ${s.tier} · ${s.rowsHere}`);
       chip.type = 'button';
-      chip.title = `${s.status}${s.reason ? `: ${s.reason}` : ''}${s.held ? `; holds ${s.held} items` : ''}${s.newest ? `; newest ${s.newest.slice(0, 16).replace('T', ' ')} UTC` : ''}`;
+      chip.title = `${s.status}${s.reason ? `: ${s.reason}` : ''}${s.held ? `; holds ${s.held} items` : ''}${s.newest ? `; newest ${s.newest.slice(0, 16).replace('T', ' ')} UTC` : ''}${s.trust ? `; ${trustLabel(s.trust)}` : ''}`;
       chip.disabled = s.rowsHere === 0 && this.sourceId !== s.id;
       chip.addEventListener('click', () => {
         this.sourceId = this.sourceId === s.id ? '' : s.id;
@@ -115,6 +115,56 @@ export class SentimentView {
     const trouble = d.sources.filter((s) => s.status !== 'ok' && s.reason);
     for (const s of trouble) box.append(text('div', 'note', `${s.name} (${s.id}): ${s.status}. ${s.reason}`));
     return box;
+  }
+
+  private claimLine(c: ClaimView): HTMLElement {
+    const line = el('div', 'sent-claim');
+    const chip = el('span', `chip ${outcomeClass(c.outcome)}`, outcomeLabel(c.outcome));
+    chip.title = c.detail;
+    const said = c.link ? el('a', '', c.text) : el('span', '', c.text);
+    if (c.link && said instanceof HTMLAnchorElement) {
+      said.href = c.link;
+      said.target = '_blank';
+      said.rel = 'noopener noreferrer';
+    }
+    line.append(chip, el('span', 'note', ` ${c.publisher}, tier ${c.tier}, ${c.published.slice(0, 10)}: `), said);
+    if (c.detail) line.append(el('div', 'note', `Our data: ${c.detail}`));
+    return line;
+  }
+
+  /** Checked claims: what the headlines said that our own data can be asked about, and what it said. Contradicted claims stay visible; a majority never settles a fact. */
+  private claimsBox(d: SentimentDoc): HTMLElement[] {
+    const c = d.claims;
+    const total = Object.values(c.counts).reduce((a, b) => a + b, 0);
+    const out: HTMLElement[] = [text('div', 'sent-section', 'Checked claims (headline statements compared with our own data)')];
+    if (total === 0 && c.unconfirmed.length === 0 && c.market.length === 0) {
+      out.push(text('div', 'note', 'No headline in this window made a statement that can be checked against prices, filed figures or the exchange filings.'));
+      return out;
+    }
+    const k = c.counts;
+    out.push(text('div', 'note', `${k.confirmed ?? 0} confirmed, ${k.partly ?? 0} partly right, ${k.contradicted ?? 0} contradicted, ${k.pending ?? 0} waiting for data, ${k.unverified ?? 0} not confirmed, ${k.not_checkable ?? 0} cannot be checked.`));
+    if (c.conflicts.length) {
+      out.push(text('div', 'note', 'Where our data disagrees with a headline (kept on screen, and counted against its source):'));
+      for (const r of c.conflicts) out.push(this.claimLine(r));
+    }
+    for (const dis of c.disagreements) {
+      out.push(text('div', 'note', `Opposite reports on ${dis.day} (${dis.kind.replace('_', ' ')}); our data decides, not the count:`));
+      for (const s of dis.sides) out.push(this.claimLine({ kind: dis.kind, text: s.text, outcome: s.outcome, detail: s.detail, publisher: s.publisher, sourceId: '', tier: s.tier, published: dis.day, link: s.link }));
+    }
+    if (c.confirmed.length) {
+      out.push(text('div', 'note', 'Confirmed by our data:'));
+      for (const r of c.confirmed.slice(0, 8)) out.push(this.claimLine(r));
+    }
+    if (c.unconfirmed.length) {
+      out.push(text('div', 'note', 'Reports of talks or plans, which cannot be checked here:'));
+      for (const u of c.unconfirmed) out.push(text('div', 'sent-claim', `${u.text} (${u.note})`));
+    }
+    if (c.market.length) {
+      out.push(text('div', 'note', 'Market-wide statements (institutional flows):'));
+      for (const r of c.market) out.push(this.claimLine(r));
+    }
+    if (c.method) out.push(text('div', 'note', c.method));
+    return out;
   }
 
   /** Flows and insiders: the exchange's own rows, with the times the exchange stamped them. Display only. */
@@ -187,6 +237,13 @@ export class SentimentView {
         title.append(a);
       } else title.textContent = r.title;
       tr.append(title, el('td', 'note', r.routine ? 'routine' : r.used ? '' : 'not about this company'));
+      if (r.claim) {
+        const tag = el('td', '');
+        const chip = el('span', `chip ${outcomeClass(r.claim.outcome)}`, outcomeLabel(r.claim.outcome));
+        chip.title = r.claim.detail;
+        tag.append(chip);
+        tr.append(tag);
+      }
       table.append(tr);
     }
     if (rows.length) out.push(table);
@@ -211,6 +268,7 @@ export class SentimentView {
       out.push(market);
     }
 
+    out.push(...this.claimsBox(d));
     out.push(...this.filingsBox(d));
 
     out.push(text('div', 'sent-section', 'Reddit'));

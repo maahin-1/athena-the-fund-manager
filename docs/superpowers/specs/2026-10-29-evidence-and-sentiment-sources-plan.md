@@ -1,6 +1,6 @@
 # Evidence and sentiment sources: plan, and where the whole project stands
 
-Status: DRAFT for the owner's approval. Nothing here is built. Written 2026-10-29.
+Status: approved by the owner on 2026-10-29. Built so far: E0, E1 (TRD 2.83), E2 and E3 (TRD 2.84). Still to build: E4, E5, E6, E7, E8. Written 2026-10-29.
 
 ## 1. What this adds, in one paragraph
 
@@ -119,8 +119,8 @@ Items collected from day one are stored point in time. After about three months 
 |---|---|---|---|
 | E0 | Evidence package: item shape, store, source registry and health, citation chips in the Sentiment page, Sources view, the supervisor job | medium | |
 | E1 | Press and regulator feeds (Moneycontrol, CNBC-TV18, NDTV Profit, Times of India, Business Today, The Hindu, Indian Express, SEBI, RBI, PIB), story clustering for copies | medium | E0 |
-| E2 | NSE structured: insider trades, FII/DII, board-meeting outcomes; the Flows and insiders box | small | E0 |
-| E3 | Claim extraction and the program-side checks against the warehouse; Conflicts box; per-source record | large | E1, E2 |
+| E2 | NSE structured: insider trades, FII/DII, board-meeting notices; the Flows and insiders box | small | E0 | built 2026-10-29; the insider endpoint serves nothing filed after 2026-05-02 |
+| E3 | Claim extraction and the program-side checks against the warehouse; Conflicts box; per-source record | large | E1, E2 | built 2026-10-29 with patterns, not a model; trust stays a prior until 30 claims settle |
 | E4 | GDELT, Wikipedia page views (with its symbol table), India VIX from the warehouse; the Attention box | medium | E0 |
 | E5 | Try-and-see group, each time-boxed to one session: BSE announcements, Zee Business, Yahoo news, Financial Express feed, Google Trends. Each ends as working or as off with the reason shown | small each, may fail | E0 |
 | E6 | Transcript reading on request | medium | E0, model ceiling |

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from athena.contracts import AthenaError
+from athena.evidence.conflicts import claim_view, disagreements, rumour_groups, trust
 from athena.evidence.sources import BY_ID, FEED_SOURCES, STRUCTURED_SOURCES, tier_of
 from athena.evidence.store import EvidenceStore, StoredItem, headline_words
 from athena.news.model import NewsItem, company_names, loose_names, mentions
@@ -86,7 +87,7 @@ def evidence_rows(items: Sequence[StoredItem], names: tuple[str, ...], held: Seq
         seen.append(words)
         rows.append({
             "date": it.published_at.date().isoformat(), "published": it.published_at.isoformat(), "first_seen": it.first_seen_at.isoformat(), "publisher": it.publisher, "source": news.source,
-            "source_id": it.source_id, "tier": spec.tier if spec else "C", "title": it.title, "link": _safe_link(it.link), "routine": False, "used": True, "story_id": it.story_id,
+            "source_id": it.source_id, "tier": spec.tier if spec else "C", "title": it.title, "link": _safe_link(it.link), "routine": False, "used": True, "story_id": it.story_id, "item_id": it.item_id,
         })
     return rows
 
@@ -105,16 +106,20 @@ def market_rows(items: Sequence[StoredItem], limit: int = 20) -> list[dict[str, 
     return out
 
 
-def source_rows(health: dict[str, dict[str, Any]], shown: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Every source in the registry with how it is doing, so the page can say which sources were read, which are off and why, and how many of this stock's rows each gave."""
+def source_rows(health: dict[str, dict[str, Any]], shown: Sequence[dict[str, Any]], record: dict[str, dict[str, int]] | None = None) -> list[dict[str, Any]]:
+    """Every source in the registry with how it is doing, so the page can say which sources were read, which are off and why, and how many of this stock's rows each gave. `record` is each source's
+    settled claims (`EvidenceStore.source_record`); with it a source also carries its trust: its tier's prior, moved toward its own record."""
     per = Counter(r.get("source_id") for r in shown)
+    record = record or {}
     out = []
     for s in FEED_SOURCES:
         h = health.get(s.id, {})
         status = "off" if not s.active else h.get("status", "never tried")
+        rec = record.get(s.id, {})
         out.append({
             "id": s.id, "name": s.name, "kind": s.kind, "tier": s.tier, "scope": s.scope, "status": status, "reason": s.off_reason or h.get("error") or "", "held": h.get("items_held", 0),
             "newest": h["newest_item"].isoformat() if h.get("newest_item") else "", "last_ok": h["last_ok"].isoformat() if h.get("last_ok") else "", "rows_here": per.get(s.id, 0),
+            "trust": trust(s.tier, rec.get("confirmed", 0), rec.get("partly", 0), rec.get("contradicted", 0)),
         })
     for s in STRUCTURED_SOURCES:
         h = health.get(s.id, {})
@@ -157,6 +162,38 @@ def structured_boxes(evidence: EvidenceStore, symbol: str, today: date) -> dict[
     }
 
 
+CLAIM_DAYS = 30
+SHOWN = 20
+
+
+def claims_box(evidence: EvidenceStore, symbol: str, today: date) -> dict[str, Any]:
+    """The Checked claims box: what the headlines said that our own data can be asked about, with what it said. Contradicted and partly-right claims come first and stay visible; two sources that
+    point opposite ways are shown side by side; a report we cannot check is shown with the number of independent stories behind it, never as confirmed. Counts are made here in code."""
+    end = datetime.combine(today, datetime.max.time(), tzinfo=timezone.utc)
+    start = end - timedelta(days=CLAIM_DAYS)
+    tiers = {s.id: s.tier for s in FEED_SOURCES}
+    seen: set[tuple[str, str, str]] = set()
+    rows = []
+    for r in sorted(evidence.claims_for(symbol, start, end), key=lambda r: r["published_at"]):  # copies of one story in several feeds are one claim: the earliest is shown
+        key = (r["story_id"] or r["claim_id"], r["kind"], r["text"])
+        if key not in seen:
+            seen.add(key)
+            rows.append(r)
+    rows.reverse()
+    checked = [r for r in rows if r["kind"] != "rumour"]
+    counts = Counter(r["outcome"] for r in checked)
+    return {
+        "conflicts": [claim_view(r, tiers) for r in checked if r["outcome"] in ("contradicted", "partly")][:SHOWN],
+        "disagreements": disagreements(rows, tiers)[:SHOWN],
+        "confirmed": [claim_view(r, tiers) for r in checked if r["outcome"] == "confirmed"][:SHOWN],
+        "unconfirmed": rumour_groups(rows, tiers)[:SHOWN],
+        "market": [claim_view({**r, "title": ""} | {"first_seen_at": r["published_at"]}, tiers) for r in evidence.market_claims(start, end)][:SHOWN],
+        "counts": {k: counts.get(k, 0) for k in ("confirmed", "partly", "contradicted", "pending", "unverified", "not_checkable")},
+        "by_item": {r["item_id"]: {"outcome": r["outcome"], "kind": r["kind"], "detail": r["detail"]} for r in checked},
+        "method": "A claim is read from a headline by fixed patterns (a price move, a quarterly profit or sales figure, a promoter's buying or selling, a board-meeting date, an institution's net flow) and compared by a program with our own prices, filed figures and the exchange's filings. Reports of talks or plans cannot be checked here.",
+    }
+
+
 def social_rows(posts: Sequence[SocialPost], today: date) -> list[dict[str, Any]]:
     return [
         {"date": p.created.date().isoformat(), "subreddit": p.subreddit, "title": p.title, "snippet": p.snippet, "score": p.score, "comments": p.comments, "link": _safe_link(p.link)}
@@ -172,6 +209,7 @@ def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditS
     market: list[dict[str, Any]] = []
     sources: list[dict[str, Any]] = []
     boxes: dict[str, Any] = {"insiders": [], "insider_counts": {}, "insider_reach": "", "board": [], "flows": []}
+    claims: dict[str, Any] = {"conflicts": [], "disagreements": [], "confirmed": [], "unconfirmed": [], "market": [], "counts": {}, "method": ""}
     notes = list(result.notes)
     if evidence is not None:
         try:
@@ -182,8 +220,13 @@ def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditS
                 rows = [r for r in rows if r["source"] != "publisher feed"]
             rows = sorted(rows + evidence_rows(stored, loose_names(company_names(company)), rows, acronym(company)), key=lambda r: r["published"], reverse=True)
             market = market_rows(stored)
-            sources = source_rows(health, rows)
+            sources = source_rows(health, rows, evidence.source_record())
             boxes = structured_boxes(evidence, symbol, today)
+            claims = claims_box(evidence, symbol, today)
+            by_item = claims.pop("by_item")
+            for r in rows:
+                if r.get("item_id") in by_item:
+                    r["claim"] = by_item[r["item_id"]]
         except Exception as exc:  # noqa: BLE001 - the stored sources are an addition: the page still shows what the live path found
             notes.append(f"stored sources unavailable: {type(exc).__name__}")
     social: dict[str, Any] = {"enabled": reddit.enabled, "notes": [], "items": [], "by_subreddit": {}}
@@ -203,7 +246,7 @@ def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditS
     return {
         "symbol": symbol, "company": company, "as_of": today.isoformat(), "window_days": WINDOW_DAYS,
         "news": {"items": rows, "notes": notes, "counts": {"all": len(rows), "used": sum(r["used"] for r in rows), "routine": sum(r["routine"] for r in rows), "press": sum(r["source"] != "nse" for r in rows)}},
-        "market": market, "sources": sources, "filings": boxes, "social": social, "tone": reading, "caveat": NOT_TESTED,
+        "market": market, "sources": sources, "filings": boxes, "claims": claims, "social": social, "tone": reading, "caveat": NOT_TESTED,
     }
 
 

@@ -30,6 +30,11 @@ STRUCTURED_DDL = (
     "CREATE TABLE IF NOT EXISTS board_meetings (meeting_id VARCHAR PRIMARY KEY, symbol VARCHAR NOT NULL, company VARCHAR, meeting_date DATE NOT NULL, purpose VARCHAR, description VARCHAR,"
     " announced_at TIMESTAMP NOT NULL, first_seen_at TIMESTAMP NOT NULL, link VARCHAR)",
     "CREATE INDEX IF NOT EXISTS board_symbol ON board_meetings (symbol, meeting_date)",
+    "CREATE TABLE IF NOT EXISTS claims (claim_id VARCHAR PRIMARY KEY, item_id VARCHAR NOT NULL, source_id VARCHAR NOT NULL, story_id VARCHAR, symbol VARCHAR, kind VARCHAR NOT NULL, text VARCHAR,"
+    " fields VARCHAR, published_at TIMESTAMP NOT NULL, extracted_at TIMESTAMP NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS claims_symbol ON claims (symbol, published_at)",
+    "CREATE TABLE IF NOT EXISTS checks (claim_id VARCHAR PRIMARY KEY, outcome VARCHAR NOT NULL, final BOOLEAN NOT NULL, detail VARCHAR, ours VARCHAR, checked_at TIMESTAMP NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS claim_runs (item_id VARCHAR PRIMARY KEY, run_at TIMESTAMP NOT NULL)",
 )
 STORY_WINDOW = timedelta(hours=72)
 STORY_SIMILARITY = 0.7  # Jaccard overlap of the headline words at or above which two items are one story
@@ -191,6 +196,123 @@ class EvidenceStore:
         rows = [(m.meeting_id, m.symbol, m.company, m.meeting_date, m.purpose, m.description, _naive(m.announced_at), stamp, m.link) for m in meetings]
         return self._insert_new("board_meetings", "meeting_id", [m.meeting_id for m in meetings], rows)
 
+    # --- claims and their checks ---
+    def items_without_claims(self, since: datetime, limit: int = 20000) -> list[StoredItem]:
+        """Items published since `since` that have not been read for claims yet, oldest first."""
+        sql = ("SELECT i.item_id, i.source_id, i.publisher, i.title, i.link, i.snippet, i.published_at, i.first_seen_at, i.story_id FROM items i LEFT JOIN claim_runs r ON r.item_id = i.item_id"
+               " WHERE r.item_id IS NULL AND i.published_at >= ? ORDER BY i.published_at LIMIT ?")
+        return self._rows(sql, [_naive(since), limit])
+
+    def add_claims(self, batch: Sequence[tuple[StoredItem, Sequence[Any]]], now: datetime) -> int:
+        """Record that each item was read, and keep its claims. An item is read once; a claim is never rewritten. Returns how many claims were kept."""
+        import json
+
+        stamp, kept = _naive(now), 0
+        with self._open() as con:
+            con.execute("BEGIN")
+            try:
+                for item, claims in batch:
+                    for c in claims:
+                        cid = hashlib.sha1(f"{item.item_id}|{c.kind}|{c.text}".encode()).hexdigest()
+                        con.execute("INSERT OR IGNORE INTO claims VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                    [cid, item.item_id, item.source_id, item.story_id, c.symbol, c.kind, c.text, json.dumps(c.fields, sort_keys=True), _naive(item.published_at), stamp])
+                        kept += 1
+                    con.execute("INSERT OR IGNORE INTO claim_runs VALUES (?, ?)", [item.item_id, stamp])
+                con.execute("COMMIT")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+        return kept
+
+    def claims_to_check(self, since: datetime) -> list[dict[str, Any]]:
+        """Claims published since `since` with no final check yet (never checked, or still pending), oldest first."""
+        import json
+
+        sql = ("SELECT c.claim_id, c.item_id, c.source_id, c.symbol, c.kind, c.text, c.fields, c.published_at FROM claims c LEFT JOIN checks k ON k.claim_id = c.claim_id"
+               " WHERE (k.claim_id IS NULL OR NOT k.final) AND c.published_at >= ? ORDER BY c.published_at")
+        with self._open() as con:
+            rows = con.execute(sql, [_naive(since)]).fetchall()
+        keys = ("claim_id", "item_id", "source_id", "symbol", "kind", "text", "fields", "published_at")
+        out = [dict(zip(keys, r)) for r in rows]
+        for r in out:
+            r["fields"] = json.loads(r["fields"] or "{}")
+            r["published_at"] = r["published_at"].replace(tzinfo=timezone.utc)
+        return out
+
+    def save_checks(self, batch: Sequence[tuple[str, str, bool, str, dict[str, Any]]], now: datetime) -> None:
+        """Each `(claim_id, outcome, final, detail, ours)`. A check that is not final is replaced by the next one; a final one is kept as it was."""
+        import json
+
+        stamp = _naive(now)
+        with self._open() as con:
+            con.execute("BEGIN")
+            try:
+                for claim_id, outcome, final, detail, ours in batch:
+                    held = con.execute("SELECT final FROM checks WHERE claim_id = ?", [claim_id]).fetchone()
+                    if held and held[0]:
+                        continue
+                    con.execute("INSERT OR REPLACE INTO checks VALUES (?, ?, ?, ?, ?, ?)", [claim_id, outcome, final, detail[:600], json.dumps(ours, default=str, sort_keys=True), stamp])
+                con.execute("COMMIT")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+
+    def claims_for(self, symbol: str, since: datetime, until: datetime) -> list[dict[str, Any]]:
+        """A company's claims in the window with what the check said (outcome `unchecked` when none yet), newest first."""
+        import json
+
+        sql = ("SELECT c.claim_id, c.item_id, c.source_id, c.story_id, c.kind, c.text, c.fields, c.published_at, i.publisher, i.link, i.title, i.first_seen_at,"
+               " coalesce(k.outcome, 'unchecked'), coalesce(k.detail, ''), coalesce(k.ours, '{}'), k.checked_at"
+               " FROM claims c JOIN items i ON i.item_id = c.item_id LEFT JOIN checks k ON k.claim_id = c.claim_id"
+               " WHERE c.symbol = ? AND c.published_at >= ? AND c.published_at <= ? ORDER BY c.published_at DESC")
+        keys = ("claim_id", "item_id", "source_id", "story_id", "kind", "text", "fields", "published_at", "publisher", "link", "title", "first_seen_at", "outcome", "detail", "ours", "checked_at")
+        with self._open() as con:
+            rows = con.execute(sql, [symbol, _naive(since), _naive(until)]).fetchall()
+        out = [dict(zip(keys, r)) for r in rows]
+        for r in out:
+            r["fields"], r["ours"] = json.loads(r["fields"] or "{}"), json.loads(r["ours"] or "{}")
+            r["published_at"] = r["published_at"].replace(tzinfo=timezone.utc)
+            r["first_seen_at"] = r["first_seen_at"].replace(tzinfo=timezone.utc)
+        return out
+
+    def market_claims(self, since: datetime, until: datetime) -> list[dict[str, Any]]:
+        """Market-wide claims (institutional flows) with their checks."""
+        import json
+
+        sql = ("SELECT c.claim_id, c.source_id, c.story_id, c.kind, c.text, c.fields, c.published_at, i.publisher, i.link, coalesce(k.outcome, 'unchecked'), coalesce(k.detail, '')"
+               " FROM claims c JOIN items i ON i.item_id = c.item_id LEFT JOIN checks k ON k.claim_id = c.claim_id"
+               " WHERE c.symbol = '' AND c.published_at >= ? AND c.published_at <= ? ORDER BY c.published_at DESC LIMIT 50")
+        keys = ("claim_id", "source_id", "story_id", "kind", "text", "fields", "published_at", "publisher", "link", "outcome", "detail")
+        with self._open() as con:
+            rows = con.execute(sql, [_naive(since), _naive(until)]).fetchall()
+        out = [dict(zip(keys, r)) for r in rows]
+        for r in out:
+            r["fields"] = json.loads(r["fields"] or "{}")
+            r["published_at"] = r["published_at"].replace(tzinfo=timezone.utc)
+        return out
+
+    def source_record(self) -> dict[str, dict[str, int]]:
+        """Per source, how its settled claims ended: the record a source is judged on (only confirmed, partly and contradicted count; the rest say nothing about the source)."""
+        sql = ("SELECT c.source_id, k.outcome, count(*) FROM claims c JOIN checks k ON k.claim_id = c.claim_id WHERE k.final AND k.outcome IN ('confirmed', 'partly', 'contradicted') GROUP BY 1, 2")
+        out: dict[str, dict[str, int]] = {}
+        with self._open() as con:
+            for sid, outcome, n in con.execute(sql).fetchall():
+                out.setdefault(sid, {"confirmed": 0, "partly": 0, "contradicted": 0})[outcome] = n
+        return out
+
+    def reset_claims(self) -> None:
+        """Forget every claim and check. They are derived from the items (which are never touched), so they can be rebuilt when the patterns change."""
+        with self._open() as con:
+            for table in ("checks", "claims", "claim_runs"):
+                con.execute(f"DELETE FROM {table}")
+
+    def claim_counts(self) -> dict[str, int]:
+        with self._open() as con:
+            claims = con.execute("SELECT count(*) FROM claims").fetchone()[0]
+            read = con.execute("SELECT count(*) FROM claim_runs").fetchone()[0]
+            by = dict(con.execute("SELECT outcome, count(*) FROM checks GROUP BY 1").fetchall())
+        return {"claims": claims, "items_read": read, **by}
+
     # --- reading ---
     def insider_between(self, since: date, until: date, symbol: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         """Insider trades FILED in the window (by the exchange's stamp), newest first."""
@@ -208,6 +330,11 @@ class EvidenceStore:
         with self._open() as con:
             row = con.execute("SELECT max(filed_at) FROM insider_trades").fetchone()
         return row[0].replace(tzinfo=timezone.utc) if row and row[0] else None
+
+    def flows_first(self) -> date | None:
+        with self._open() as con:
+            row = con.execute("SELECT min(day) FROM market_flows").fetchone()
+        return row[0] if row else None
 
     def flows_between(self, since: date, until: date) -> list[dict[str, Any]]:
         with self._open() as con:

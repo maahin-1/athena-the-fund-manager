@@ -13,6 +13,8 @@ export interface NewsRow {
   link: string;
   routine: boolean;
   used: boolean;
+  /** What our own data said about the claim this item makes, when it makes one that can be checked. */
+  claim: { outcome: string; kind: string; detail: string } | null;
 }
 
 /** A regulator or policy item (SEBI, RBI): about the market, not matched to a company. */
@@ -36,6 +38,66 @@ export interface SourceRow {
   held: number;
   newest: string;
   rowsHere: number;
+  /** The tier's starting prior moved toward the source's own settled claims; `basis` is prior until the record is long enough to speak. */
+  trust: Trust | null;
+}
+
+export interface Trust {
+  value: number;
+  settled: number;
+  confirmed: number;
+  partly: number;
+  contradicted: number;
+  basis: string;
+}
+
+/** One claim read from a headline and what our data said: outcome is confirmed, partly, contradicted, pending, unverified or not_checkable. */
+export interface ClaimView {
+  kind: string;
+  text: string;
+  outcome: string;
+  detail: string;
+  publisher: string;
+  sourceId: string;
+  tier: string;
+  published: string;
+  link: string;
+}
+
+export interface Side {
+  publisher: string;
+  tier: string;
+  text: string;
+  link: string;
+  outcome: string;
+  detail: string;
+}
+
+/** Two sources that said opposite things about one company on one day, each with its own check. */
+export interface Disagreement {
+  kind: string;
+  day: string;
+  sides: Side[];
+}
+
+/** A report that cannot be checked here (talks, a plan), with how many independent stories carry it. */
+export interface Unconfirmed {
+  text: string;
+  stories: number;
+  bestTier: string;
+  sources: string[];
+  link: string;
+  note: string;
+}
+
+export interface Claims {
+  conflicts: ClaimView[];
+  disagreements: Disagreement[];
+  confirmed: ClaimView[];
+  unconfirmed: Unconfirmed[];
+  market: ClaimView[];
+  counts: Record<string, number>;
+  method: string;
 }
 
 /** One insider filing: who, what they did, how many shares and for how much (rupees), and when the exchange stamped it. */
@@ -101,6 +163,7 @@ export interface SentimentDoc {
   market: MarketRow[];
   sources: SourceRow[];
   filings: Filings;
+  claims: Claims;
   social: { enabled: boolean; notes: string[]; items: PostRow[]; bySubreddit: Record<string, number> };
   tone: Tone | null;
   caveat: string;
@@ -122,13 +185,17 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
     (r): NewsRow => ({
       date: str(r.date), published: str(r.published), firstSeen: str(r.first_seen), publisher: str(r.publisher), source: str(r.source), sourceId: str(r.source_id), tier: tierOf(r.tier),
       title: str(r.title), link: safeLink(r.link), routine: r.routine === true, used: r.used === true,
+      claim: isObject(r.claim) && str(r.claim.outcome) ? { outcome: str(r.claim.outcome), kind: str(r.claim.kind), detail: str(r.claim.detail) } : null,
     }),
   );
   const market = (Array.isArray(raw.market) ? raw.market : []).filter(isObject).map(
     (r): MarketRow => ({ date: str(r.date), publisher: str(r.publisher), sourceId: str(r.source_id), tier: tierOf(r.tier), title: str(r.title), link: safeLink(r.link) }),
   );
   const sources = (Array.isArray(raw.sources) ? raw.sources : []).filter(isObject).map(
-    (r): SourceRow => ({ id: str(r.id), name: str(r.name), kind: str(r.kind), tier: tierOf(r.tier), status: str(r.status) || 'never tried', reason: str(r.reason), held: num(r.held), newest: str(r.newest), rowsHere: num(r.rows_here) }),
+    (r): SourceRow => ({
+      id: str(r.id), name: str(r.name), kind: str(r.kind), tier: tierOf(r.tier), status: str(r.status) || 'never tried', reason: str(r.reason), held: num(r.held), newest: str(r.newest), rowsHere: num(r.rows_here),
+      trust: isObject(r.trust) ? { value: num(r.trust.value), settled: num(r.trust.settled), confirmed: num(r.trust.confirmed), partly: num(r.trust.partly), contradicted: num(r.trust.contradicted), basis: str(r.trust.basis) === 'measured' ? 'measured' : 'prior' } : null,
+    }),
   );
   const f = isObject(raw.filings) ? raw.filings : {};
   const list = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter(isObject) : []);
@@ -141,6 +208,22 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
     board: list(f.board).map((r): BoardRow => ({ date: str(r.date), purpose: str(r.purpose), description: str(r.description), announced: str(r.announced), link: safeLink(r.link) })),
     flows: list(f.flows).map((r): FlowRow => ({ day: str(r.day), fii: numOrNull(r['FII/FPI']), dii: numOrNull(r.DII) })),
   };
+  const c = isObject(raw.claims) ? raw.claims : {};
+  const claimView = (r: Record<string, unknown>): ClaimView => ({
+    kind: str(r.kind), text: str(r.text), outcome: str(r.outcome) || 'unchecked', detail: str(r.detail), publisher: str(r.publisher), sourceId: str(r.source_id), tier: tierOf(r.tier), published: str(r.published), link: safeLink(r.link),
+  });
+  const claims: Claims = {
+    conflicts: list(c.conflicts).map(claimView),
+    disagreements: list(c.disagreements).map((d): Disagreement => ({
+      kind: str(d.kind), day: str(d.day),
+      sides: list(d.sides).map((s): Side => ({ publisher: str(s.publisher), tier: tierOf(s.tier), text: str(s.text), link: safeLink(s.link), outcome: str(s.outcome) || 'unchecked', detail: str(s.detail) })),
+    })),
+    confirmed: list(c.confirmed).map(claimView),
+    unconfirmed: list(c.unconfirmed).map((u): Unconfirmed => ({ text: str(u.text), stories: num(u.stories), bestTier: tierOf(u.best_tier), sources: strings(u.sources), link: safeLink(u.link), note: str(u.note) })),
+    market: list(c.market).map(claimView),
+    counts: isObject(c.counts) ? Object.fromEntries(Object.entries(c.counts).map(([k, v]) => [k, num(v)])) : {},
+    method: str(c.method),
+  };
   const posts = (Array.isArray(raw.social.items) ? raw.social.items : []).filter(isObject).map(
     (r): PostRow => ({ date: str(r.date), subreddit: str(r.subreddit), title: str(r.title), snippet: str(r.snippet), score: num(r.score), comments: num(r.comments), link: safeLink(r.link) }),
   );
@@ -150,7 +233,7 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
   return {
     symbol: raw.symbol, company: str(raw.company), asOf: str(raw.as_of), windowDays: num(raw.window_days) || 30,
     news: { items, notes: strings(raw.news.notes), counts: { all: num(counts.all), used: num(counts.used), routine: num(counts.routine), press: num(counts.press) } },
-    market, sources, filings,
+    market, sources, filings, claims,
     social: { enabled: raw.social.enabled === true, notes: strings(raw.social.notes), items: posts, bySubreddit: by },
     tone: tone && tone.signal ? tone : null,
     caveat: str(raw.caveat),
@@ -171,6 +254,27 @@ export function citation(r: Pick<NewsRow, 'publisher' | 'tier' | 'published' | '
   if (r.published) parts.push(`published ${when(r.published)} UTC`);
   if (r.firstSeen) parts.push(`first seen ${when(r.firstSeen)} UTC`);
   return parts.join('; ');
+}
+
+/** How a claim's outcome is coloured: our data agreeing is up, disagreeing is down, everything else (waiting, not confirmed, cannot be checked) is neutral. Partly right is neutral too: it is not a confirmation. */
+export const outcomeClass = (outcome: string): 'up' | 'dn' | 'flat' => (outcome === 'confirmed' ? 'up' : outcome === 'contradicted' ? 'dn' : 'flat');
+
+const OUTCOME_WORDS: Record<string, string> = {
+  confirmed: 'confirmed by our data',
+  partly: 'partly right',
+  contradicted: 'contradicted by our data',
+  pending: 'waiting for data',
+  unverified: 'not confirmed',
+  not_checkable: 'cannot be checked',
+};
+export const outcomeLabel = (outcome: string): string => OUTCOME_WORDS[outcome] ?? 'not checked yet';
+
+/** A source's trust in words, saying whether it is a starting estimate or has been measured on settled claims. */
+export function trustLabel(t: Trust | null): string {
+  if (!t) return '';
+  return t.basis === 'measured'
+    ? `trust ${t.value.toFixed(2)}, measured on ${t.settled} settled claims (${t.confirmed} confirmed, ${t.partly} partly, ${t.contradicted} contradicted)`
+    : `trust ${t.value.toFixed(2)}, a starting estimate (${t.settled} settled claim${t.settled === 1 ? '' : 's'} so far; it is measured from 30)`;
 }
 
 /** Rupees in the units a reader uses: crore, lakh, or plain. Missing is a dash, never zero. */

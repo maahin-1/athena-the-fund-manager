@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseCommand } from '../src/command';
 import { SentimentView } from '../src/sentiment';
-import { citation, insiderReachNote, readSentiment, rupees, safeLink, sentimentProblem, statusClass, toneClass, visibleNews } from '../src/sentimentlogic';
+import { citation, insiderReachNote, outcomeClass, outcomeLabel, readSentiment, rupees, safeLink, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews } from '../src/sentimentlogic';
 
 const doc = (over: Record<string, unknown> = {}) => ({
   symbol: 'TCS', company: 'Tata Consultancy Services Limited', as_of: '2026-10-23', window_days: 30,
@@ -241,5 +241,74 @@ describe('flows and insiders', () => {
     expect(text).toContain('Rs 32.94 lakh');
     expect(text).toContain('Board Meeting Intimation');
     expect(view.element.querySelectorAll('.sent-news tr').length).toBe(3); // the news table is unchanged
+  });
+});
+
+describe('checked claims', () => {
+  const view = (o: Record<string, unknown>) => ({ kind: 'price_move', text: 'Infosys stock falls 3%', outcome: 'contradicted', detail: 'the furthest it fell was 1.0%', publisher: 'Mint', source_id: 'mint_markets', tier: 'B', published: '2026-10-28T05:30:00+00:00', link: 'https://x.test/a', ...o });
+  const claims = {
+    conflicts: [view({}), view({ text: 'bad link', link: 'javascript:alert(1)', outcome: 'partly' })],
+    disagreements: [{ kind: 'price_move', day: '2026-10-28', sides: [{ publisher: 'ET', tier: 'B', text: 'Infosys shares jump 5%', link: '', outcome: 'confirmed', detail: 'it rose 6%' }, { publisher: 'Mint', tier: 'B', text: 'Infosys stock falls 3%', link: '', outcome: 'contradicted', detail: 'only 1%' }] }],
+    confirmed: [view({ text: 'Infosys shares jump 5%', outcome: 'confirmed', detail: 'it rose 6%' })],
+    unconfirmed: [{ text: 'Infosys in talks to buy a firm', stories: 2, best_tier: 'B', sources: ['ET', 'Mint'], link: '', note: 'reported by 2 independent stories, best source tier B; no filing or price in our data confirms it' }],
+    market: [view({ kind: 'flow', text: 'FIIs sold Rs 3,500 crore', outcome: 'not_checkable', detail: 'flow history starts 2026-10-28' })],
+    counts: { confirmed: 1, partly: 1, contradicted: 1, pending: 2 },
+    method: 'A claim is read from a headline by fixed patterns.',
+  };
+
+  it('is read defensively: unsafe links dropped, a missing block empty, unknown tiers the least trusted', () => {
+    const got = readSentiment(doc({ claims }))!.claims;
+    expect(got.conflicts.map((c) => c.outcome)).toEqual(['contradicted', 'partly']);
+    expect(got.conflicts[1].link).toBe('');
+    expect(got.disagreements[0].sides.map((s) => s.outcome)).toEqual(['confirmed', 'contradicted']);
+    expect(got.unconfirmed[0]).toMatchObject({ stories: 2, bestTier: 'B', sources: ['ET', 'Mint'] });
+    expect(readSentiment(doc())!.claims).toEqual({ conflicts: [], disagreements: [], confirmed: [], unconfirmed: [], market: [], counts: {}, method: '' });
+    expect(readSentiment(doc({ claims: { conflicts: [view({ tier: 'Z', outcome: '' })] } }))!.claims.conflicts[0]).toMatchObject({ tier: 'C', outcome: 'unchecked' });
+  });
+
+  it('colours only agreement and disagreement and says each outcome in words', () => {
+    expect([outcomeClass('confirmed'), outcomeClass('contradicted'), outcomeClass('partly'), outcomeClass('pending'), outcomeClass('unverified')]).toEqual(['up', 'dn', 'flat', 'flat', 'flat']);
+    expect(outcomeLabel('contradicted')).toBe('contradicted by our data');
+    expect(outcomeLabel('pending')).toBe('waiting for data');
+    expect(outcomeLabel('whatever')).toBe('not checked yet');
+  });
+
+  it('shows a trust figure as a starting estimate until the record is long enough', () => {
+    expect(trustLabel(null)).toBe('');
+    expect(trustLabel({ value: 0.75, settled: 0, confirmed: 0, partly: 0, contradicted: 0, basis: 'prior' })).toBe('trust 0.75, a starting estimate (0 settled claims so far; it is measured from 30)');
+    expect(trustLabel({ value: 0.41, settled: 40, confirmed: 10, partly: 0, contradicted: 30, basis: 'measured' })).toContain('measured on 40 settled claims (10 confirmed, 0 partly, 30 contradicted)');
+  });
+
+  it('reads a source trust and a row claim', () => {
+    const d = doc({ sources: [{ id: 'mint_markets', name: 'Mint', kind: 'press', tier: 'B', status: 'ok', reason: '', held: 3, newest: '', rows_here: 1, trust: { value: 0.7, settled: 4, confirmed: 3, partly: 0, contradicted: 1, basis: 'prior' } }] });
+    d.news.items[0] = { ...d.news.items[0], claim: { outcome: 'contradicted', kind: 'price_move', detail: 'only 1%' } } as never;
+    const got = readSentiment(d)!;
+    expect(got.sources[0].trust).toMatchObject({ value: 0.7, basis: 'prior', contradicted: 1 });
+    expect(got.news.items[0].claim).toEqual({ outcome: 'contradicted', kind: 'price_move', detail: 'only 1%' });
+    expect(got.news.items[1].claim).toBeNull();
+  });
+
+  it('is drawn: contradictions first with what our data said, opposite reports side by side, reports of talks with their story count, and the method', async () => {
+    const fetcher = (async () => new Response(JSON.stringify(doc({ claims })), { status: 200 })) as unknown as typeof fetch;
+    const v = new SentimentView({ onSymbol: () => {} }, fetcher);
+    v.show('TCS');
+    await new Promise((r) => setTimeout(r));
+    const text = v.element.textContent ?? '';
+    expect(text).toContain('Checked claims');
+    expect(text).toContain('1 confirmed, 1 partly right, 1 contradicted, 2 waiting for data');
+    expect(text).toContain('Our data: the furthest it fell was 1.0%');
+    expect(text).toContain('Opposite reports on 2026-10-28');
+    expect(text).toContain('reported by 2 independent stories');
+    expect(text).toContain('FIIs sold Rs 3,500 crore');
+    expect(text).toContain('A claim is read from a headline by fixed patterns.');
+    expect(v.element.querySelectorAll('.sent-claim .chip.dn').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('says so when no headline made a checkable statement', async () => {
+    const fetcher = (async () => new Response(JSON.stringify(doc()), { status: 200 })) as unknown as typeof fetch;
+    const v = new SentimentView({ onSymbol: () => {} }, fetcher);
+    v.show('TCS');
+    await new Promise((r) => setTimeout(r));
+    expect(v.element.textContent).toContain('No headline in this window made a statement that can be checked');
   });
 });

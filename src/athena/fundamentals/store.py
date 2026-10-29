@@ -208,6 +208,21 @@ class FundamentalsStore:
             out.setdefault((start, end), {})[key] = value
         return out
 
+    def quarter_figures(self, symbol: str) -> list[dict[str, Any]]:
+        """Net profit and sales of each quarterly period (80 to 100 days) under each basis, in rupees, with when the filing that carried them was made. One row per basis and period end."""
+        rows = self._con.execute(
+            "SELECT basis, period_start, period_end, key, value, filed FROM statement_lines WHERE symbol = ? AND key IN ('net_profit', 'sales') AND (period_end - period_start) BETWEEN 80 AND 100"
+            " ORDER BY period_end, basis",
+            [symbol],
+        ).fetchall()
+        out: dict[tuple[str, date], dict[str, Any]] = {}
+        for basis, start, end, key, value, filed in rows:
+            row = out.setdefault((basis, end), {"basis": basis, "start": start, "end": end, "filed": filed})
+            row[key] = value
+            if filed is not None and (row["filed"] is None or filed < row["filed"]):
+                row["filed"] = filed  # the first filing that carried the period
+        return list(out.values())
+
     def holdings(self, symbol: str) -> dict[date, dict[str, tuple[float, float | None]]]:
         """Each stored quarter's holder groups as `(shares, holders)`, by quarter end."""
         out: dict[date, dict[str, tuple[float, float | None]]] = {}
