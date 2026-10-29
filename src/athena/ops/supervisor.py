@@ -57,7 +57,7 @@ TASKS: tuple[Task, ...] = (
     Task("prices", ("athena.warehouse.build",), 6, ("nse", "writer:warehouse.duckdb"), 3),
     Task("derivs", ("athena.derivs.ingest", "--since", "2020-01-01"), 6, ("nse", "writer:derivs.duckdb"), 3),
     Task("events", ("athena.warehouse.events",), 12, ("nse", "writer:warehouse.duckdb"), 1),
-    Task("evidence", ("athena.evidence.collect",), 1, ("writer:evidence.duckdb",), 0.3),
+    Task("evidence", ("athena.evidence.collect",), 1, (), 0.3),  # takes its own writer lock
     Task("index_members", ("athena.warehouse.members",), 24 * 7, ("nse", "writer:warehouse.duckdb"), 1),
     Task("fundamentals_ingest", ("athena.fundamentals.ingest", "--universe", "all", "--resume"), 24, (), 12),
     Task("holdings", ("athena.fundamentals.holdings", "--universe", "all", "--resume"), 24, (), 12),
