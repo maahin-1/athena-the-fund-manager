@@ -56,8 +56,25 @@ FEED_SOURCES: tuple[FeedSource, ...] = (
     FeedSource("zee_market_news", "Zee Business", "press", "B", "https://www.zeebiz.com/market-news.xml", off_reason="this feed answers 403; the company and latest feeds are read instead"),
 )
 
+@dataclass(frozen=True)
+class StructuredSource:
+    """A source that is not a feed of stories but rows of data (filings, flows). `scope` company: rows name a company; market: rows are about the whole market."""
+
+    id: str
+    name: str
+    kind: str  # filing | flow
+    tier: str
+    scope: str
+
+
+STRUCTURED_SOURCES: tuple[StructuredSource, ...] = (
+    StructuredSource("nse_pit", "NSE insider trades", "filing", "A", "company"),
+    StructuredSource("nse_board", "NSE board meetings", "filing", "A", "company"),
+    StructuredSource("nse_fiidii", "NSE FII/DII flows", "flow", "A", "market"),
+)
+
 BY_ID = {s.id: s for s in FEED_SOURCES}
-assert len(BY_ID) == len(FEED_SOURCES), "source ids must be unique"
+assert len(BY_ID) == len(FEED_SOURCES) and not set(BY_ID) & {s.id for s in STRUCTURED_SOURCES}, "source ids must be unique"
 
 
 def tier_of(publisher: str, source: str = "") -> str:

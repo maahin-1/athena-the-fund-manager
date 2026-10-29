@@ -1,5 +1,5 @@
 import { el } from './panels/base';
-import { citation, readSentiment, sentimentProblem, statusClass, toneClass, visibleNews, type SentimentDoc } from './sentimentlogic';
+import { citation, insiderReachNote, readSentiment, rupees, sentimentProblem, statusClass, toneClass, visibleNews, type SentimentDoc } from './sentimentlogic';
 
 export interface SentimentHost {
   /** The symbol the user chose here, for the other pages to follow. */
@@ -117,6 +117,40 @@ export class SentimentView {
     return box;
   }
 
+  /** Flows and insiders: the exchange's own rows, with the times the exchange stamped them. Display only. */
+  private filingsBox(d: SentimentDoc): HTMLElement[] {
+    const f = d.filings;
+    const out: HTMLElement[] = [text('div', 'sent-section', 'Flows and insiders (NSE filings, tier A)')];
+    const flows = el('table', 'stable sent-filings');
+    for (const r of f.flows) flows.append(this.row([r.day, `FII/FPI net ${r.fii === null ? '-' : r.fii.toLocaleString('en-IN')} cr`, `DII net ${r.dii === null ? '-' : r.dii.toLocaleString('en-IN')} cr`]));
+    if (f.flows.length) {
+      out.push(text('div', 'note', 'Market-wide institutional flows by day, rupees crore; positive is net buying.'), flows);
+    }
+    out.push(text('div', 'note', insiderReachNote(f.insiderReach, d.asOf)));
+    const c = f.insiderCounts;
+    if (f.insiders.length) out.push(text('div', 'note', `Promoter and promoter-group filings in 180 days: ${c.Buy ?? 0} buys, ${c.Sell ?? 0} sells, ${c.Pledge ?? 0} pledges, ${c['Pledge Revoke'] ?? 0} pledge releases.`));
+    const insiders = el('table', 'stable sent-filings');
+    for (const r of f.insiders) {
+      const tr = this.row([r.filed.slice(0, 10), r.category, r.person, `${r.txn !== '-' ? r.txn : r.mode}${r.shares !== null ? ` ${r.shares.toLocaleString('en-IN')} sh` : ''}`, rupees(r.value), r.afterPct === null ? '' : `holds ${r.afterPct}%`]);
+      if (r.link) tr.title = `Filing: ${r.link}`;
+      insiders.append(tr);
+    }
+    if (f.insiders.length) out.push(insiders);
+    if (f.board.length) {
+      out.push(text('div', 'note', 'Board meetings notified to the exchange (30 days back, 60 ahead):'));
+      const board = el('table', 'stable sent-filings');
+      for (const b of f.board) board.append(this.row([b.date, b.purpose, b.description.slice(0, 160)]));
+      out.push(board);
+    }
+    return out;
+  }
+
+  private row(cells: string[]): HTMLElement {
+    const tr = el('tr');
+    for (const c of cells) tr.append(el('td', '', c));
+    return tr;
+  }
+
   private paint(): void {
     const d = this.doc;
     if (!d) return;
@@ -176,6 +210,8 @@ export class SentimentView {
       }
       out.push(market);
     }
+
+    out.push(...this.filingsBox(d));
 
     out.push(text('div', 'sent-section', 'Reddit'));
     for (const n of d.social.notes) out.push(text('div', 'note', n));

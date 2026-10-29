@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseCommand } from '../src/command';
 import { SentimentView } from '../src/sentiment';
-import { citation, readSentiment, safeLink, sentimentProblem, statusClass, toneClass, visibleNews } from '../src/sentimentlogic';
+import { citation, insiderReachNote, readSentiment, rupees, safeLink, sentimentProblem, statusClass, toneClass, visibleNews } from '../src/sentimentlogic';
 
 const doc = (over: Record<string, unknown> = {}) => ({
   symbol: 'TCS', company: 'Tata Consultancy Services Limited', as_of: '2026-10-23', window_days: 30,
@@ -193,5 +193,53 @@ describe('sources, tiers and citations', () => {
     expect(view.element.querySelectorAll('.sent-news tr').length).toBe(3); // two news rows and one market row
     chips[0].click();
     expect(view.element.querySelectorAll('.sent-news tr').length).toBe(2); // one news row and the market row
+  });
+});
+
+describe('flows and insiders', () => {
+  const filings = {
+    insiders: [{ filed: '2026-04-06T10:37:00+00:00', person: 'A Promoter', category: 'Promoters', txn: 'Sell', mode: 'Market Sale', shares: 2320, value: 3294168, after_pct: 0.5, link: 'javascript:x' }, { person: 'Bad', shares: 'x', value: null }],
+    insider_counts: { Buy: 2, Sell: 1 }, insider_reach: '2026-05-01T00:00:00+00:00',
+    board: [{ date: '2026-11-05', purpose: 'Board Meeting Intimation', description: 'to consider results', announced: '2026-10-28T12:25:00+00:00', link: 'https://x.test/b' }],
+    flows: [{ day: '2026-10-28', 'FII/FPI': -3500.5, DII: 643.35 }, { day: '2026-10-27', DII: 10 }],
+  };
+
+  it('is read defensively: bad numbers become missing, unsafe links are dropped, a missing block is empty', () => {
+    const got = readSentiment(doc({ filings }))!.filings;
+    expect(got.insiders[0]).toMatchObject({ person: 'A Promoter', shares: 2320, value: 3294168, afterPct: 0.5, link: '' });
+    expect(got.insiders[1]).toMatchObject({ shares: null, value: null });
+    expect(got.flows).toEqual([{ day: '2026-10-28', fii: -3500.5, dii: 643.35 }, { day: '2026-10-27', fii: null, dii: 10 }]);
+    expect(got.insiderCounts).toEqual({ Buy: 2, Sell: 1 });
+    expect(readSentiment(doc())!.filings).toEqual({ insiders: [], insiderCounts: {}, insiderReach: '', board: [], flows: [] });
+  });
+
+  it('says rupees in a reader\'s units and never shows a missing value as zero', () => {
+    expect(rupees(3294168)).toBe('Rs 32.94 lakh');
+    expect(rupees(-25_000_000)).toBe('-Rs 2.50 cr');
+    expect(rupees(999)).toBe('Rs 999');
+    expect(rupees(null)).toBe('-');
+  });
+
+  it('warns when the insider data stops long before the page, so an empty list is not read as a quiet company', () => {
+    expect(insiderReachNote('', '2026-10-29')).toContain('No insider filings');
+    expect(insiderReachNote('2026-10-20T00:00:00+00:00', '2026-10-29')).toBe('The newest insider filing held was filed 2026-10-20.');
+    expect(insiderReachNote('2026-05-01T00:00:00+00:00', '2026-10-29')).toContain('does not mean nothing happened');
+  });
+
+  it('is drawn in the page with the flows, the insider counts, the reach warning and the board meetings', async () => {
+    const fetcher = (async () => new Response(JSON.stringify(doc({ filings })), { status: 200 })) as unknown as typeof fetch;
+    const view = new SentimentView({ onSymbol: () => {} }, fetcher);
+    view.show('TCS');
+    await new Promise((r) => setTimeout(r));
+    const text = view.element.textContent ?? '';
+    expect(text).toContain('Flows and insiders');
+    expect(text).toContain('FII/FPI net -3,500.5 cr');
+    expect(text).toContain('DII net 643.35 cr');
+    expect(text).toContain('2 buys, 1 sells');
+    expect(text).toContain('does not mean nothing happened');
+    expect(text).toContain('Sell 2,320 sh');
+    expect(text).toContain('Rs 32.94 lakh');
+    expect(text).toContain('Board Meeting Intimation');
+    expect(view.element.querySelectorAll('.sent-news tr').length).toBe(3); // the news table is unchanged
   });
 });

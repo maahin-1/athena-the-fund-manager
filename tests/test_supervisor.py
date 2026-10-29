@@ -114,7 +114,7 @@ def test_the_standard_tasks_have_unique_names_and_the_fundamentals_jobs_take_the
     names = [t.name for t in sup.TASKS]
     assert len(names) == len(set(names))
     for t in sup.TASKS:
-        if t.argv[0].startswith("athena.fundamentals") or t.argv[0] == "athena.evidence.collect":
+        if t.argv[0].startswith("athena.fundamentals") or t.argv[0] in ("athena.evidence.collect", "athena.evidence.structured"):
             assert t.locks == (), t.name  # they wrap themselves in a Job; a lock taken here would refuse them
         if t.argv[:2] in (("athena.warehouse.build",), ("athena.derivs.ingest",)) or t.argv[0] in ("athena.warehouse.build", "athena.derivs.ingest"):
             assert "nse" in t.locks, t.name

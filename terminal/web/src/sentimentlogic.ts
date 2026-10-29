@@ -38,6 +38,43 @@ export interface SourceRow {
   rowsHere: number;
 }
 
+/** One insider filing: who, what they did, how many shares and for how much (rupees), and when the exchange stamped it. */
+export interface InsiderRow {
+  filed: string;
+  person: string;
+  category: string;
+  txn: string;
+  mode: string;
+  shares: number | null;
+  value: number | null;
+  afterPct: number | null;
+  link: string;
+}
+
+export interface BoardRow {
+  date: string;
+  purpose: string;
+  description: string;
+  announced: string;
+  link: string;
+}
+
+/** Net FII/FPI and DII flow for one day, in rupees crore (null when the exchange gave none). */
+export interface FlowRow {
+  day: string;
+  fii: number | null;
+  dii: number | null;
+}
+
+/** The Flows and insiders box. `insiderReach` is when the newest insider filing held was filed: a quiet box is not a quiet company when this is old. */
+export interface Filings {
+  insiders: InsiderRow[];
+  insiderCounts: Record<string, number>;
+  insiderReach: string;
+  board: BoardRow[];
+  flows: FlowRow[];
+}
+
 export interface PostRow {
   date: string;
   subreddit: string;
@@ -63,6 +100,7 @@ export interface SentimentDoc {
   news: { items: NewsRow[]; notes: string[]; counts: { all: number; used: number; routine: number; press: number } };
   market: MarketRow[];
   sources: SourceRow[];
+  filings: Filings;
   social: { enabled: boolean; notes: string[]; items: PostRow[]; bySubreddit: Record<string, number> };
   tone: Tone | null;
   caveat: string;
@@ -73,6 +111,7 @@ const tierOf = (v: unknown): string => (v === 'A' || v === 'B' ? v : 'C');
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 /** A link the page may open: only http and https. */
 export const safeLink = (v: unknown): string => (typeof v === 'string' && /^https?:\/\//i.test(v) ? v : '');
@@ -91,6 +130,17 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
   const sources = (Array.isArray(raw.sources) ? raw.sources : []).filter(isObject).map(
     (r): SourceRow => ({ id: str(r.id), name: str(r.name), kind: str(r.kind), tier: tierOf(r.tier), status: str(r.status) || 'never tried', reason: str(r.reason), held: num(r.held), newest: str(r.newest), rowsHere: num(r.rows_here) }),
   );
+  const f = isObject(raw.filings) ? raw.filings : {};
+  const list = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter(isObject) : []);
+  const filings: Filings = {
+    insiders: list(f.insiders).map((r): InsiderRow => ({
+      filed: str(r.filed), person: str(r.person), category: str(r.category), txn: str(r.txn), mode: str(r.mode), shares: numOrNull(r.shares), value: numOrNull(r.value), afterPct: numOrNull(r.after_pct), link: safeLink(r.link),
+    })),
+    insiderCounts: isObject(f.insider_counts) ? Object.fromEntries(Object.entries(f.insider_counts).map(([k, v]) => [k, num(v)])) : {},
+    insiderReach: str(f.insider_reach),
+    board: list(f.board).map((r): BoardRow => ({ date: str(r.date), purpose: str(r.purpose), description: str(r.description), announced: str(r.announced), link: safeLink(r.link) })),
+    flows: list(f.flows).map((r): FlowRow => ({ day: str(r.day), fii: numOrNull(r['FII/FPI']), dii: numOrNull(r.DII) })),
+  };
   const posts = (Array.isArray(raw.social.items) ? raw.social.items : []).filter(isObject).map(
     (r): PostRow => ({ date: str(r.date), subreddit: str(r.subreddit), title: str(r.title), snippet: str(r.snippet), score: num(r.score), comments: num(r.comments), link: safeLink(r.link) }),
   );
@@ -100,7 +150,7 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
   return {
     symbol: raw.symbol, company: str(raw.company), asOf: str(raw.as_of), windowDays: num(raw.window_days) || 30,
     news: { items, notes: strings(raw.news.notes), counts: { all: num(counts.all), used: num(counts.used), routine: num(counts.routine), press: num(counts.press) } },
-    market, sources,
+    market, sources, filings,
     social: { enabled: raw.social.enabled === true, notes: strings(raw.social.notes), items: posts, bySubreddit: by },
     tone: tone && tone.signal ? tone : null,
     caveat: str(raw.caveat),
@@ -121,6 +171,24 @@ export function citation(r: Pick<NewsRow, 'publisher' | 'tier' | 'published' | '
   if (r.published) parts.push(`published ${when(r.published)} UTC`);
   if (r.firstSeen) parts.push(`first seen ${when(r.firstSeen)} UTC`);
   return parts.join('; ');
+}
+
+/** Rupees in the units a reader uses: crore, lakh, or plain. Missing is a dash, never zero. */
+export function rupees(value: number | null): string {
+  if (value === null) return '-';
+  const v = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (v >= 1e7) return `${sign}Rs ${(v / 1e7).toFixed(2)} cr`;
+  if (v >= 1e5) return `${sign}Rs ${(v / 1e5).toFixed(2)} lakh`;
+  return `${sign}Rs ${Math.round(v).toLocaleString('en-IN')}`;
+}
+
+/** How the box says its insider data reaches: the newest filing's date, and a plain warning when it is more than 45 days before the page's date. */
+export function insiderReachNote(reach: string, asOf: string): string {
+  if (!reach) return 'No insider filings are held yet.';
+  const days = Math.floor((Date.parse(asOf) - Date.parse(reach)) / 86_400_000);
+  const day = reach.slice(0, 10);
+  return days > 45 ? `The newest insider filing held was filed ${day}, ${days} days before this page: the exchange's feed has shown nothing newer, so an empty list here does not mean nothing happened.` : `The newest insider filing held was filed ${day}.`;
 }
 
 export function toneClass(signal: string): 'up' | 'dn' | 'flat' {

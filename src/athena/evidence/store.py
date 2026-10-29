@@ -13,7 +13,7 @@ import time
 from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,15 @@ import duckdb
 from athena.news.model import NewsItem
 
 DEFAULT_PATH = Path(".athena") / "evidence.duckdb"
+STRUCTURED_DDL = (
+    "CREATE TABLE IF NOT EXISTS insider_trades (trade_id VARCHAR PRIMARY KEY, symbol VARCHAR NOT NULL, person VARCHAR, category VARCHAR, txn VARCHAR, mode VARCHAR, security VARCHAR, shares DOUBLE, value DOUBLE,"
+    " before_shares DOUBLE, after_shares DOUBLE, before_pct DOUBLE, after_pct DOUBLE, trade_from DATE, trade_to DATE, filed_at TIMESTAMP NOT NULL, first_seen_at TIMESTAMP NOT NULL, link VARCHAR)",
+    "CREATE INDEX IF NOT EXISTS insider_symbol ON insider_trades (symbol, filed_at)",
+    "CREATE TABLE IF NOT EXISTS market_flows (day DATE NOT NULL, category VARCHAR NOT NULL, buy DOUBLE, sell DOUBLE, net DOUBLE, first_seen_at TIMESTAMP NOT NULL, PRIMARY KEY (day, category))",
+    "CREATE TABLE IF NOT EXISTS board_meetings (meeting_id VARCHAR PRIMARY KEY, symbol VARCHAR NOT NULL, company VARCHAR, meeting_date DATE NOT NULL, purpose VARCHAR, description VARCHAR,"
+    " announced_at TIMESTAMP NOT NULL, first_seen_at TIMESTAMP NOT NULL, link VARCHAR)",
+    "CREATE INDEX IF NOT EXISTS board_symbol ON board_meetings (symbol, meeting_date)",
+)
 STORY_WINDOW = timedelta(hours=72)
 STORY_SIMILARITY = 0.7  # Jaccard overlap of the headline words at or above which two items are one story
 _WORDS = re.compile(r"[a-z0-9]{3,}")
@@ -75,6 +84,8 @@ class EvidenceStore:
                     "CREATE TABLE IF NOT EXISTS source_health (source_id VARCHAR PRIMARY KEY, last_try TIMESTAMP, last_ok TIMESTAMP, last_status VARCHAR, last_error VARCHAR,"
                     " items_last INTEGER, fail_streak INTEGER, newest_item TIMESTAMP)"
                 )
+                for ddl in STRUCTURED_DDL:
+                    con.execute(ddl)
 
     @contextmanager
     def _open(self):  # noqa: ANN202
@@ -135,7 +146,81 @@ class EvidenceStore:
                 streak = (streak or 0) + 1
             con.execute("INSERT OR REPLACE INTO source_health VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [source_id, stamp, last_ok, status, error[:300], count, streak, held_newest])
 
+    def _insert_new(self, table: str, key_col: str, keys: Sequence[Any], rows: Sequence[Sequence[Any]]) -> int:
+        """Insert the rows whose key is not held yet, in one transaction, and return how many were new. A row already held is never rewritten (its `first_seen_at` stays)."""
+        if not rows:
+            return 0
+        with self._open() as con:
+            held = {r[0] for r in con.execute(f"SELECT {key_col} FROM {table} WHERE {key_col} IN (" + ",".join("?" * len(keys)) + ")", list(keys)).fetchall()}
+            added: set[Any] = set()
+            con.execute("BEGIN")
+            try:
+                for key, row in zip(keys, rows):
+                    if key in held or key in added:
+                        continue
+                    added.add(key)
+                    con.execute(f"INSERT INTO {table} VALUES ({','.join('?' * len(row))})", list(row))
+                con.execute("COMMIT")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+        return len(added)
+
+    def add_insider(self, trades: Sequence[Any], now: datetime) -> int:
+        stamp = _naive(now)
+        rows = [(t.trade_id, t.symbol, t.person, t.category, t.txn, t.mode, t.security, t.shares, t.value, t.before_shares, t.after_shares, t.before_pct, t.after_pct, t.trade_from, t.trade_to, _naive(t.filed_at), stamp, t.link) for t in trades]
+        return self._insert_new("insider_trades", "trade_id", [t.trade_id for t in trades], rows)
+
+    def add_flows(self, flows: Sequence[Any], now: datetime) -> int:
+        stamp = _naive(now)
+        if not flows:
+            return 0
+        with self._open() as con:
+            held = set(con.execute("SELECT day, category FROM market_flows WHERE day >= ?", [min(f.day for f in flows)]).fetchall())
+            new = 0
+            for f in flows:
+                if (f.day, f.category) in held:
+                    continue
+                con.execute("INSERT INTO market_flows VALUES (?, ?, ?, ?, ?, ?)", [f.day, f.category, f.buy, f.sell, f.net, stamp])
+                held.add((f.day, f.category))
+                new += 1
+        return new
+
+    def add_board(self, meetings: Sequence[Any], now: datetime) -> int:
+        stamp = _naive(now)
+        rows = [(m.meeting_id, m.symbol, m.company, m.meeting_date, m.purpose, m.description, _naive(m.announced_at), stamp, m.link) for m in meetings]
+        return self._insert_new("board_meetings", "meeting_id", [m.meeting_id for m in meetings], rows)
+
     # --- reading ---
+    def insider_between(self, since: date, until: date, symbol: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        """Insider trades FILED in the window (by the exchange's stamp), newest first."""
+        sql = "SELECT symbol, person, category, txn, mode, security, shares, value, before_pct, after_pct, trade_from, trade_to, filed_at, first_seen_at, link FROM insider_trades WHERE filed_at >= ? AND filed_at < ?"
+        params: list[Any] = [datetime.combine(since, datetime.min.time()), datetime.combine(until + timedelta(days=1), datetime.min.time())]
+        if symbol:
+            sql, params = sql + " AND symbol = ?", [*params, symbol]
+        keys = ("symbol", "person", "category", "txn", "mode", "security", "shares", "value", "before_pct", "after_pct", "trade_from", "trade_to", "filed_at", "first_seen_at", "link")
+        with self._open() as con:
+            rows = con.execute(sql + " ORDER BY filed_at DESC LIMIT ?", [*params, limit]).fetchall()
+        return [dict(zip(keys, r)) for r in rows]
+
+    def insider_newest(self) -> datetime | None:
+        """When the newest insider filing held was filed: how far this data reaches."""
+        with self._open() as con:
+            row = con.execute("SELECT max(filed_at) FROM insider_trades").fetchone()
+        return row[0].replace(tzinfo=timezone.utc) if row and row[0] else None
+
+    def flows_between(self, since: date, until: date) -> list[dict[str, Any]]:
+        with self._open() as con:
+            rows = con.execute("SELECT day, category, buy, sell, net, first_seen_at FROM market_flows WHERE day >= ? AND day <= ? ORDER BY day DESC, category", [since, until]).fetchall()
+        return [dict(zip(("day", "category", "buy", "sell", "net", "first_seen_at"), r)) for r in rows]
+
+    def board_for(self, symbol: str, since: date, until: date) -> list[dict[str, Any]]:
+        sql = ("SELECT symbol, meeting_date, purpose, description, announced_at, first_seen_at, link FROM board_meetings"
+               " WHERE symbol = ? AND meeting_date >= ? AND meeting_date <= ? ORDER BY meeting_date, announced_at")
+        with self._open() as con:
+            rows = con.execute(sql, [symbol, since, until]).fetchall()
+        return [dict(zip(("symbol", "meeting_date", "purpose", "description", "announced_at", "first_seen_at", "link"), r)) for r in rows]
+
     def _rows(self, sql: str, params: Sequence[Any]) -> list[StoredItem]:
         with self._open() as con:
             rows = con.execute(sql, list(params)).fetchall()

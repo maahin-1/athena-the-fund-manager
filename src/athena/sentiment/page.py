@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from athena.contracts import AthenaError
-from athena.evidence.sources import BY_ID, FEED_SOURCES, tier_of
+from athena.evidence.sources import BY_ID, FEED_SOURCES, STRUCTURED_SOURCES, tier_of
 from athena.evidence.store import EvidenceStore, StoredItem, headline_words
 from athena.news.model import NewsItem, company_names, loose_names, mentions
 from athena.news.packet import WINDOW_DAYS, build_news_packet, is_routine
@@ -116,8 +116,45 @@ def source_rows(health: dict[str, dict[str, Any]], shown: Sequence[dict[str, Any
             "id": s.id, "name": s.name, "kind": s.kind, "tier": s.tier, "scope": s.scope, "status": status, "reason": s.off_reason or h.get("error") or "", "held": h.get("items_held", 0),
             "newest": h["newest_item"].isoformat() if h.get("newest_item") else "", "last_ok": h["last_ok"].isoformat() if h.get("last_ok") else "", "rows_here": per.get(s.id, 0),
         })
+    for s in STRUCTURED_SOURCES:
+        h = health.get(s.id, {})
+        out.append({
+            "id": s.id, "name": s.name, "kind": s.kind, "tier": s.tier, "scope": s.scope, "status": h.get("status", "never tried"), "reason": h.get("error") or "", "held": h.get("items_held", 0),
+            "newest": h["newest_item"].isoformat() if h.get("newest_item") else "", "last_ok": h["last_ok"].isoformat() if h.get("last_ok") else "", "rows_here": 0,
+        })
     out.append({"id": "nse", "name": "NSE announcements", "kind": "filing", "tier": "A", "scope": "company", "status": "ok", "reason": "", "held": 0, "newest": "", "last_ok": "", "rows_here": per.get("nse", 0)})
     return out
+
+
+INSIDER_DAYS = 180
+PROMOTER_CATEGORIES = ("Promoters", "Promoter Group")
+
+
+def _money(value: Any) -> float | None:
+    return round(value, 2) if isinstance(value, (int, float)) else None
+
+
+def structured_boxes(evidence: EvidenceStore, symbol: str, today: date) -> dict[str, Any]:
+    """The Flows and insiders box: the stock's insider filings (last 180 days) with a count by direction for promoters, its board meetings (30 days back to 60 ahead), and the last ten days of
+    FII/DII flows. Counts are made here in code. `insider_reach` is when the newest insider filing held was filed, so a quiet box is not mistaken for a quiet company."""
+    trades = evidence.insider_between(today - timedelta(days=INSIDER_DAYS), today, symbol, limit=200)
+    insiders = [{
+        "filed": t["filed_at"].replace(tzinfo=timezone.utc).isoformat(), "first_seen": t["first_seen_at"].replace(tzinfo=timezone.utc).isoformat(), "person": t["person"], "category": t["category"], "txn": t["txn"], "mode": t["mode"],
+        "security": t["security"], "shares": _money(t["shares"]), "value": _money(t["value"]), "after_pct": _money(t["after_pct"]), "from": t["trade_from"].isoformat() if t["trade_from"] else "", "link": _safe_link(t["link"] or ""),
+    } for t in trades[:25]]
+    promoter = Counter(t["txn"] for t in trades if t["category"] in PROMOTER_CATEGORIES)
+    meetings = evidence.board_for(symbol, today - timedelta(days=30), today + timedelta(days=60))
+    board = [{
+        "date": m["meeting_date"].isoformat(), "purpose": m["purpose"], "description": m["description"], "announced": m["announced_at"].replace(tzinfo=timezone.utc).isoformat(), "link": _safe_link(m["link"] or ""),
+    } for m in meetings]
+    flows: dict[str, dict[str, Any]] = {}
+    for f in evidence.flows_between(today - timedelta(days=14), today):
+        flows.setdefault(f["day"].isoformat(), {"day": f["day"].isoformat()})[f["category"]] = _money(f["net"])
+    newest = evidence.insider_newest()
+    return {
+        "insiders": insiders, "insider_counts": {"Buy": promoter.get("Buy", 0), "Sell": promoter.get("Sell", 0), "Pledge": promoter.get("Pledge", 0), "Pledge Revoke": promoter.get("Pledge Revoke", 0)},
+        "insider_reach": newest.isoformat() if newest else "", "board": board, "flows": list(flows.values())[:10],
+    }
 
 
 def social_rows(posts: Sequence[SocialPost], today: date) -> list[dict[str, Any]]:
@@ -134,6 +171,7 @@ def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditS
     rows = news_rows(result.items, company, today)
     market: list[dict[str, Any]] = []
     sources: list[dict[str, Any]] = []
+    boxes: dict[str, Any] = {"insiders": [], "insider_counts": {}, "insider_reach": "", "board": [], "flows": []}
     notes = list(result.notes)
     if evidence is not None:
         try:
@@ -145,6 +183,7 @@ def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditS
             rows = sorted(rows + evidence_rows(stored, loose_names(company_names(company)), rows, acronym(company)), key=lambda r: r["published"], reverse=True)
             market = market_rows(stored)
             sources = source_rows(health, rows)
+            boxes = structured_boxes(evidence, symbol, today)
         except Exception as exc:  # noqa: BLE001 - the stored sources are an addition: the page still shows what the live path found
             notes.append(f"stored sources unavailable: {type(exc).__name__}")
     social: dict[str, Any] = {"enabled": reddit.enabled, "notes": [], "items": [], "by_subreddit": {}}
@@ -164,7 +203,7 @@ def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditS
     return {
         "symbol": symbol, "company": company, "as_of": today.isoformat(), "window_days": WINDOW_DAYS,
         "news": {"items": rows, "notes": notes, "counts": {"all": len(rows), "used": sum(r["used"] for r in rows), "routine": sum(r["routine"] for r in rows), "press": sum(r["source"] != "nse" for r in rows)}},
-        "market": market, "sources": sources, "social": social, "tone": reading, "caveat": NOT_TESTED,
+        "market": market, "sources": sources, "filings": boxes, "social": social, "tone": reading, "caveat": NOT_TESTED,
     }
 
 
