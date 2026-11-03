@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseCommand } from '../src/command';
 import { SentimentView } from '../src/sentiment';
-import { citation, insiderReachNote, outcomeClass, outcomeLabel, readSentiment, rupees, safeLink, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews } from '../src/sentimentlogic';
+import { RECENT_KEY, citation, insiderReachNote, rememberRecent, outcomeClass, outcomeLabel, readSentiment, rupees, safeLink, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews } from '../src/sentimentlogic';
 
 const doc = (over: Record<string, unknown> = {}) => ({
   symbol: 'TCS', company: 'Tata Consultancy Services Limited', as_of: '2026-10-23', window_days: 30,
@@ -310,5 +310,70 @@ describe('checked claims', () => {
     v.show('TCS');
     await new Promise((r) => setTimeout(r));
     expect(v.element.textContent).toContain('No headline in this window made a statement that can be checked');
+  });
+});
+
+describe('the search box', () => {
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const hits = [{ s: 'TCS', n: 'Tata Consultancy Services Limited', k: 'stock' }, { s: 'TCSBEES', n: 'Some ETF', k: 'etf' }];
+  const calls: string[] = [];
+  const fetcher = (async (url: string) => {
+    calls.push(url);
+    if (url.startsWith('/api/search')) return new Response(JSON.stringify({ results: hits }), { status: 200 });
+    return new Response(JSON.stringify(doc({ symbol: url.includes('TCSBEES') ? 'TCSBEES' : 'TCS' })), { status: 200 });
+  }) as unknown as typeof fetch;
+
+  it('keeps the recent symbols once each, newest first, at most ten, and drops anything that is not a symbol', () => {
+    expect(rememberRecent(['INFY', 'TCS'], 'TCS')).toEqual(['TCS', 'INFY']);
+    expect(rememberRecent(['A', 5, '<b>', 'B'], '')).toEqual(['A', 'B']);
+    expect(rememberRecent(Array.from({ length: 12 }, (_, i) => `S${i}`), 'NEW')).toHaveLength(10);
+    expect(rememberRecent(['A'], 'bad symbol!')).toEqual(['A']);
+  });
+
+  it('suggests as you type, loads the one you pick, and lists it under the box next time', async () => {
+    localStorage.removeItem(RECENT_KEY);
+    calls.length = 0;
+    const view = new SentimentView({ onSymbol: () => {} }, fetcher);
+    document.body.append(view.element);
+    view.show();
+    const input = view.element.querySelector('input.sent-symbol') as HTMLInputElement;
+    input.focus();
+    input.value = 'tata cons';
+    input.dispatchEvent(new Event('input'));
+    await pause(250);
+    expect(calls.some((c) => c.startsWith('/api/search?q=tata%20cons') && c.includes('kinds=stock%2Cetf%2Csme'))).toBe(true);
+    const rows = document.querySelectorAll('.suggest .sg-item');
+    expect(rows.length).toBe(2);
+    rows[1].dispatchEvent(new Event('pointerdown', { cancelable: true }));
+    await pause(20);
+    expect(calls).toContain('/api/sentiment/TCSBEES');
+    expect(input.value).toBe('TCSBEES');
+    expect(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')).toEqual(['TCSBEES']);
+    expect(view.element.querySelector('.sent-recent')?.textContent).toContain('TCSBEES');
+    view.element.remove();
+  });
+
+  it('shows the recent buttons on a fresh page and a click on one loads that stock', async () => {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(['INFY', 'TCS']));
+    calls.length = 0;
+    const view = new SentimentView({ onSymbol: () => {} }, fetcher);
+    const buttons = [...view.element.querySelectorAll('.sent-recent button')] as HTMLButtonElement[];
+    expect(buttons.map((b) => b.textContent)).toEqual(['INFY', 'TCS']);
+    buttons[1].click();
+    await pause(20);
+    expect(calls).toContain('/api/sentiment/TCS');
+  });
+
+  it('works when the browser blocks storage', async () => {
+    const original = Storage.prototype.getItem;
+    Storage.prototype.getItem = () => {
+      throw new Error('blocked');
+    };
+    try {
+      const view = new SentimentView({ onSymbol: () => {} }, fetcher);
+      expect(view.element.querySelector('.sent-recent')?.hasAttribute('hidden')).toBe(true);
+    } finally {
+      Storage.prototype.getItem = original;
+    }
   });
 });

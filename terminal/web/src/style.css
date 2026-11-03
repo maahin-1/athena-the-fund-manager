@@ -697,6 +697,15 @@ abbr.fact { text-decoration: underline dotted; cursor: help; }
 /* sentiment page */
 .sentiment { padding: 8px 12px; overflow: auto; height: 100%; }
 .sent-bar { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.sent-symbol { min-width: 260px; }
+.ipo { padding: 8px 12px; overflow: auto; height: 100%; }
+.ipo-table { width: 100%; margin-bottom: 10px; }
+.ipo-table th { text-align: left; white-space: nowrap; }
+.ipo-name { white-space: nowrap; }
+.ipo-docs, .ipo-sub { font-size: 12px; }
+.ipo-sub2 { padding-left: 14px; }
+.linkbtn { background: none; border: none; color: inherit; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline dotted; }
+.sent-recent { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
 .sent-symbol { width: 140px; }
 .sent-head { font-weight: 600; margin: 4px 0; }
 .sent-section { font-weight: 600; margin: 12px 0 4px; border-bottom: 1px solid var(--border); padding-bottom: 2px; }

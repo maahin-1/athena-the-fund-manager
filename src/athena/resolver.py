@@ -11,6 +11,7 @@ from typing import Protocol
 from athena.clock import utc_now
 from athena.contracts import AthenaError, EmptyRefreshError, UnknownInstrument
 from athena.freshness import check_fresh
+from athena.guard import is_injection
 from athena.isin import isin_checksum_ok, isin_type_hint, looks_like_isin
 from athena.loaders.nse_masters import EQUITY_DATASET, ETF_DATASET
 from athena.routing import route
@@ -277,7 +278,7 @@ class InstrumentResolver:
         if top_edit >= ACCEPT_SCORE and top_edit - runner_up >= ACCEPT_MARGIN:
             return self._resolved(top_entry, top_kind, "fuzzy", round(top_edit, 4), candidates)
 
-        if self._classifier is not None:
+        if self._classifier is not None and not is_injection(query):  # text that tries to change the rules is never shown to a model; the person is asked instead
             try:
                 index, probability = self._classifier.choose(query, candidates)
             except Exception:

@@ -108,10 +108,10 @@ export class OptionsView {
     this.ctx = ctx;
     this.element.hidden = true;
     this.api = options.api ?? serverOptionsApi();
-    this.synthetic = options.feed ?? syntheticFeed();
+    this.now = options.now ?? (() => Date.now() / 1000);
+    this.synthetic = options.feed ?? syntheticFeed(this.now); // the stand-in prices follow the same clock as the page, so a test that sets the clock gets prices for that day
     this.feed = this.synthetic;
     this.storage = options.storage === undefined ? browserStorage() : options.storage;
-    this.now = options.now ?? (() => Date.now() / 1000);
     this.live = options.feed ? null : options.live === undefined ? liveFeed({ spotOf: (u) => this.spotOf(u), push: typeof ctx.feed?.needDerivs === 'function' ? ctx.feed : undefined }) : options.live;
     this.load();
     this.builder = new PayoffBuilder(() => ({

@@ -1,5 +1,6 @@
 import { el } from './panels/base';
-import { citation, insiderReachNote, outcomeClass, outcomeLabel, readSentiment, rupees, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews, type ClaimView, type SentimentDoc } from './sentimentlogic';
+import { attachSuggest } from './suggest';
+import { RECENT_KEY, citation, insiderReachNote, outcomeClass, outcomeLabel, readSentiment, rememberRecent, rupees, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews, type ClaimView, type SentimentDoc } from './sentimentlogic';
 
 export interface SentimentHost {
   /** The symbol the user chose here, for the other pages to follow. */
@@ -14,6 +15,7 @@ export class SentimentView {
   readonly element = el('div', 'sentiment');
   private readonly bar = el('div', 'sent-bar');
   private readonly input = el('input', 'cmd sent-symbol');
+  private readonly recent = el('div', 'sent-recent');
   private readonly toneButton = el('button', 'btn', 'Read the tone');
   private readonly onlyUsed = el('input');
   private readonly status = el('div', 'note');
@@ -26,11 +28,21 @@ export class SentimentView {
 
   constructor(private host: SentimentHost, private fetcher: typeof fetch = (...a) => fetch(...a)) {
     this.element.hidden = true;
-    this.input.placeholder = 'symbol';
+    this.input.placeholder = 'Search a company or symbol…';
     this.input.setAttribute('aria-label', 'sentiment symbol');
     this.input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') this.choose(this.input.value);
+    });
+    // the same drop-down as Chart Lab: symbol, company name or ISIN as you type, up and down, Enter takes the best match, a click takes one
+    attachSuggest(this.input, {
+      kinds: 'stock,etf,sme',
+      enterTakesBest: true,
+      fetcher: this.fetcher,
+      onPick: (hit) => {
+        this.input.value = hit.s;
+        this.choose(hit.s);
+      },
     });
     this.toneButton.type = 'button';
     this.toneButton.title = 'Ask the news analyst for a reading of the news (one model call); the posts are never sent to it';
@@ -41,7 +53,41 @@ export class SentimentView {
     const filter = el('label', 'sclean');
     filter.append(this.onlyUsed, document.createTextNode(' only what an analyst would use'));
     this.bar.append(this.input, this.toneButton, filter);
-    this.element.append(this.bar, this.status, this.body);
+    this.element.append(this.bar, this.recent, this.status, this.body);
+    this.paintRecent();
+  }
+
+  private recentList(): string[] {
+    try {
+      const raw = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as unknown;
+      return Array.isArray(raw) ? rememberRecent(raw, '') : [];
+    } catch {
+      return []; // storage can be blocked: the list is a convenience
+    }
+  }
+
+  private remember(symbol: string): void {
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(rememberRecent(this.recentList(), symbol)));
+    } catch {
+      /* a convenience only */
+    }
+    this.paintRecent();
+  }
+
+  /** The last ten stocks looked at, as buttons under the box. */
+  private paintRecent(): void {
+    const list = this.recentList();
+    this.recent.replaceChildren();
+    this.recent.hidden = list.length === 0;
+    if (!list.length) return;
+    this.recent.append(el('span', 'note', 'Recent: '));
+    for (const s of list) {
+      const b = el('button', 'chip flat', s);
+      b.type = 'button';
+      b.addEventListener('click', () => this.choose(s));
+      this.recent.append(b);
+    }
   }
 
   show(symbol?: string): void {
@@ -89,6 +135,7 @@ export class SentimentView {
       if (tone || !this.doc || this.doc.symbol !== doc.symbol) this.doc = doc;
       else this.doc = { ...doc, tone: this.doc.tone };
       this.status.textContent = '';
+      this.remember(symbol);
       this.paint();
     } catch {
       if (mine === this.token) this.status.textContent = sentimentProblem(502);

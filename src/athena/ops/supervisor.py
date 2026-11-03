@@ -59,6 +59,7 @@ TASKS: tuple[Task, ...] = (
     Task("events", ("athena.warehouse.events",), 12, ("nse", "writer:warehouse.duckdb"), 1),
     Task("evidence", ("athena.evidence.collect",), 1, (), 0.3),  # takes its own writer lock
     Task("evidence_nse", ("athena.evidence.structured",), 1, (), 0.3),  # insider trades, FII/DII, board meetings; each only when due
+    Task("ipo", ("athena.ipo.collect",), 2, (), 0.2),  # the IPO calendar, subscription, listings and SEBI drafts
     Task("evidence_claims", ("athena.evidence.verify",), 1, (), 0.3),  # read new items for claims and check them against our own data
     Task("index_members", ("athena.warehouse.members",), 24 * 7, ("nse", "writer:warehouse.duckdb"), 1),
     Task("fundamentals_ingest", ("athena.fundamentals.ingest", "--universe", "all", "--resume"), 24, (), 12),

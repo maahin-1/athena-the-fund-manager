@@ -174,6 +174,17 @@ def test_low_confidence_or_failing_classifier_falls_back_to_asking_the_user():
     assert isinstance(classified(FakeClassifier(index=99, probability=0.99)).resolve("SBI"), Ambiguity)
 
 
+def test_text_the_guard_calls_an_injection_is_never_shown_to_the_classifier_and_the_person_is_asked(monkeypatch):
+    import athena.resolver as resolver_module
+
+    fake = FakeClassifier(index=0, probability=0.99)
+    assert isinstance(classified(fake).resolve("SBI"), Resolution)  # without the flag, the classifier settles this one
+    fake_seen = len(fake.seen)
+    monkeypatch.setattr(resolver_module, "is_injection", lambda q: True)
+    result = classified(fake).resolve("SBI")
+    assert isinstance(result, Ambiguity) and len(fake.seen) == fake_seen
+
+
 def test_classifier_is_not_called_for_clear_matches():
     fake = FakeClassifier()
     classified(fake).resolve("SBIN")

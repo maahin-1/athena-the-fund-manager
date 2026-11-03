@@ -15,6 +15,7 @@ import { GridView } from './chartlab/gridview';
 import { OptionsView } from './options/view';
 import { FundamentalsView } from './fundamentals/view';
 import { ResearchView } from './research';
+import { IpoView } from './ipo';
 import { SentimentView } from './sentiment';
 import { ScreenView } from './screen';
 import { el, TITLES, type AppContext, type Panel } from './panels/base';
@@ -38,7 +39,7 @@ const STORE_KEY = 'athena.terminal.current';
 const LAST_NAME = '_last';
 const VIEW_KEY = 'athena.terminal.view';
 const NEW_PANEL_TYPES: PanelType[] = ['chart', 'watchlist', 'depth', 'quote', 'details', 'analysis', 'verdict', 'notes', 'tape'];
-type View = 'terminal' | 'lab' | 'grid' | 'options' | 'fund' | 'research' | 'sentiment' | 'screen';
+type View = 'terminal' | 'lab' | 'grid' | 'options' | 'fund' | 'research' | 'sentiment' | 'screen' | 'ipo';
 const BUILDERS: Record<PanelType, new (id: string, ctx: AppContext) => Panel> = {
   watchlist: WatchlistPanel, chart: ChartPanel, depth: DepthPanel, quote: QuotePanel, tape: TapePanel, analysis: AnalysisPanel, verdict: VerdictPanel, details: DetailsPanel, notes: NotesPanel,
 };
@@ -73,6 +74,7 @@ class App implements AppContext {
   private dockHost = el('div', 'dock');
   private research!: ResearchView;
   private sentiment: SentimentView | null = null;
+  private ipo: IpoView | null = null;
   private fund!: FundamentalsView;
   private lab!: ChartLabView;
   /** Made the first time the Grid tab is opened, so a person who never opens it has none of its charts. */
@@ -154,7 +156,7 @@ class App implements AppContext {
     } catch {
       /* storage can be blocked */
     }
-    this.setView(view === 'lab' || view === 'grid' || view === 'options' || view === 'fund' || view === 'research' || view === 'sentiment' || view === 'screen' ? view : 'terminal');
+    this.setView(view === 'lab' || view === 'grid' || view === 'options' || view === 'fund' || view === 'research' || view === 'sentiment' || view === 'screen' || view === 'ipo' ? view : 'terminal');
   }
 
   showSymbol(symbol: string): void {
@@ -223,6 +225,13 @@ class App implements AppContext {
     } else this.sentiment?.hide();
     if (view === 'screen') void this.screen.show();
     else this.screen.hide();
+    if (view === 'ipo') {
+      if (!this.ipo) {
+        this.ipo = new IpoView({ onSymbol: (s) => this.bus.setSymbol('blue', s) });
+        document.getElementById('app')?.append(this.ipo.element);
+      }
+      this.ipo.show();
+    } else this.ipo?.hide();
     if (view === 'terminal') this.dock?.layout(this.dockHost.clientWidth, this.dockHost.clientHeight);
   }
 
@@ -477,9 +486,9 @@ class App implements AppContext {
       this.setView('terminal');
       this.addPanel(t);
     });
-    for (const [v, label] of [['terminal', 'Terminal'], ['lab', 'Chart Lab'], ['grid', 'Grid'], ['options', 'Options'], ['fund', 'Fundamentals'], ['research', 'Research'], ['sentiment', 'Sentiment'], ['screen', 'Screen']] as [View, string][]) {
+    for (const [v, label] of [['terminal', 'Terminal'], ['lab', 'Chart Lab'], ['grid', 'Grid'], ['options', 'Options'], ['fund', 'Fundamentals'], ['research', 'Research'], ['sentiment', 'Sentiment'], ['screen', 'Screen'], ['ipo', 'IPOs']] as [View, string][]) {
       const b = el('button', 'vtab', label);
-      b.title = v === 'options' ? 'Option chain with implied volatility, Greeks, open interest, put-call ratio and max pain, a volatility smile, futures and a payoff builder (F6 cycles the views)' : v === 'grid' ? 'Up to four charts side by side, with the symbol, interval, crosshair and time range kept in step as you choose (F6 cycles the views)' : v === 'lab' ? 'One big chart with indicators, compare, log and percent scales, templates and a data window (F6 cycles the views)' : v === 'fund' ? 'Statements, ratios and growth for one company, from its filings (F6 cycles the views)' : v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F6 cycles the views)' : v === 'sentiment' ? 'What the exchange, the press and Reddit said about one stock, and an optional reading of the news; display only (F6 cycles the views)' : v === 'screen' ? 'Screen every stock and ETF with presets and filters (F6 cycles the views)' : 'Charts, depth and the dockable panels (F6 cycles the views)';
+      b.title = v === 'options' ? 'Option chain with implied volatility, Greeks, open interest, put-call ratio and max pain, a volatility smile, futures and a payoff builder (F6 cycles the views)' : v === 'grid' ? 'Up to four charts side by side, with the symbol, interval, crosshair and time range kept in step as you choose (F6 cycles the views)' : v === 'lab' ? 'One big chart with indicators, compare, log and percent scales, templates and a data window (F6 cycles the views)' : v === 'fund' ? 'Statements, ratios and growth for one company, from its filings (F6 cycles the views)' : v === 'research' ? 'Every analyst in full, plus fundamentals and technicals (F6 cycles the views)' : v === 'sentiment' ? 'What the exchange, the press and Reddit said about one stock, and an optional reading of the news; display only (F6 cycles the views)' : v === 'screen' ? 'Screen every stock and ETF with presets and filters (F6 cycles the views)' : v === 'ipo' ? 'Issues open now, coming and recently listed, and the drafts filed with SEBI, with links to the offer documents; display only (F6 cycles the views)' : 'Charts, depth and the dockable panels (F6 cycles the views)';
       b.addEventListener('click', () => this.setView(v));
       this.viewTabs.set(v, b);
     }
@@ -639,6 +648,9 @@ class App implements AppContext {
         return this.setView('terminal');
       case 'screen':
         return this.setView('screen');
+      case 'ipo':
+        this.say('ipos');
+        return this.setView('ipo');
       case 'grid':
         return this.setView('grid');
       case 'options':
@@ -716,7 +728,7 @@ class App implements AppContext {
     }
     if (e.key === 'F6') {
       e.preventDefault();
-      this.setView(this.view === 'terminal' ? 'lab' : this.view === 'lab' ? 'fund' : this.view === 'fund' ? 'research' : this.view === 'research' ? 'sentiment' : this.view === 'sentiment' ? 'screen' : this.view === 'screen' ? 'grid' : this.view === 'grid' ? 'options' : 'terminal');
+      this.setView(this.view === 'terminal' ? 'lab' : this.view === 'lab' ? 'fund' : this.view === 'fund' ? 'research' : this.view === 'research' ? 'sentiment' : this.view === 'sentiment' ? 'screen' : this.view === 'screen' ? 'ipo' : this.view === 'ipo' ? 'grid' : this.view === 'grid' ? 'options' : 'terminal');
       return;
     }
     const groups: Record<string, PanelType[]> = { F1: ['watchlist'], F2: ['chart'], F3: ['depth', 'quote'], F4: ['tape'] };

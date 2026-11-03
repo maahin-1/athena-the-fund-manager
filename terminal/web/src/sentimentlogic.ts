@@ -169,6 +169,17 @@ export interface SentimentDoc {
   caveat: string;
 }
 
+export const RECENT_KEY = 'athena.sentiment.recent';
+export const RECENT_MAX = 10;
+
+/** The recently viewed symbols with `symbol` first, each once, at most ten. Anything in the stored list that is not a plain symbol is dropped. */
+export function rememberRecent(list: readonly unknown[], symbol: string): string[] {
+  const clean = (v: unknown): string => (typeof v === 'string' && /^[A-Z0-9&-]{1,20}$/.test(v) ? v : '');
+  const first = clean(symbol);
+  const rest = list.map(clean).filter((s) => s && s !== first);
+  return (first ? [first, ...rest] : rest).slice(0, RECENT_MAX);
+}
+
 /** A tier is A, B or C; anything else is read as C (the least trusted), never as more. */
 const tierOf = (v: unknown): string => (v === 'A' || v === 'B' ? v : 'C');
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
