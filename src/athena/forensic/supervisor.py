@@ -148,8 +148,9 @@ class Supervisor:
         not_examined = []
         for name in lane_names:
             runs = results.get(name, [])
-            if not runs or all(r.status in ("budget", "failed") for r in runs):
-                not_examined.append({"lane": name, "why": (runs[-1].note if runs else "never ran") or "no usable run"})
+            looked = bool(self.store.evidence_calls(case.case_id, name)) or any(r.written or r.rejected for r in runs)  # a lane that read nothing and wrote nothing has not examined anything, whatever its status
+            if not runs or not looked or all(r.status in ("budget", "failed") for r in runs):
+                not_examined.append({"lane": name, "why": (runs[-1].note if runs else "never ran") or ("it read nothing and wrote nothing" if runs and not looked else "no usable run")})
         for name in self.kind_lanes.get(case.kind, ()):
             if name not in self.lanes:
                 not_examined.append({"lane": name, "why": "no such agent is available yet"})

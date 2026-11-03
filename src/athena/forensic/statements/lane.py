@@ -12,7 +12,7 @@ import json
 import sys
 import tempfile
 from collections.abc import Callable, Sequence
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -161,7 +161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         router = build_router(meter=Meter(), max_tokens=6000)
         store = ForensicStore(Path(tempfile.gettempdir()) / "forensic_cli.duckdb")
-        case = Case(f"{symbol}-{as_of.isoformat()}", "listed", symbol, as_of)
+        case = Case(f"{symbol}-{as_of.isoformat()}-{datetime.now():%Y%m%d%H%M%S}", "listed", symbol, as_of)  # one id per run: evidence and the ledger are kept by case id
         sup = Supervisor(store, base_registry(statement_tools(data)), {"statements": STATEMENTS_LANE}, router.client_for("reader_retry"), total_calls=12, max_rounds=1)
         print(json.dumps(sup.investigate(case), indent=1, ensure_ascii=False, default=str))
         return 0

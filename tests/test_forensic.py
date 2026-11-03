@@ -10,7 +10,7 @@ import pytest
 from athena.contracts import AthenaError
 from athena.forensic.agent import first_action, pace_line, run_agent, submit
 from athena.forensic.budget import CallBudget
-from athena.forensic.model import ESTABLISHED, FLAG, OBSERVATION, QUESTION, REJECTED, SINGLE_SOURCE, UNROUTABLE, Case, LaneSpec
+from athena.forensic.model import ANSWER, ESTABLISHED, FLAG, OBSERVATION, QUESTION, REJECTED, SINGLE_SOURCE, UNROUTABLE, Case, LaneSpec
 from athena.forensic.scoring import classify, concern, level
 from athena.forensic.store import ForensicStore
 from athena.forensic.supervisor import Supervisor
@@ -70,6 +70,7 @@ def registry():  # noqa: ANN201
 
 TEXT = LaneSpec("text", "reads the documents", ("doc.get", "ledger.read", "notes.read"))
 STATEMENTS = LaneSpec("statements", "reads the financial statements", ("fin.get", "ledger.read", "notes.read"))
+CHECKS = LaneSpec("checks", "states relations the code owns between numbers of the document", ("doc.get", "ledger.read", "notes.read"))
 
 
 def lookup_for(store: ForensicStore):  # noqa: ANN201
@@ -111,10 +112,37 @@ class TestVerify:
         ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
         parts = {"relation": "equal", "left": [{"ev": ev, "path": "fresh_issue.crore"}, {"ev": ev, "path": "offer_for_sale.crore"}], "right": {"ev": ev, "path": "offer_total.crore"}}
         assert evaluate_contradiction(parts, lookup_for(store)) is True  # 800 + 150 is not 1000
-        holds = {**parts, "left": [{"ev": ev, "path": "fresh_issue.crore"}, {"ev": ev, "path": "offer_for_sale.crore"}, {"ev": ev, "path": "offer_for_sale.crore"}]}
-        assert evaluate_contradiction({**holds, "relation": "at_least"}, lookup_for(store)) is False
+        assert evaluate_contradiction({**parts, "relation": "at_most"}, lookup_for(store)) is False  # 950 is at most 1000
+        assert evaluate_contradiction({**parts, "relation": "at_least"}, lookup_for(store)) is True
         assert evaluate_contradiction({**parts, "left": {"ev": ev, "path": "nope"}}, lookup_for(store)) is None
-        assert evaluate_contradiction({**parts, "relation": "at_most", "right": {"ev": ev, "path": "offer_total.crore"}}, lookup_for(store)) is False
+
+    def test_a_relation_with_nothing_behind_it_is_never_proven(self, store) -> None:  # noqa: ANN001
+        ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
+        a, b = {"ev": ev, "path": "fresh_issue.crore"}, {"ev": ev, "path": "offer_total.crore"}
+        look = lookup_for(store)
+        assert evaluate_contradiction({"relation": "equal", "left": a, "right": b}, look) is True  # 800 against 1000: a real difference
+        assert evaluate_contradiction({"relation": "equal", "left": a, "right": b, "tol": -1}, look) is None  # a negative tolerance would 'violate' anything
+        assert evaluate_contradiction({"relation": "equal", "left": a, "right": b, "tol": 0.9}, look) is None
+        assert evaluate_contradiction({"relation": "equal", "left": a, "right": b, "tol": "x"}, look) is None
+        assert evaluate_contradiction({"relation": "equal", "left": [], "right": b}, look) is None  # an empty side sums to 0
+        assert evaluate_contradiction({"relation": "equal", "left": [a, a], "right": a}, look) is None  # the same number used twice
+        assert evaluate_contradiction({"relation": "equal", "left": a, "right": a}, look) is None  # a number against itself
+        assert evaluate_contradiction({"relation": "same", "left": a, "right": b}, look) is None
+        flag = {"text": "t", "flag_type": "arithmetic", "evidence": [ev, ev], "innocent": ["rounding"]}
+        assert "different numbers" in verify_entry(FLAG, {**flag, "contradiction": {"relation": "equal", "left": a, "right": a}}, look)
+        assert "tol" in verify_entry(FLAG, {**flag, "contradiction": {"relation": "equal", "left": a, "right": b, "tol": -1}}, look)
+
+    def test_malformed_fields_are_a_refusal_not_a_crash(self, store) -> None:  # noqa: ANN001
+        ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
+        look = lookup_for(store)
+        for bad in ({"evidence": 5}, {"evidence": [ev], "values": [1, 2]}, {"evidence": [ev], "innocent": 5}):
+            assert "must be" in verify_entry(FLAG, {"text": "t", "flag_type": "arithmetic", **bad}, look)
+
+    def test_a_quote_needs_some_length_and_is_of_the_text_not_of_the_field_names(self, store) -> None:  # noqa: ANN001
+        ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
+        look = lookup_for(store)
+        assert "quote is not in" in verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": "e"}, look)  # a letter is somewhere in any result
+        assert "quote is not in" in verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": "offer total crore"}, look)  # field names of a tool are not what a document says
 
     def test_a_flag_may_rest_on_two_numbers_from_one_result_if_it_states_the_contradiction(self, store) -> None:  # noqa: ANN001
         ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
@@ -136,23 +164,43 @@ class TestScoring:
             body["contradiction"] = contradiction
         return store.add_entry("c1", FLAG, author, 1, body)
 
-    def test_a_proven_contradiction_is_established_alone(self, store) -> None:  # noqa: ANN001
-        ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
-        ev2 = store.add_evidence("c1", "text", "doc.get", {"x": 1}, OFFER)
-        fid = self._flag(store, "text", [ev, ev2], "arithmetic", {"relation": "equal", "left": {"ev": ev, "path": "fresh_issue.crore"}, "right": {"ev": ev, "path": "offer_total.crore"}})
+    RELATION = staticmethod(lambda ev: {"relation": "equal", "left": {"ev": ev, "path": "fresh_issue.crore"}, "right": {"ev": ev, "path": "offer_total.crore"}})
+
+    def test_a_violated_invariant_of_the_checks_lane_is_established_alone(self, store) -> None:  # noqa: ANN001
+        ev = store.add_evidence("c1", "checks", "doc.checks", {}, OFFER)
+        ev2 = store.add_evidence("c1", "checks", "doc.checks", {"x": 1}, OFFER)
+        fid = self._flag(store, "checks", [ev, ev2], "arithmetic", self.RELATION(ev))
         classify(store, "c1", lookup_for(store))
         assert store.entry("c1", fid).status == ESTABLISHED
 
-    def test_one_source_stays_single_until_another_lane_backs_it(self, store) -> None:  # noqa: ANN001
+    def test_a_relation_a_model_chose_is_not_proof_even_when_the_numbers_differ(self, store) -> None:  # noqa: ANN001
+        ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
+        ev2 = store.add_evidence("c1", "text", "doc.get", {"x": 1}, OFFER)
+        fid = self._flag(store, "text", [ev, ev2], "arithmetic", self.RELATION(ev))
+        classify(store, "c1", lookup_for(store))
+        entry = store.entry("c1", fid)
+        assert entry.status == SINGLE_SOURCE and "numbers it compares do differ" in entry.reason
+
+    def test_one_source_stays_single_until_another_lane_backs_it_with_evidence_of_its_own(self, store) -> None:  # noqa: ANN001
         a, b = (store.add_evidence("c1", "text", "doc.get", {"n": n}, OFFER) for n in (1, 2))
         fid = self._flag(store, "text", [a, b])
-        classify(store, "c1", lookup_for(store))
+        look = lookup_for(store)
+        classify(store, "c1", look)
         assert store.entry("c1", fid).status == SINGLE_SOURCE
-        store.add_entry("c1", OBSERVATION, "text", 1, {"text": "same lane again", "evidence": [a], "supports": fid})
-        classify(store, "c1", lookup_for(store))
+        quote = "customer concentration is 4.12% of revenue"
+        store.add_entry("c1", OBSERVATION, "text", 1, {"text": "same lane again", "evidence": [a], "quote": quote, "supports": fid})
+        classify(store, "c1", look)
         assert store.entry("c1", fid).status == SINGLE_SOURCE  # the author backing its own flag is not a second source
-        store.add_entry("c1", OBSERVATION, "statements", 2, {"text": "independent", "evidence": [b], "supports": fid})
-        classify(store, "c1", lookup_for(store))
+        store.add_entry("c1", ANSWER, "statements", 2, {"text": "found nothing", "answers": "L9", "cannot_determine": True, "supports": fid})
+        store.add_entry("c1", OBSERVATION, "statements", 2, {"text": "reads the same result as the flag", "evidence": [b], "quote": quote, "supports": fid})
+        classify(store, "c1", look)
+        assert store.entry("c1", fid).status == SINGLE_SOURCE  # "cannot determine" backs nothing, and a result the flag already cites is not a second source
+        own = store.add_evidence("c1", "statements", "fin.get", {}, OFFER)
+        store.add_entry("c1", OBSERVATION, "statements", 2, {"text": "no quote or numbers", "evidence": [own], "supports": fid})
+        classify(store, "c1", look)
+        assert store.entry("c1", fid).status == SINGLE_SOURCE  # saying nothing checkable backs nothing
+        store.add_entry("c1", OBSERVATION, "statements", 2, {"text": "independent", "evidence": [own], "quote": quote, "supports": fid})
+        classify(store, "c1", look)
         assert store.entry("c1", fid).status == ESTABLISHED
 
     def test_two_flags_on_the_same_evidence_are_one(self, store) -> None:  # noqa: ANN001
@@ -161,9 +209,18 @@ class TestScoring:
         classify(store, "c1", lookup_for(store))
         assert store.entry("c1", second).status == "duplicate" and store.entry("c1", first).status == SINGLE_SOURCE
 
+    def test_of_flags_that_compare_the_same_numbers_the_proven_one_is_kept(self, store) -> None:  # noqa: ANN001
+        a, b = (store.add_evidence("c1", "checks", "doc.checks", {"n": n}, OFFER) for n in (1, 2))
+        unproven = self._flag(store, "text", [a, b], "arithmetic", self.RELATION(a))
+        proven = self._flag(store, "checks", [a, b], "arithmetic", self.RELATION(a))
+        other = self._flag(store, "checks", [a, b], "arithmetic", {"relation": "at_least", "left": {"ev": a, "path": "offer_for_sale.crore"}, "right": {"ev": a, "path": "offer_total.crore"}})
+        classify(store, "c1", lookup_for(store))
+        assert store.entry("c1", unproven).status == "duplicate" and store.entry("c1", proven).status == ESTABLISHED
+        assert store.entry("c1", other).status == ESTABLISHED  # a different pair of numbers is a different flag, not a duplicate
+
     def test_concern_is_a_range_that_shows_the_uncertainty(self, store) -> None:  # noqa: ANN001
         a, b = (store.add_evidence("c1", "text", "doc.get", {"n": n}, OFFER) for n in (1, 2))
-        self._flag(store, "text", [a, b], "arithmetic", {"relation": "equal", "left": {"ev": a, "path": "fresh_issue.crore"}, "right": {"ev": a, "path": "offer_total.crore"}})
+        self._flag(store, "checks", [a, b], "arithmetic", {"relation": "equal", "left": {"ev": a, "path": "fresh_issue.crore"}, "right": {"ev": a, "path": "offer_total.crore"}})
         self._flag(store, "statements", [a], "text_vs_data")  # rejected shapes are never kept, so build a valid single-source one
         self._flag(store, "statements", [b, a], "claim_vs_outside")
         classify(store, "c1", lookup_for(store))
@@ -279,20 +336,28 @@ class TestSupervisor:
     def test_a_proven_difference_and_a_question_between_lanes(self, store, registry) -> None:  # noqa: ANN001
         flag = {**FLAG_JSON, "evidence": ["E1", "E2"]}
         script = Script(
-            text=[{"action": "tool", "tool": "doc.get", "args": {}}, {"action": "tool", "tool": "doc.get", "args": {"again": True}}, flag, {"action": "finish", "summary": "offer table"},
+            checks=[{"action": "tool", "tool": "doc.get", "args": {}}, {"action": "tool", "tool": "doc.get", "args": {"again": True}}, flag, {"action": "finish", "summary": "offer table"}, {"action": "finish", "summary": "nothing more"}],
+            text=[{"action": "finish", "summary": "nothing to read yet"},
                   {"action": "write", "kind": "ANSWER", "answers": "L2", "text": "the document gives no reason", "cannot_determine": True}, {"action": "finish", "summary": "answered"}],
             statements=[{"action": "tool", "tool": "fin.get", "args": {}}, {"action": "write", "kind": "QUESTION", "to": "text", "text": "does the document explain the rise in receivable days?"}, {"action": "finish", "summary": "ratios"},
                         {"action": "finish", "summary": "nothing more"}],
             supervisor=["L1 differs: the fresh issue and the offer for sale do not add up to the offer total. Receivable days rose and nothing explains it. Not examined: ownership and peers."],
         )
-        report = self.make(store, registry, script).investigate(CASE)
+        report = self.make(store, registry, script, lanes=(CHECKS, TEXT, STATEMENTS), kind_lanes={"drhp": ("checks", "text", "statements", "ownership", "peers")}).investigate(CASE)
         assert report["concern"]["established"] == 1 and report["concern"]["low"] == "moderate"
-        assert [f["id"] for f in report["established"]] == ["L1"] and report["established"][0]["why"].startswith("the stated relation")
+        assert [f["id"] for f in report["established"]] == ["L1"] and report["established"][0]["why"].startswith("the code's own invariant")
         assert report["unanswered_questions"] == [] and report["stopped_because"]
         assert {n["lane"] for n in report["not_examined"]} == {"ownership", "peers"}
         assert report["narrative"].startswith("L1 differs")
-        assert report["cost"]["model_calls"] == 11 and report["cost"]["cap"] == 40
+        assert report["cost"]["cap"] == 40
         assert store.report("c1")["concern"]["established"] == 1
+
+    def test_the_same_difference_written_by_a_model_lane_stays_single_source(self, store, registry) -> None:  # noqa: ANN001
+        flag = {**FLAG_JSON, "evidence": ["E1", "E2"]}
+        script = Script(text=[{"action": "tool", "tool": "doc.get", "args": {}}, {"action": "tool", "tool": "doc.get", "args": {"b": 2}}, flag, {"action": "finish", "summary": ""}],
+                        statements=[{"action": "finish", "summary": ""}], supervisor=["x"])
+        report = self.make(store, registry, script, max_rounds=1).investigate(CASE)
+        assert report["concern"]["established"] == 0 and report["concern"]["single_source"] == 1 and report["concern"]["low"] == "none established"
 
     def test_a_flag_with_one_source_is_sent_to_another_lane_and_stands_when_it_is_backed(self, store, registry) -> None:  # noqa: ANN001
         flag = {"action": "write", "kind": "FLAG", "flag_type": "text_vs_data", "text": "receivable days rose faster than revenue", "evidence": ["E1", "E2"], "innocent": ["longer credit terms to a big customer"]}
@@ -321,6 +386,12 @@ class TestSupervisor:
         assert "text" in {n["lane"] for n in report["not_examined"]} and report["concern"]["low"] == "none established"
         assert report["lanes"]["text"][0]["status"] == "failed"
 
+    def test_a_lane_that_read_nothing_and_wrote_nothing_is_not_examined_even_if_it_finished_cleanly(self, store, registry) -> None:  # noqa: ANN001
+        script = Script(text=[{"action": "finish", "summary": "nothing to do"}], statements=[{"action": "tool", "tool": "fin.get", "args": {}}, {"action": "finish", "summary": "looked"}], supervisor=["x"])
+        report = self.make(store, registry, script, max_rounds=1).investigate(CASE)
+        assert [n["lane"] for n in report["not_examined"] if n["lane"] in ("text", "statements")] == ["text"]
+        assert "read nothing" in next(n["why"] for n in report["not_examined"] if n["lane"] == "text")
+
     def test_the_call_cap_is_kept_and_says_so(self, store, registry) -> None:  # noqa: ANN001
         script = Script(text=[{"action": "note", "text": "a"}] * 20, statements=[{"action": "note", "text": "b"}] * 20, supervisor=["x"])
         report = self.make(store, registry, script, total_calls=5).investigate(CASE)
@@ -331,9 +402,9 @@ class TestSupervisor:
         flag = {**FLAG_JSON, "evidence": ["E1", "E2"]}
         for narrative in ("L9 shows the company lied. You should avoid it. Concern is high.", "L1 is bad, so sell now."):
             s = ForensicStore(store._path.with_name(f"n{abs(hash(narrative))}.duckdb"))  # noqa: SLF001
-            script = Script(text=[{"action": "tool", "tool": "doc.get", "args": {}}, {"action": "tool", "tool": "doc.get", "args": {"b": 2}}, flag, {"action": "finish", "summary": ""}],
+            script = Script(checks=[{"action": "tool", "tool": "doc.get", "args": {}}, {"action": "tool", "tool": "doc.get", "args": {"b": 2}}, flag, {"action": "finish", "summary": ""}],
                             statements=[{"action": "finish", "summary": ""}], supervisor=[narrative])
-            report = self.make(s, registry, script, max_rounds=1).investigate(CASE)
+            report = self.make(s, registry, script, lanes=(CHECKS, STATEMENTS), kind_lanes={"drhp": ("checks", "statements")}, max_rounds=1).investigate(CASE)
             assert report["narrative"].startswith("Concern level: moderate") and "avoid" not in report["narrative"] and "sell" not in report["narrative"]
             assert report["concern"]["low"] == "moderate"
 

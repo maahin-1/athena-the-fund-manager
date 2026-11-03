@@ -13,7 +13,7 @@ import json
 import sys
 import tempfile
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -146,7 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         from athena.forensic.tools import base_registry
 
         store = ForensicStore(Path(tempfile.gettempdir()) / "forensic_cli.duckdb")
-        case = Case(f"{args.doc_id}-text", "drhp", args.doc_id, date.today())
+        case = Case(f"{args.doc_id}-{datetime.now():%Y%m%d%H%M%S}", "drhp", args.doc_id, date.today())  # one id per run: evidence and the ledger are kept by case id
         registry = base_registry(document_tools(data))
         if not args.agent:
             ctx = ToolContext(case, store, "text")

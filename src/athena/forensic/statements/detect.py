@@ -65,8 +65,9 @@ class Universe:
         own = self._sorted[key]
         if industry and len(own) >= MIN_INDUSTRY_PEERS:
             return own, f"industry: {industry}"
-        everyone = self._sorted.setdefault((measure, ""), sorted(v[measure].value for v in self.values.values() if measure in v))
-        return everyone, "all industrial companies"
+        if (measure, "") not in self._sorted:  # built once; setdefault would sort the whole universe again on every call
+            self._sorted[(measure, "")] = sorted(v[measure].value for v in self.values.values() if measure in v)
+        return self._sorted[(measure, "")], "all industrial companies"
 
     def worse_than(self, measure: str, symbol: str) -> tuple[float, int, str] | None:
         value = self.values.get(symbol, {}).get(measure)

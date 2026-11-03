@@ -20,6 +20,7 @@ from typing import Any
 
 import duckdb
 
+from athena.contracts import AthenaError
 from athena.forensic.model import Case, Entry
 
 DEFAULT_PATH = Path(".athena") / "forensic.duckdb"
@@ -65,9 +66,13 @@ class ForensicStore:
 
     # --- cases ---
     def add_case(self, case: Case) -> None:
+        """Evidence, ledger, notes and call counts are all keyed by the case id, so an id belongs to one target at one date; a second investigation needs its own id (the command lines add a run stamp)."""
         with self._open() as con:
-            if not con.execute("SELECT 1 FROM cases WHERE case_id = ?", [case.case_id]).fetchone():
+            held = con.execute("SELECT kind, target, as_of FROM cases WHERE case_id = ?", [case.case_id]).fetchone()
+            if held is None:
                 con.execute("INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?)", [case.case_id, case.kind, case.target, case.as_of, json.dumps(dict(case.meta), default=str), _now()])
+            elif (held[0], held[1], held[2]) != (case.kind, case.target, case.as_of):
+                raise AthenaError(f"case {case.case_id!r} already exists for {held[0]} {held[1]} as of {held[2]}; use a new case id for {case.kind} {case.target} as of {case.as_of}")
 
     # --- evidence ---
     def add_evidence(self, case_id: str, lane: str, tool: str, args: dict[str, Any], result: Any) -> str:

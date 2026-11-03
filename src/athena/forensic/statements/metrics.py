@@ -153,7 +153,10 @@ def additions_vs_capex(a: Annuals) -> tuple[float, dict[str, Any]] | None:
         return None
     capex, dep = _sums(ys[1:], _cf("capex")), _sums(ys[1:], _inc("depreciation"))
     fa0, fa1 = (_g(ys[0].balance, "fixed_assets"), _g(ys[-1].balance, "fixed_assets"))
-    cw0, cw1 = (_g(ys[0].balance, "cwip") or 0.0, _g(ys[-1].balance, "cwip") or 0.0)
+    cw0_held, cw1_held = _g(ys[0].balance, "cwip"), _g(ys[-1].balance, "cwip")
+    if (cw0_held is None) != (cw1_held is None):  # a line held in one year and not the other is a gap, not a zero: the change in it would be invented
+        return None
+    cw0, cw1 = cw0_held or 0.0, cw1_held or 0.0
     if capex is None or dep is None or fa0 is None or fa1 is None or capex <= 0:
         return None
     implied = (fa1 + cw1) - (fa0 + cw0) + dep
@@ -175,9 +178,11 @@ def cash_beside_debt(a: Annuals) -> tuple[float, dict[str, Any]] | None:
     if not ys:
         return None
     last = ys[-1]
-    debt, ta, cash = _g(last.balance, "borrowings"), _g(last.balance, "total_assets"), (_g(last.balance, "cash") or 0.0) + (_g(last.balance, "bank_balances") or 0.0)
-    if debt is None or ta is None or ta <= 0 or debt / ta < 0.15:  # only meaningful for a company that borrows a lot
+    debt, ta = _g(last.balance, "borrowings"), _g(last.balance, "total_assets")
+    held = [v for v in (_g(last.balance, "cash"), _g(last.balance, "bank_balances")) if v is not None]
+    if debt is None or ta is None or ta <= 0 or debt / ta < 0.15 or not held:  # only meaningful for a company that borrows a lot, and when at least one cash line is held
         return None
+    cash = sum(held)
     return cash / debt * 100.0, {**_series(ys, borrowings=_bal("borrowings"), cash=_bal("cash"), bank_balances=_bal("bank_balances"), total_assets=_bal("total_assets"))}
 
 

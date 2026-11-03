@@ -217,7 +217,10 @@ def run_agent(
                 wasted += 1
                 continue
             body = {k: v for k, v in action.items() if k not in ("action", "kind")}
-            entry_id, reason = submit(store, case, lane.name, round_no, entry_kind, body)
+            try:
+                entry_id, reason = submit(store, case, lane.name, round_no, entry_kind, body)
+            except (AthenaError, TypeError, ValueError, AttributeError, KeyError) as exc:  # a malformed field from a model: the entry is refused, the run goes on
+                entry_id, reason = store.add_entry(case.case_id, entry_kind, lane.name, round_no, {"text": str(body.get("text", ""))[:300]}, status=REJECTED, reason=f"malformed entry ({type(exc).__name__})"), f"malformed entry ({type(exc).__name__})"
             if reason is None:
                 result.written += 1
                 wasted = 0

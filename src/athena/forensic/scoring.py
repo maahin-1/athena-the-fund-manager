@@ -14,7 +14,7 @@ from athena.forensic.model import (
     ANOMALY_VS_PEERS, ANSWER, ARITHMETIC, CLAIM_VS_OUTSIDE, DOC_VS_DOC, DUPLICATE, ESTABLISHED, FLAG, OBSERVATION, REJECTED, SINGLE_SOURCE, TEXT_VS_DATA, Entry,
 )
 from athena.forensic.store import ForensicStore
-from athena.forensic.verify import Lookup, evaluate_contradiction
+from athena.forensic.verify import Lookup, contradiction_paths, evaluate_contradiction
 
 WEIGHTS = {ARITHMETIC: 3.0, DOC_VS_DOC: 2.0, TEXT_VS_DATA: 2.0, CLAIM_VS_OUTSIDE: 2.0, ANOMALY_VS_PEERS: 1.0}
 SINGLE_SOURCE_SHARE = 0.5
@@ -31,25 +31,46 @@ def level(score: float) -> str:
     return "high"
 
 
+CODE_AUTHOR = "checks"  # the lane that is code: its contradictions state invariants the registry owns, so a violation is proof
+
+
+def _supports(entry: Entry, flag: Entry, lookup: Lookup) -> bool:
+    """Whether `entry` independently backs `flag`. It must be another lane's observation or answer that says something (a quote or numbers; "cannot determine" backs nothing) and rests on evidence that the
+    flag does not cite and that the supporting lane itself fetched: a second reading of the same result is not a second source."""
+    if entry.kind not in (OBSERVATION, ANSWER) or entry.status == REJECTED or entry.body.get("supports") != flag.id or entry.author == flag.author:
+        return False
+    if entry.body.get("cannot_determine") or not (entry.body.get("quote") or entry.body.get("values")):
+        return False
+    own = [ev for ev in entry.evidence if ev not in flag.evidence and (row := lookup(ev)) is not None and row.get("lane") == entry.author]
+    return bool(own)
+
+
+def _proof(flag: Entry, lookup: Lookup) -> bool:
+    """A violated relation proves a flag only when the relation is the code's own (an invariant the `checks` lane states). A relation a model chose is a claim about which numbers must agree, and the
+    model may be wrong about that; such a flag stays single-source unless a second lane backs it, and says that the stated numbers do differ."""
+    return flag.author == CODE_AUTHOR and evaluate_contradiction(flag.body.get("contradiction"), lookup) is True
+
+
 def classify(store: ForensicStore, case_id: str, lookup: Lookup) -> None:
-    """Set the status of every kept flag: established, single_source or duplicate."""
+    """Set the status of every kept flag: established, single_source or duplicate. Flags with the same type, evidence and compared numbers are one flag; when one of them is proven, that one is kept."""
     entries = store.entries(case_id)
     flags = [e for e in entries if e.kind == FLAG and e.status != REJECTED]
-    seen: dict[tuple[str, frozenset[str]], str] = {}
+    groups: dict[tuple[str, frozenset[str], frozenset[tuple[str, str]]], list[Entry]] = {}
     for flag in flags:
-        key = (str(flag.body.get("flag_type")), frozenset(flag.evidence))
-        if key in seen:
-            store.set_status(case_id, flag.id, DUPLICATE, f"same evidence as {seen[key]}")
-            continue
-        seen[key] = flag.id
-        proven = evaluate_contradiction(flag.body.get("contradiction"), lookup) is True
-        supporters = {e.author for e in entries if e.kind in (OBSERVATION, ANSWER) and e.status != REJECTED and e.body.get("supports") == flag.id and e.author != flag.author}
-        if proven:
-            store.set_status(case_id, flag.id, ESTABLISHED, "the stated relation between the cited numbers does not hold")
+        groups.setdefault((str(flag.body.get("flag_type")), frozenset(flag.evidence), frozenset(contradiction_paths(flag.body.get("contradiction")))), []).append(flag)
+    for group in groups.values():
+        keep = next((f for f in group if _proof(f, lookup)), group[0])
+        for flag in group:
+            if flag is not keep:
+                store.set_status(case_id, flag.id, DUPLICATE, f"same evidence as {keep.id}")
+        supporters = {e.author for e in entries if _supports(e, keep, lookup)}
+        stated = evaluate_contradiction(keep.body.get("contradiction"), lookup) is True
+        if _proof(keep, lookup):
+            store.set_status(case_id, keep.id, ESTABLISHED, "the code's own invariant is violated by the cited numbers")
         elif supporters:
-            store.set_status(case_id, flag.id, ESTABLISHED, f"independently supported by {', '.join(sorted(supporters))}")
+            store.set_status(case_id, keep.id, ESTABLISHED, f"independently supported by {', '.join(sorted(supporters))}")
         else:
-            store.set_status(case_id, flag.id, SINGLE_SOURCE, "one source only")
+            store.set_status(case_id, keep.id, SINGLE_SOURCE, "one source only" + ("; the numbers it compares do differ as it states, but the relation is its own claim" if stated else ""))
 
 
 def concern(flags: Sequence[Entry]) -> dict[str, Any]:

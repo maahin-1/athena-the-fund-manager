@@ -206,7 +206,7 @@ class TestUniverse:
 
 class TestTools:
     def ctx(self, store, symbol="HIGHREC"):  # noqa: ANN001, ANN201
-        case = Case("c", "listed", symbol, AS_OF)
+        case = Case(f"c-{symbol}", "listed", symbol, AS_OF)
         store.add_case(case)
         return ToolContext(case, store, "statements")
 

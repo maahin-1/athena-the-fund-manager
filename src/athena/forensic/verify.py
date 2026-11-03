@@ -9,7 +9,6 @@
 An entry that fails is kept with status `rejected` and the reason, so the report can say how often an agent cited something that was not there."""
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -23,6 +22,21 @@ REL_TOL = 1e-6
 
 def squash(text: str) -> str:
     return re.sub(r"[^0-9a-z]+", "", text.lower())
+
+
+def _words(data: Any) -> str:
+    """The text and numbers of a result, without its field names: a quote is of what a document says, not of how a tool names its fields."""
+    if isinstance(data, bool) or data is None:
+        return ""
+    if isinstance(data, str):
+        return data + "\n"
+    if isinstance(data, (int, float)):
+        return f"{data}\n"
+    if isinstance(data, Mapping):
+        return "".join(_words(v) for v in data.values())
+    if isinstance(data, (list, tuple)):
+        return "".join(_words(v) for v in data)
+    return ""
 
 
 _ELISION = re.compile(r"\.{3,}|…|\[\s*(?:\.{3}|…)\s*\]")
@@ -67,11 +81,42 @@ def pick(data: Any, path: str) -> float | None:
     return float(node) if isinstance(node, (int, float)) and not isinstance(node, bool) else None
 
 
+MAX_TOL = 0.5
+MIN_QUOTE_CHARS = 10  # letters and digits in each part of a quote: a few characters match somewhere in any result
+
+
+def _refs(side: Any) -> list[Any]:
+    return side if isinstance(side, list) else [side]
+
+
+def contradiction_problem(spec: Any) -> str | None:
+    """Why a stated contradiction cannot be evaluated at all (its shape, not its numbers), or None. A relation is a claim about two or more different numbers: an empty side, the same number
+    twice or on both sides, or a tolerance below zero or above `MAX_TOL` would let a relation be 'violated' with nothing behind it."""
+    if not isinstance(spec, Mapping):
+        return "a contradiction must be an object with relation, left and right"
+    if spec.get("relation") not in ("equal", "at_most", "at_least"):
+        return "the relation must be equal, at_most or at_least"
+    try:
+        tol = float(spec.get("tol", 0.005))
+    except (TypeError, ValueError):
+        return "tol must be a number"
+    if not 0 <= tol <= MAX_TOL:
+        return f"tol must be between 0 and {MAX_TOL}"
+    seen: list[tuple[str, str]] = []
+    for name in ("left", "right"):
+        side = _refs(spec.get(name))
+        if not side or not all(isinstance(r, Mapping) and r.get("ev") and r.get("path") for r in side):
+            return f"each side of a contradiction needs references like {{\"ev\": \"E1\", \"path\": \"a.b\"}} ({name} does not)"
+        seen += [(str(r["ev"]), str(r["path"])) for r in side]
+    if len(set(seen)) != len(seen):
+        return "a contradiction must compare different numbers: the same reference is used twice"
+    return None
+
+
 def _side(spec: Any, lookup: Lookup) -> float | None:
     """One side of a relation: a reference {"ev": "E1", "path": "a.b"} or a list of them, summed."""
-    refs = spec if isinstance(spec, list) else [spec]
     total = 0.0
-    for ref in refs:
+    for ref in _refs(spec):
         row = lookup(str(ref.get("ev", ""))) if isinstance(ref, Mapping) else None
         value = pick(row["result"], str(ref.get("path", ""))) if row else None
         if value is None:
@@ -81,10 +126,10 @@ def _side(spec: Any, lookup: Lookup) -> float | None:
 
 
 def evaluate_contradiction(spec: Any, lookup: Lookup) -> bool | None:
-    """True when a stated relation between two numbers from evidence is violated (proven by code), False when it holds, None when a number cannot be found.
+    """True when a stated relation between two numbers from evidence is violated (proven by code), False when it holds, None when it is malformed or a number cannot be found.
 
     {"relation": "equal"|"at_most"|"at_least", "left": ref or [refs], "right": ref or [refs], "tol": relative tolerance}"""
-    if not isinstance(spec, Mapping):
+    if contradiction_problem(spec) is not None:
         return None
     left, right = _side(spec.get("left"), lookup), _side(spec.get("right"), lookup)
     if left is None or right is None:
@@ -107,7 +152,7 @@ def contradiction_paths(spec: Any) -> set[tuple[str, str]]:
         return set()
     out: set[tuple[str, str]] = set()
     for side in (spec.get("left"), spec.get("right")):
-        for ref in side if isinstance(side, list) else [side]:
+        for ref in _refs(side):
             if isinstance(ref, Mapping):
                 out.add((str(ref.get("ev", "")), str(ref.get("path", ""))))
     return out
@@ -122,7 +167,10 @@ def verify_entry(kind: str, body: Mapping[str, Any], lookup: Lookup) -> str | No
         return "an entry needs text"
     if kind == NOTE:
         return None
-    refs = [str(e) for e in body.get("evidence") or []]
+    evidence, values, innocent = body.get("evidence") or [], body.get("values") or {}, body.get("innocent") or []
+    if not isinstance(evidence, list) or not isinstance(innocent, list) or not isinstance(values, Mapping):
+        return "evidence and innocent must be lists, and values an object of numbers"
+    refs = [str(e) for e in evidence]
     rows = {ref: lookup(ref) for ref in refs}
     missing = [ref for ref, row in rows.items() if row is None]
     if missing:
@@ -131,10 +179,10 @@ def verify_entry(kind: str, body: Mapping[str, Any], lookup: Lookup) -> str | No
     quote = str(body.get("quote", "")).strip()
     if quote:
         pieces = quote_pieces(quote)
-        texts = [squash(json.dumps(row["result"], ensure_ascii=False, default=str)) for row in held]
-        if not pieces or not all(any(piece in text for text in texts) for piece in pieces):
-            return "the quote is not in any cited evidence (copy it word for word; \"...\" may join separate passages, and each part must then be word for word)"
-    values = body.get("values") or {}
+        texts = [squash(_words(row["result"])) for row in held]
+        if not pieces or any(len(p) < MIN_QUOTE_CHARS for p in pieces) or not all(any(piece in text for text in texts) for piece in pieces):
+            return (f"the quote is not in any cited evidence (copy it word for word, at least {MIN_QUOTE_CHARS} letters and digits in each part; \"...\" may join separate passages, "
+                    "and each part must then be word for word)")
     if values:
         numbers = [n for row in held for n in _all_numbers(row["result"])]
         for name, value in values.items():
@@ -156,12 +204,14 @@ def verify_entry(kind: str, body: Mapping[str, Any], lookup: Lookup) -> str | No
         if body.get("flag_type") not in FLAG_TYPES:
             return f"flag_type must be one of {', '.join(FLAG_TYPES)}"
         stated = body.get("contradiction")
+        if stated is not None and (problem := contradiction_problem(stated)) is not None:
+            return problem
         paths = contradiction_paths(stated)
         if len(set(refs)) < MIN_FLAG_REFERENCES and len(paths) < MIN_FLAG_REFERENCES:
             return f"a flag must cite at least {MIN_FLAG_REFERENCES} pieces of evidence, or state a contradiction between two numbers"
         if stated is not None and evaluate_contradiction(stated, lookup) is None:
             gone = next((f"{ev}:{path}" for ev, path in sorted(paths) if (row := lookup(ev)) is None or pick(row["result"], path) is None), "a reference")
             return f"the contradiction names a number that is not in the evidence it cites ({gone}); a path is dotted keys and list positions, like objects.0.crore"
-        if not [x for x in body.get("innocent") or [] if str(x).strip()]:
+        if not [x for x in innocent if str(x).strip()]:
             return "a flag must list the innocent explanations considered"
     return None

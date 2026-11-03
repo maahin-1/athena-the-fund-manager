@@ -62,8 +62,8 @@ class Registry:
             result = tool.fn(ctx, dict(args))
         except ToolError:
             raise
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ToolError(f"{name}: bad arguments ({exc})") from exc
+        except Exception as exc:  # noqa: BLE001 - arguments come from a model; whatever a tool does with them wrong is a refusal the agent is shown, never the end of the run
+            raise ToolError(f"{name}: bad arguments or no result ({type(exc).__name__}: {exc})") from exc
         if not tool.evidence:
             return result, None
         ev_id = ctx.store.find_evidence(ctx.case.case_id, name, args) or ctx.store.add_evidence(ctx.case.case_id, ctx.lane, name, args, result)
