@@ -1,0 +1,1 @@
+"""Long documents (draft offer documents, annual reports, call transcripts) kept page by page, cut into their sections by code, so that a model is only ever shown the few passages a question needs."""
