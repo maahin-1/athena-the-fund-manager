@@ -54,8 +54,8 @@ class Universe:
         self._elevated: dict[str, int] | None = None
 
     @classmethod
-    def build(cls, con: duckdb.DuckDBPyConnection, as_of: date) -> "Universe":
-        return cls(load(con, as_of))
+    def build(cls, con: duckdb.DuckDBPyConnection, as_of: date, predecessors: Mapping[str, Any] | None = None) -> "Universe":
+        return cls(load(con, as_of, predecessors=predecessors))
 
     def _peer_values(self, measure: str, industry: str) -> tuple[list[float], str]:
         key = (measure, industry)

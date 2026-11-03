@@ -24,6 +24,7 @@ from athena.contracts import AthenaError
 from athena.forensic.statements.annuals import connect
 from athena.forensic.statements.detect import Universe
 from athena.forensic.statements.outcomes import LIQUIDITY_DAYS, Outcome, fifths, outcome, thirds
+from athena.fundamentals.history import SuccessionTable
 from athena.fundamentals.store import DEFAULT_PATH as FUNDAMENTALS
 from athena.warehouse.history import adjusted_history
 from athena.warehouse.warehouse import DEFAULT_PATH as WAREHOUSE, Warehouse
@@ -47,6 +48,11 @@ class Row:
     size: int  # fifth of the pre-entry traded value
     vol: int | None  # third of the pre-entry volatility
     out: Outcome
+
+    @property
+    def cov(self) -> int:
+        """How many of the 14 measures could be computed: 0 for up to 3, 1 for 4 to 7, 2 for 8 or more. A company with few measures has few chances to reach three elevated."""
+        return 0 if self.computed <= 3 else 1 if self.computed <= 7 else 2
 
 
 def wilson(bad: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -130,8 +136,34 @@ def group_table(rows: Sequence[Row], everyone: Sequence[Row]) -> dict[str, Any]:
     return out
 
 
+STRATA: dict[str, Callable[[Row], int | None]] = {
+    "size": lambda r: r.size,
+    "vol": lambda r: r.vol,
+    "coverage": lambda r: r.cov,  # added after the independent audit of 6b-6d, which found the low group half made of poorly measured companies
+    "size_coverage": lambda r: r.size * 3 + r.cov,
+}
+
+
+def trend(counts: Sequence[tuple[int, int, int]]) -> dict[str, float] | None:
+    """Cochran-Armitage test for a rise in the rate of a bad outcome with the count of elevated measures. Items are (score, companies, bad). Not adjusted for anything; a continuous check beside the two-group ratio."""
+    n = sum(c for _, c, _ in counts)
+    bad = sum(b for _, _, b in counts)
+    if n == 0 or bad == 0 or bad == n:
+        return None
+    p = bad / n
+    mean_w = sum(w * c for w, c, _ in counts) / n
+    num = sum(w * (b - c * p) for w, c, b in counts)
+    var = p * (1 - p) * sum(c * (w - mean_w) ** 2 for w, c, _ in counts)
+    if var <= 0:
+        return None
+    z = num / var ** 0.5
+    from math import erf, sqrt
+
+    return {"z": round(z, 2), "p_two_sided": round(1 - erf(abs(z) / sqrt(2)), 4)}
+
+
 def headline(pool: Sequence[Row], flag_of: Callable[[Row], bool], by: str) -> dict[str, Any] | None:
-    stratum = (lambda r: r.size) if by == "size" else (lambda r: r.vol)
+    stratum = STRATA[by]
     usable = [r for r in pool if stratum(r) is not None]
     high = [(stratum(r), flag_of(r)) for r in usable if r.elevated >= HIGH_AT]
     low = [(stratum(r), flag_of(r)) for r in usable if r.elevated <= LOW_AT]
@@ -148,7 +180,11 @@ def analyses(rows: Sequence[Row], everyone: Sequence[Row]) -> dict[str, Any]:
     head: dict[str, Any] = {}
     for c in CUTOFFS:
         flag = lambda r, c=c: (r.out.max_fall or 0) >= c  # noqa: E731
-        head[f"fell_{int(c * 100)}"] = {"standardised_on_size": headline(rows, flag, "size"), "standardised_on_volatility": headline(rows, flag, "vol")}
+        head[f"fell_{int(c * 100)}"] = {
+            "standardised_on_size": headline(rows, flag, "size"), "standardised_on_volatility": headline(rows, flag, "vol"),
+            "standardised_on_coverage": headline(rows, flag, "coverage"), "standardised_on_size_and_coverage": headline(rows, flag, "size_coverage"),
+            "trend_with_count_of_elevated": trend([(min(k, 4), sum(1 for r in rows if min(r.elevated, 4) == k), sum(1 for r in rows if min(r.elevated, 4) == k and flag(r))) for k in range(5)]),
+        }
     head["fell_30_relative_to_benchmark"] = {"standardised_on_size": headline(rows, lambda r: (r.out.max_relative_fall or 0) >= 0.30, "size")}
     head["stopped_trading"] = {"standardised_on_size": headline(everyone, lambda r: r.out.ceased, "size")}
     head["moved_to_trade_for_trade"] = {"standardised_on_size": headline(everyone, lambda r: r.out.trade_for_trade, "size")}
@@ -175,7 +211,7 @@ def _benchmark(wh: Warehouse, name: str) -> dict[date, float]:
 
 def collect(as_of: date, end: date, fundamentals: Path | str = FUNDAMENTALS, warehouse: Path | str = WAREHOUSE, benchmark_name: str = BENCHMARK) -> tuple[list[Row], list[Row], dict[str, Any]]:
     """Every company's measures at `as_of` joined with its outcome, as (rows with a price path, all rows, what was left out and why)."""
-    universe = Universe.build(connect(fundamentals), as_of)
+    universe = Universe.build(connect(fundamentals), as_of, SuccessionTable(warehouse))  # statements filed under an old symbol join their company's current one
     left_out: Counter[str] = Counter()
     with Warehouse(warehouse, read_only=True) as wh:
         history = adjusted_history(wh)
@@ -183,7 +219,7 @@ def collect(as_of: date, end: date, fundamentals: Path | str = FUNDAMENTALS, war
         raw = duckdb.connect(str(warehouse), read_only=True)
         floor = as_of - timedelta(days=LIQUIDITY_DAYS)
         liquid = {s: (n, tv) for s, n, tv in raw.execute("SELECT symbol, count(*), avg(close * volume) FROM bars WHERE day > ? AND day <= ? AND close > 0 GROUP BY symbol", [floor, as_of]).fetchall()}
-        at_entry = {s: ser for s, ser in raw.execute("SELECT symbol, arg_max(series, day) FROM bars WHERE day > ? AND day <= ? GROUP BY symbol", [as_of - timedelta(days=7), as_of]).fetchall()}
+        at_entry = {s: (ser, day) for s, ser, day in raw.execute("SELECT symbol, arg_max(series, day), max(day) FROM bars WHERE day > ? AND day <= ? GROUP BY symbol", [as_of - timedelta(days=7), as_of]).fetchall()}
         in_window: dict[str, set[str]] = defaultdict(set)
         for s, ser in raw.execute("SELECT DISTINCT symbol, series FROM bars WHERE day > ? AND day <= ? AND series IS NOT NULL", [as_of, end]).fetchall():
             in_window[s].add(ser)
@@ -198,11 +234,17 @@ def collect(as_of: date, end: date, fundamentals: Path | str = FUNDAMENTALS, war
             if not bars:
                 left_out["no prices"] += 1
                 continue
-            n, tv = liquid.get(symbol, (0, None))
+            # the bars joined across a rename (`joined_bars`) are the ones outcome() reads, so the floor, the traded value and the series are read across the earlier symbols too; a company renamed after the entry date traded under its old symbol then
+            names = [step.old for step in wh.predecessors(symbol)] + [symbol]
+            n = sum(liquid.get(x, (0, None))[0] for x in names)
+            weighted = [(liquid[x][0], liquid[x][1]) for x in names if x in liquid and liquid[x][1] is not None]
+            tv = sum(c * v for c, v in weighted) / sum(c for c, _ in weighted) if weighted else None
+            latest = max((at_entry[x] for x in names if x in at_entry), key=lambda t: t[1], default=(None, None))[0]
+            series_after = sorted(set().union(*(in_window.get(x, set()) for x in names)))
             breaks = [day for day, kind, _ in history.events_found(symbol) if kind == "unexplained"]
-            o = outcome(symbol, bars, as_of, end, benchmark, series_at_entry=at_entry.get(symbol), series_in_window=sorted(in_window.get(symbol, ())), unexplained_days=breaks, traded_value=tv, liquid_bars=n)
+            o = outcome(symbol, bars, as_of, end, benchmark, series_at_entry=latest, series_in_window=series_after, unexplained_days=breaks, traded_value=tv, liquid_bars=n)
             if o is None:
-                left_out["failed the entry floor (stale or thin trading)"] += 1
+                left_out["failed the entry floor (no close in the week before entry, or under 40 bars in the 90 days before)"] += 1
                 continue
             found[symbol] = (o, frozenset(f.key for f in universe.findings(symbol) if f.elevated), len(universe.values.get(symbol, {})))
     size = fifths({s: o.traded_value for s, (o, _, _) in found.items() if o.traded_value})
@@ -250,7 +292,9 @@ def render(result: Mapping[str, Any]) -> str:
         lines.append(f"high ({HIGH_AT}+ elevated) against low (at most {LOW_AT}), ratio of observed to expected (above 1 = worse than the size/volatility mix explains):")
         for outcome_name, by in a["high_vs_low"].items():
             for control, r in by.items():
-                if r:
+                if r and "z" in r:
+                    lines.append(f"  {outcome_name} / {control}: z {r['z']} (p {r['p_two_sided']})")
+                elif r:
                     lines.append(f"  {outcome_name} / {control}: {r['ratio']} (95% {r['ci95']}), high {r['high_bad']} of {r['high_n']} vs {r['high_expected']} expected; raw {r['raw_high_rate']} vs {r['raw_low_rate']}")
                 else:
                     lines.append(f"  {outcome_name} / {control}: not computable")

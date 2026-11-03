@@ -123,6 +123,31 @@ class TestLoader:
         got = set(compute(a))
         assert got == {"other_income_share", "effective_tax_rate", "profit_vs_sales_growth", "q4_profit_share"}
 
+    def test_statements_filed_under_an_old_symbol_join_the_current_one(self, tmp_path) -> None:  # noqa: ANN001
+        from athena.fundamentals.history import Predecessor
+
+        path = tmp_path / "f.duckdb"
+        make_db(path, {"NEWSYM": company(), "OLDSYM": company()})
+        con = duckdb.connect(str(path))
+        con.execute("DELETE FROM statement_lines WHERE symbol = 'NEWSYM' AND period_end < DATE '2025-01-01'")  # the new symbol holds only the years since the rename
+        con.execute("DELETE FROM statement_lines WHERE symbol = 'OLDSYM' AND period_end >= DATE '2025-01-01'")
+        con.execute("DELETE FROM companies WHERE symbol = 'OLDSYM'")
+        con.close()
+        read = duckdb.connect(str(path), read_only=True)
+        alone = load(read, AS_OF, predecessors={})["NEWSYM"]
+        joined = load(read, AS_OF, predecessors={"NEWSYM": (Predecessor("OLDSYM", ""),)})
+        assert [y.fy_end.year for y in alone.years] == [2025, 2026]
+        assert [y.fy_end.year for y in joined["NEWSYM"].years] == [2023, 2024, 2025, 2026] and "OLDSYM" not in joined
+        assert date(2024, 3, 31) in joined["NEWSYM"].quarters
+
+    def test_an_old_symbol_that_is_also_a_company_row_is_part_of_its_successor_not_counted_twice(self, tmp_path) -> None:  # noqa: ANN001
+        from athena.fundamentals.history import Predecessor
+
+        path = tmp_path / "f.duckdb"
+        make_db(path, {"NEWSYM": company(), "OLDSYM": company()})
+        got = load(duckdb.connect(str(path), read_only=True), AS_OF, predecessors={"NEWSYM": (Predecessor("OLDSYM", ""),)})
+        assert set(got) == {"NEWSYM"}
+
     def test_runs_must_be_consecutive(self) -> None:
         a = annuals([year(date(2020, 3, 31)), year(date(2022, 3, 31)), year(date(2023, 3, 31))])
         assert a.run(2) is not None and a.run(3) is None  # a missing year breaks the run

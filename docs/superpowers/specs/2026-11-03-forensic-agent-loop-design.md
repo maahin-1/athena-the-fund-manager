@@ -102,6 +102,29 @@ The 104 main-board stocks that traded on 1 July 2025 and stopped before October 
 - **The survivor bias for this window is now small**, since every stopped stock with filings is in. It remains for earlier dates (about 1,060 main-board symbols with more than 200 bars ended before October 2026) and those would need the same fetch, with statements before late 2022 limited to income lines.
 - **Reading.** One window, one date: the 14 measures as a group do not separate later price outcomes from size and volatility here. That is not evidence they are useless (the outcome is a price fall, which many things cause; the measures aim at governance and earnings quality), and not evidence they work. The forward log and a second, later date decide.
 
+### 6e. What an independent audit found in 6b to 6d, and the corrected run (Nov 4, 2026)
+
+Three reviewers read the code and results (a bug review of the loop, a methodology audit of the test, an architecture review). The methodology findings that matter, and what was done:
+
+- **Coverage confound (the main one).** About half of the low group (0 or 1 elevated) had few measures computed (245 companies had none), and in the first run such companies fell 50% about twice as often as well-covered ones (27% against 13%, the reviewer's count); the high group was mostly well covered, because reaching three elevated is mechanically easier with more measures. Comparing the two groups on size alone therefore pushed the ratio toward 1. Added as a stratum (0 to 3, 4 to 7, 8 or more measures computed), alone and with size. This was added after seeing results; both the original and the added analysis are reported.
+- **Statements under an old symbol were not joined.** A company renamed since its filings (45 in this window) had its statements under the old symbol, which the loader ignored, so those companies were missing or short of history at the entry date. The loader now joins them through the exchange's rename list (`athena.fundamentals.history`); the test universe grew from 1,942 to 1,982.
+- **Power.** With about 100 companies in the high group the test can detect a ratio of about 1.2 at the 30% cut-off, 1.55 at 50% and 3.2 at 70% (80% power). "No separation" was too strong; the honest reading of the first runs is "nothing above about 1.5 at the 50% cut-off".
+- **Dead measures.** Receivables, inventory, payables growth and additions against capex are computed for 5 to 53 companies at this date (they need four year-end balance sheets, held only since late 2022), and the implied interest rate for 64. "Three of 14" is in practice three of nine or ten, and operating cash flow against profit and accruals share inputs.
+- **Wording of the pre-registered rule.** 6b says a signal that survives neither control is not reported; 6c applied "does not survive both". Both readings are shown below.
+- **Not changed:** the outcome definition (largest fall), the exclusion of unexplained price breaks (it uses information after the entry date; the sensitivity run keeps them), industry labels as of now.
+
+Corrected run (as of 1 July 2025, outcomes to 1 November 2026; 1,982 companies, 101 in the high group; `athena.forensic.statements.backtest`):
+
+| Outcome | on size | on volatility | on coverage | on size and coverage |
+|---|---|---|---|---|
+| fell 30% | 1.02 (0.85 to 1.17) | 0.98 (0.83 to 1.12) | 1.08 (0.91 to 1.24) | 1.06 (0.89 to 1.23) |
+| fell 50% | 1.16 (0.79 to 1.56) | 1.08 (0.74 to 1.47) | **1.54 (1.03 to 2.13)** | 1.44 (0.96 to 2.00) |
+| fell 70% | 0.74 (0.0 to 2.07) | 0.70 (0.0 to 1.94) | 1.34 (0.0 to 4.0) | 1.19 (0.0 to 3.77) |
+
+Trend of the rate of a 50% fall with the count of elevated measures (0, 1, 2, 3, 4+; not adjusted): z 1.54, p 0.12 for everyone; **z 3.34, p 0.0008** among the 1,013 companies with at least 8 measures computed, where the 50% rates run 11.2, 15.9, 17.4, 21.6, 29.2%. In that subset the ratio at 50% is 1.79 (1.08 to 2.67) on size, 1.35 (0.82 to 1.97) on volatility, 1.83 (1.10 to 2.67) on coverage. Per measure at 50% (size only): operating cash flow against profit 1.72 (1.23 to 2.25), accruals 1.53 (1.21 to 1.91), work in progress share 1.44 (1.01 to 1.91).
+
+- **Reading.** There is now a weak, consistent hint at the 50% cut-off that grows with the count, strongest where the measures are best covered, and it does not hold at 30% or 70% (70% has two events). It is not shown: volatility explains part of it, the intervals touch 1 in the main specifications, there are nine headline looks and 28 per-measure looks, and this is one window in a falling market. No weight or band is changed. The next checks are a pre-specified cash-flow composite (cash flow against profit and accruals) tested at a second date and in the forward log, and continuous outcomes (excess return) with leverage and industry controls.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.

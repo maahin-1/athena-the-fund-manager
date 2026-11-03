@@ -69,13 +69,35 @@ def _end_of(day: date) -> datetime:
     return datetime.combine(day, dtime.max)
 
 
-def load(con: duckdb.DuckDBPyConnection, as_of: date, symbols: Sequence[str] | None = None, layout: str = LAYOUT) -> dict[str, Annuals]:
-    """Annual series of every company (or the symbols given) of the layout, as known on `as_of`."""
+def _merged(raw: Mapping[tuple[str, str], Any], names: Sequence[str], basis: str, depth: int) -> dict[Any, Any]:
+    """The rows of `names` (earliest symbol first, the company's own last) under one basis; for a period both hold, the later symbol's rows win. `depth` is how many levels of a nested dict to merge."""
+    out: dict[Any, Any] = {}
+    for name in names:
+        part = raw.get((name, basis)) or {}
+        for k, v in part.items():
+            if depth > 1:
+                out.setdefault(k, {}).update(_merged({(name, basis): v}, [name], basis, depth - 1))
+            else:
+                out[k] = v
+    return out
+
+
+def load(
+    con: duckdb.DuckDBPyConnection, as_of: date, symbols: Sequence[str] | None = None, layout: str = LAYOUT, predecessors: Mapping[str, Sequence[Any]] | None = None,
+) -> dict[str, Annuals]:
+    """Annual series of every company (or the symbols given) of the layout, as known on `as_of`. A company renamed since its filings were made has them under its old symbol; they are joined to the
+    current symbol through the exchange's rename list (`athena.fundamentals.history`), the current symbol's own periods winning where both hold one. The join uses an identity known now, not a return, so it
+    brings no future information about the company's results."""
+    from athena.fundamentals.history import PREDECESSORS, chain
+
+    table = PREDECESSORS if predecessors is None else predecessors
     stamp = _end_of(as_of)
     companies = {r[0]: r[1:] for r in con.execute("SELECT symbol, name, industry, layout FROM companies WHERE layout = ?", [layout]).fetchall()}
     wanted = set(companies) if symbols is None else set(symbols) & set(companies)
     if not wanted:
         return {}
+    names = {s: [p.symbol for p in chain(s, table)] + [s] for s in wanted}  # earliest symbol first
+    sources = {n for ns in names.values() for n in ns}
     rows = con.execute(
         "SELECT symbol, basis, statement, period_start, period_end, key, value FROM statement_lines WHERE filed <= ? AND statement IN ('income', 'balance', 'cashflow')"
         " AND ((statement <> 'balance' AND period_end - period_start BETWEEN ? AND ?) OR (statement = 'balance' AND period_start = period_end))",
@@ -84,22 +106,27 @@ def load(con: duckdb.DuckDBPyConnection, as_of: date, symbols: Sequence[str] | N
     # (symbol, basis) -> {statement: {period_end: {key: value}}}
     raw: dict[tuple[str, str], dict[str, dict[date, dict[str, float]]]] = {}
     for symbol, basis, statement, _start, end, key, value in rows:
-        if symbol in wanted and value is not None:
+        if symbol in sources and value is not None:
             raw.setdefault((symbol, basis), {}).setdefault(statement, {}).setdefault(end, {})[key] = float(value)
-    quarters = _quarters(con, stamp, wanted)
+    quarters = _quarters(con, stamp, sources)
     out: dict[str, Annuals] = {}
-    for symbol in wanted:
+    merged_away = {n for ns in names.values() for n in ns[:-1]}  # an old symbol is part of its successor, not a company of its own
+    for symbol in wanted - merged_away:
         best: Annuals | None = None
         name, industry, lay = companies[symbol]
         for basis in ("consolidated", "standalone"):
-            statements = raw.get((symbol, basis))
+            statements = _merged(raw, names[symbol], basis, 2)
             if not statements:
                 continue
             years = _years(statements)
             if best is None or len(years) > len(best.years):
                 best = Annuals(symbol, name or symbol, industry or "", lay, basis, years)
         if best is not None and best.years:
-            best.quarters = dict(sorted(quarters.get((symbol, best.basis), {}).items()))
+            joined: dict[date, dict[str, float]] = {}
+            for earlier in names[symbol]:
+                for end, v in quarters.get((earlier, best.basis), {}).items():
+                    joined.setdefault(end, {}).update(v)
+            best.quarters = dict(sorted(joined.items()))
             out[symbol] = best
     return out
 
