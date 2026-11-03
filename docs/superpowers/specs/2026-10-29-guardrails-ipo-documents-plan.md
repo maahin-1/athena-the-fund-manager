@@ -102,3 +102,10 @@ A DRHP is 300 to 700 pages, roughly 250 thousand to 600 thousand words, about 35
 2. IPO tab: include SME issues (the exchange lists them with the main board)? A listing-day-gain column is fine as a fact; confirm no verdict.
 3. Budget: a monthly token ceiling for the strong tier, and whether OpenAI credits may pay for the synthesis call.
 4. Is a 130 MB local embedding model acceptable (the earlier approval was for a 1 to 2 GB classifier runtime)?
+
+## 8. Later work, recorded Nov 3, 2026
+
+Owner decisions of Nov 3: the strong-model synthesis waits (free models for now, paid models are tried later and judged on the gold set); the 130 MB embedding model is not needed (keyword search over named sections worked); nothing is pushed until the forensic design below is settled.
+
+1. **Crypto and forex.** Today the scope guard refuses both. The owner wants them added later: they need their own data (no exchange calendar, 24-hour prices, different venues and rules), their own instrument resolver entries and a changed guard (they move from the off-limits list to in-scope terms). Not started; do it as its own piece after the forensic work.
+2. **Forensic analysis of companies and issues.** Design to be agreed first; see the brainstorm of Nov 3 (detectors in code, text claims extracted by a model with a quote, differences found by code, base rates by sector, a gold set of past governance failures for testing, never an accusation).
