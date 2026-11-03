@@ -92,6 +92,16 @@ Written down before the harness was run, so the cut-offs cannot be chosen after 
 - **Other limits.** One date, one 16-month window, one market phase (a falling small-cap market: 60% of all companies fell 30% at some point, 20% fell 50%). Prices where an exchange record of a small split or bonus is missing can read as a fall.
 - **Decision.** No weight or band changed. The measures are kept as a screen whose strongest candidates are the two cash-flow measures; the forward log (C) and a second date (as of 1 January 2025, outcomes to 1 May 2026, overlapping, so not independent) are the next checks. Adding delisted companies to the statements store would remove the largest bias and is worth doing before drawing any conclusion about the loop.
 
+### 6d. The same test with the stopped-trading companies added (Nov 4, 2026)
+
+The 104 main-board stocks that traded on 1 July 2025 and stopped before October 2026 were sorted: 66 are old symbols of companies that carry on under a new one (their statements are already joined), 40 already had statements, and 38 had none. Those 38 were fetched from NSE with the ordinary ingest (`--universe SYMBOL,SYMBOL --no-history`): 34 returned filings (12 to 19 each) and 4 returned none (ETFs and similar). The test universe grew from 1,914 to 1,941 companies, and 1.4% of them now stop trading inside the window.
+
+- **Result unchanged.** High against low, size-standardised: fell 30% **1.02** (0.85 to 1.17); fell 50% **1.14** (0.76 to 1.57); fell 70% **1.21** (0.0 to 2.92); 30% below Nifty 500 **1.05** (0.85 to 1.24); moved to trade-for-trade **1.15** (0.76 to 1.59); stopped trading **1.26** (0.0 to 3.93, 2 events). Volatility-standardised gives 0.98, 1.08, 1.17.
+- **Eight or more measures computed:** fell 50% **1.72** (1.04 to 2.6) on size and **1.31** (0.81 to 1.94) on volatility, as before: by the rule in 6b not a signal.
+- **Per measure:** operating cash flow against profit 1.76 (1.25 to 2.31) and accruals 1.55 (1.2 to 1.92) at the 50% cut-off, nothing at 30%. Still orientation only.
+- **The survivor bias for this window is now small**, since every stopped stock with filings is in. It remains for earlier dates (about 1,060 main-board symbols with more than 200 bars ended before October 2026) and those would need the same fetch, with statements before late 2022 limited to income lines.
+- **Reading.** One window, one date: the 14 measures as a group do not separate later price outcomes from size and volatility here. That is not evidence they are useless (the outcome is a price fall, which many things cause; the measures aim at governance and earnings quality), and not evidence they work. The forward log and a second, later date decide.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.
