@@ -56,6 +56,11 @@ class Finder:
         index, _ = self._index(sections)
         return index.search(query, self._published, k)
 
+    def opening(self, sections: Sequence[str], k: int = 5) -> list[Found]:
+        """The first `k` passages of the named sections, in document order: for a question about how a section begins (a document lists its most important risks first)."""
+        index, where = self._index(sections)
+        return [self._found(Hit(p, 0.0, None, None), where) for p in index.first(k)]
+
     def _found(self, hit: Hit, where: dict[int, tuple[int, str]]) -> Found:
         page, section = where[hit.passage.chunk]
         return Found(f"{hit.passage.doc_id}#{hit.passage.chunk}", page, section, hit.passage.text, hit.score)

@@ -77,7 +77,7 @@ class OpenAICompatibleClient:
                     timeout=self.timeout,
                 )
             except requests.RequestException as exc:
-                failure = ProviderError(f"{self.name}: network error {type(exc).__name__}", retryable=True)
+                failure = ProviderError(f"{self.name}: network error {type(exc).__name__}", retryable=True, timed_out=isinstance(exc, requests.Timeout))
                 continue
             if response.status_code == 200:
                 try:

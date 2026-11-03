@@ -75,6 +75,10 @@ class Index:
         self._embed = embed
         self._vectors = list(embed([p.text for p in self._passages])) if embed and self._passages else []
 
+    def first(self, k: int) -> list[Passage]:
+        """The first `k` passages in the order they were given (document order)."""
+        return self._passages[:k]
+
     def _bm25(self, query: Sequence[str], i: int) -> float:
         counts, length, n = Counter(self._tokens[i]), len(self._tokens[i]), len(self._passages)
         score = 0.0

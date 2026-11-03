@@ -39,15 +39,17 @@ class HealthRegistry:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({n: {"reason": r, "until": self._until[n]} for n, r in self._degraded.items()}, indent=1), encoding="utf-8")
+            tmp.write_text(json.dumps({n: {"reason": r, "until": self._until[n]} for n, r in self._degraded.items() if n in self._until}, indent=1), encoding="utf-8")
             os.replace(tmp, self._path)
         except OSError:
             pass  # remembering is a convenience; failing to remember must not fail a call
 
-    def mark_degraded(self, name: str, reason: str) -> None:
+    def mark_degraded(self, name: str, reason: str, ttl_seconds: float | None = None) -> None:
+        """Skip `name` from now. `ttl_seconds` overrides how long (a model that merely timed out is tried again in minutes, not hours)."""
         self._degraded[name] = reason
-        if self._ttl is not None:
-            self._until[name] = self._clock() + self._ttl
+        ttl = ttl_seconds if ttl_seconds is not None else self._ttl
+        if ttl is not None:
+            self._until[name] = self._clock() + ttl
         self._save()
 
     def mark_healthy(self, name: str) -> None:
@@ -56,8 +58,6 @@ class HealthRegistry:
         self._save()
 
     def _expire(self) -> None:
-        if self._ttl is None:
-            return
         for name in [n for n, until in self._until.items() if until <= self._clock()]:
             self._degraded.pop(name, None)
             self._until.pop(name, None)

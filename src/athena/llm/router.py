@@ -62,8 +62,10 @@ TIERS: dict[str, tuple[tuple[str, str], ...]] = {
 # The judge reads one evidence sheet and a debate and writes a decision, so it is worth a paid model; the owner's OpenAI credits pay for it (23 Oct 2026: gpt-5.4 is below the pro models),
 # with the free strong tier behind it if OpenAI refuses. Its calls are counted and capped by `athena.llm.budget`.
 TIERS["judge"] = (("openai", "gpt-5.4"), ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"), ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"))
-ROLE_TIERS = {"resolver": "cheap", "specialist": "mid", "judge": "judge"}
+ROLE_TIERS = {"resolver": "cheap", "specialist": "mid", "judge": "judge", "reader": "cheap", "reader_retry": "mid"}  # reader: a question about a few passages of a long document; its retry after a failed quote check
 DEFAULT_TIER = "mid"
+TIMEOUTS_BEFORE_SKIP = 2  # calls in a row that time out before a model is skipped
+SLOW_SKIP_SECONDS = 15 * 60
 
 
 class FallbackLLM:
@@ -75,6 +77,7 @@ class FallbackLLM:
         self.health = health or HealthRegistry()
         self.last_source = ""
         self.last_failures: tuple[tuple[str, str], ...] = ()
+        self._timeouts: dict[str, int] = {}
         self._chain = FallbackChain([(client.name, self._guarded(client)) for client in self.clients])
 
     @property
@@ -84,11 +87,19 @@ class FallbackLLM:
     def _guarded(self, client: OpenAICompatibleClient) -> Callable[[str, str], str]:
         def call(system: str, user: str) -> str:
             try:
-                return client.complete(system, user)
+                reply = client.complete(system, user)
             except ProviderError as exc:
                 if not exc.retryable:
                     self.health.mark_degraded(client.name, str(exc))
+                elif exc.timed_out:
+                    # a model that hangs costs the full timeout on every try (about three minutes with retries); after two calls in a row, leave it alone for a while
+                    self._timeouts[client.name] = self._timeouts.get(client.name, 0) + 1
+                    if self._timeouts[client.name] >= TIMEOUTS_BEFORE_SKIP:
+                        self.health.mark_degraded(client.name, f"timed out on {self._timeouts[client.name]} calls in a row", ttl_seconds=SLOW_SKIP_SECONDS)
+                        self._timeouts[client.name] = 0
                 raise
+            self._timeouts[client.name] = 0
+            return reply
 
         return call
 

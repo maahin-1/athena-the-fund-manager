@@ -27,6 +27,7 @@ DDL = (
     "CREATE TABLE IF NOT EXISTS pages (doc_id VARCHAR NOT NULL, page INTEGER NOT NULL, section VARCHAR, text VARCHAR, PRIMARY KEY (doc_id, page))",
     "CREATE TABLE IF NOT EXISTS sections (doc_id VARCHAR NOT NULL, key VARCHAR NOT NULL, title VARCHAR, start_page INTEGER, end_page INTEGER, PRIMARY KEY (doc_id, key))",
     "CREATE TABLE IF NOT EXISTS figures (doc_id VARCHAR PRIMARY KEY, body VARCHAR NOT NULL, built_at TIMESTAMP NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS analysis (doc_id VARCHAR PRIMARY KEY, body VARCHAR NOT NULL, built_at TIMESTAMP NOT NULL)",
 )
 
 
@@ -71,7 +72,19 @@ class DocStore:
             con.execute("DELETE FROM figures WHERE doc_id = ?", [doc_id])
             con.execute("INSERT INTO figures VALUES (?, ?, ?)", [doc_id, json.dumps(body, ensure_ascii=False), stamp])
 
+    def save_analysis(self, doc_id: str, answers: list[dict[str, Any]], now: datetime) -> None:
+        """The answers to the standard questions (one list per document; asking again replaces it)."""
+        stamp = now.astimezone(timezone.utc).replace(tzinfo=None) if now.tzinfo else now
+        with self._open() as con:
+            con.execute("DELETE FROM analysis WHERE doc_id = ?", [doc_id])
+            con.execute("INSERT INTO analysis VALUES (?, ?, ?)", [doc_id, json.dumps(answers, ensure_ascii=False), stamp])
+
     # --- reading ---
+    def analysis(self, doc_id: str) -> list[dict[str, Any]] | None:
+        with self._open() as con:
+            row = con.execute("SELECT body FROM analysis WHERE doc_id = ?", [doc_id]).fetchone()
+        return json.loads(row[0]) if row else None
+
     def by_hash(self, sha256: str) -> str | None:
         with self._open() as con:
             row = con.execute("SELECT doc_id FROM docs WHERE sha256 = ?", [sha256]).fetchone()

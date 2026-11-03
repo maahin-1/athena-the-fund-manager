@@ -90,3 +90,35 @@ def test_openai_clients_get_the_gpt5_parameter_profile(tmp_path):
     router = build_router(env_file=tmp_path / "none.env", environ=environ)
     openai_client = router.client_for("specialist").clients[0]
     assert openai_client.token_param == "max_completion_tokens" and not openai_client.send_temperature
+
+
+def test_a_model_that_times_out_twice_in_a_row_is_left_alone_for_a_while():
+    import requests
+
+    hanging = FakePost(requests.Timeout("slow"), requests.Timeout("slow"), requests.Timeout("slow"))
+    llm = FallbackLLM([client("a", hanging), client("b", FakePost(FakeResponse(content="one"), FakeResponse(content="two"), FakeResponse(content="three")))])
+    assert [llm.complete("s", "u") for _ in range(3)] == ["one", "two", "three"]
+    assert len(hanging.calls) == 2  # the third call did not wait for it
+    assert llm.health.is_degraded("p:a") and "timed out" in llm.health.reason("p:a")
+
+
+def test_an_answer_resets_the_count_of_timeouts():
+    import requests
+
+    flaky = FakePost(requests.Timeout("slow"), FakeResponse(content="back"), requests.Timeout("slow"))
+    llm = FallbackLLM([client("a", flaky), client("b", FakePost(FakeResponse(content="b1"), FakeResponse(content="b2")))])
+    assert llm.complete("s", "u") == "b1"  # a times out once
+    assert llm.complete("s", "u") == "back"  # a answers: the count starts again
+    assert llm.complete("s", "u") == "b2"  # a times out once more, still not skipped
+    assert not llm.health.is_degraded("p:a")
+
+
+def test_a_slow_model_is_tried_again_after_its_pause():
+    from athena.fallback import HealthRegistry
+
+    now = [1000.0]
+    health = HealthRegistry(clock=lambda: now[0])
+    health.mark_degraded("m", "slow", ttl_seconds=60)
+    assert health.is_degraded("m")
+    now[0] += 61
+    assert not health.is_degraded("m")
