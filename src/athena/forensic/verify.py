@@ -25,6 +25,14 @@ def squash(text: str) -> str:
     return re.sub(r"[^0-9a-z]+", "", text.lower())
 
 
+_ELISION = re.compile(r"\.{3,}|…|\[\s*(?:\.{3}|…)\s*\]")
+
+
+def quote_pieces(quote: str) -> list[str]:
+    """A quote as the parts that must each be found in the evidence: a model joins separate passages with "..." and each part is still checked word for word. Empty parts are dropped."""
+    return [p for p in (squash(part) for part in _ELISION.split(quote)) if p]
+
+
 def _all_numbers(data: Any) -> list[float]:
     out: list[float] = []
     if isinstance(data, bool):
@@ -122,9 +130,10 @@ def verify_entry(kind: str, body: Mapping[str, Any], lookup: Lookup) -> str | No
     held = [row for row in rows.values() if row is not None]
     quote = str(body.get("quote", "")).strip()
     if quote:
-        want = squash(quote)
-        if not want or not any(want in squash(json.dumps(row["result"], ensure_ascii=False, default=str)) for row in held):
-            return "the quote is not in any cited evidence"
+        pieces = quote_pieces(quote)
+        texts = [squash(json.dumps(row["result"], ensure_ascii=False, default=str)) for row in held]
+        if not pieces or not all(any(piece in text for text in texts) for piece in pieces):
+            return "the quote is not in any cited evidence (copy it word for word; \"...\" may join separate passages, and each part must then be word for word)"
     values = body.get("values") or {}
     if values:
         numbers = [n for row in held for n in _all_numbers(row["result"])]

@@ -26,7 +26,7 @@ NOTE_LINES = 8
 CHECKED_LINES = 20
 FIELD_GUIDE = (
     "Entry kinds you may write with {\"action\": \"write\", \"kind\": ..., ...}:\n"
-    '- OBSERVATION: {"text": "...", "evidence": ["E1"], "quote"?: "words copied from the evidence", "values"?: {"name": number}, "supports"?: "L3"}  (supports: the flag id this independently backs)\n'
+    '- OBSERVATION: {"text": "...", "evidence": ["E1"], "quote"?: "words copied word for word from the evidence; \\"...\\" may join separate parts, each of which must be exact", "values"?: {"name": number}, "supports"?: "L3"}  (supports: the flag id this independently backs)\n'
     '- FLAG: {"text": "A and B differ: ...", "flag_type": one of arithmetic|document_vs_document|text_vs_data|claim_vs_outside|anomaly_vs_peers, "evidence": ["E1", "E2"], "innocent": ["a harmless explanation considered", ...],'
     ' "contradiction"?: {"relation": "equal"|"at_most"|"at_least", "left": {"ev": "E1", "path": "a.b"} or [refs to add up], "right": {...}, "tol"?: 0.005}}\n'
     '- QUESTION: {"to": "<lane>", "text": "a specific request another lane can answer from its own data"}\n'
@@ -59,7 +59,17 @@ def _one_line(text: str, limit: int) -> str:
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
 
 
-def user_prompt(case: Case, lane: LaneSpec, brief: str, store: ForensicStore, inbox: Sequence[Entry], history: Sequence[str]) -> str:
+def pace_line(step: int, steps: int, written: int) -> str:
+    """Tells the agent where it is in its step allowance. A free model that keeps reading never writes down what it found, and the run then leaves nothing behind; the line appears when steps are running
+    out and nothing has been written yet."""
+    left = steps - step + 1
+    line = f"Step {step} of {steps}."
+    if written == 0 and left <= max(2, steps // 3):
+        line += f" Only {left} steps are left and you have written nothing. Write now what you have verified so far: an OBSERVATION with a quote, or a FLAG if two references differ. Then finish."
+    return line
+
+
+def user_prompt(case: Case, lane: LaneSpec, brief: str, store: ForensicStore, inbox: Sequence[Entry], history: Sequence[str], pace: str = "") -> str:
     cid = case.case_id
     checked = [f"{tool}({args}) -> {ev}" for ev, tool, args in store.evidence_calls(cid, lane.name)][-CHECKED_LINES:]
     notes = store.notes(cid, lane.name)[-NOTE_LINES:]
@@ -71,7 +81,7 @@ def user_prompt(case: Case, lane: LaneSpec, brief: str, store: ForensicStore, in
     lines += ["What you have already written (do not write it again):", *([f"{e.id} {e.kind} [{e.status}]: {_one_line(e.text, 200)}" for e in mine] or ["(nothing yet)"]), ""]
     lines += ["Questions put to you (answer with kind ANSWER and answers=<id>):", *([f"{e.id} from {e.author}: {_one_line(e.text, 300)}" for e in inbox] or ["(none)"]), ""]
     lines += ["Latest from the other lanes:", *([f"{e.id} {e.kind} by {e.author} [{e.status}]: {_one_line(e.text, 240)} {e.evidence}" for e in others] or ["(nothing yet)"]), ""]
-    lines += ["This run so far:", *(list(history)[-HISTORY_LINES:] or ["(first step)"]), "", "Reply with one JSON object."]
+    lines += ["This run so far:", *(list(history)[-HISTORY_LINES:] or ["(first step)"]), "", *([pace] if pace else []), "Reply with one JSON object."]
     return "\n".join(lines)
 
 
@@ -109,6 +119,22 @@ def submit(store: ForensicStore, case: Case, lane: str, round_no: int, kind: str
     return entry_id, None
 
 
+def first_action(reply: str) -> dict[str, Any]:
+    """The first JSON object in the reply. A free model sometimes answers with several actions in one reply; the loop takes one action a step, so the first is used and the rest are left, to be chosen again
+    next step with the result of the first in front of the model."""
+    decoder, start = json.JSONDecoder(), reply.find("{")
+    while start != -1:
+        try:
+            parsed, _end = decoder.raw_decode(reply[start:])
+        except json.JSONDecodeError:
+            start = reply.find("{", start + 1)
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+        start = reply.find("{", start + 1)
+    return parse_model_json(reply)  # nothing readable: the shared parser raises the error the repair prompt quotes
+
+
 def _parse(client: Client, system: str, user: str) -> tuple[dict[str, Any] | None, str]:
     """The model's next action as a dict, or (None, why not) after one repair try."""
     problem = ""
@@ -116,7 +142,7 @@ def _parse(client: Client, system: str, user: str) -> tuple[dict[str, Any] | Non
         prompt = user if attempt == 0 else f"{user}\n\nYour last reply could not be used ({problem}). Reply with exactly one JSON object with an \"action\" field."
         reply = client.complete(system, prompt)
         try:
-            action = parse_model_json(reply)
+            action = first_action(reply)
         except ValueError as exc:
             problem = str(exc)
             continue
@@ -143,12 +169,13 @@ def run_agent(
     result = AgentResult(lane.name, "step_cap")
     history: list[str] = []
     wasted = 0  # steps in a row that produced nothing: a rejected entry, a refused or failed tool
-    for step in range(1, (step_cap or lane.step_cap) + 1):
+    steps = step_cap or lane.step_cap
+    for step in range(1, steps + 1):
         if wasted >= STALL_STEPS:
             result.status, result.note = "stalled", f"{wasted} steps in a row produced nothing; the run was ended"
             return result
         try:
-            action, problem = _parse(client, system, user_prompt(case, lane, brief, store, inbox, history))
+            action, problem = _parse(client, system, user_prompt(case, lane, brief, store, inbox, history, pace_line(step, steps, result.written + result.rejected)))
         except BudgetExhausted as exc:
             result.status, result.note = "budget", str(exc)
             return result

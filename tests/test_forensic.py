@@ -8,7 +8,7 @@ from datetime import date
 import pytest
 
 from athena.contracts import AthenaError
-from athena.forensic.agent import run_agent, submit
+from athena.forensic.agent import first_action, pace_line, run_agent, submit
 from athena.forensic.budget import CallBudget
 from athena.forensic.model import ESTABLISHED, FLAG, OBSERVATION, QUESTION, REJECTED, SINGLE_SOURCE, UNROUTABLE, Case, LaneSpec
 from athena.forensic.scoring import classify, concern, level
@@ -19,6 +19,20 @@ from athena.forensic.verify import evaluate_contradiction, squash, verify_entry
 
 CASE = Case("c1", "drhp", "Example Limited", date(2026, 11, 3))
 OFFER = {"offer_total": {"crore": 1000.0, "printed": "₹ 10,000.00 million"}, "fresh_issue": {"crore": 800.0}, "offer_for_sale": {"crore": 150.0}, "note": "Customer  concentration is 4.12 % of revenue"}
+
+
+def test_the_first_action_is_taken_when_a_reply_holds_several_or_prose_around_one() -> None:
+    two = '{"action": "tool", "tool": "doc.map", "args": {}}\n{"action": "finish", "summary": "done"}'
+    assert first_action(two)["tool"] == "doc.map"
+    assert first_action('I will look at the map first {not json} then:\n```json\n{"action": "tool", "tool": "doc.map", "args": {"a": {"b": 1}}}\n```')["args"] == {"a": {"b": 1}}
+    with pytest.raises(ValueError):
+        first_action("no action here")
+
+
+def test_the_pace_line_warns_only_when_steps_run_out_with_nothing_written() -> None:
+    assert pace_line(1, 8, 0) == "Step 1 of 8."
+    assert "written nothing" in pace_line(7, 8, 0) and "Only 2 steps are left" in pace_line(7, 8, 0)
+    assert pace_line(7, 8, 2) == "Step 7 of 8."  # something written: no nagging
 
 
 class Script:
@@ -67,6 +81,14 @@ class TestVerify:
         ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
         assert verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": "customer concentration is 4.12% of revenue"}, lookup_for(store)) is None
         assert "quote is not in" in verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": "customer concentration is 9.99% of revenue"}, lookup_for(store))
+
+    def test_a_quote_may_join_separate_parts_with_an_ellipsis_but_every_part_must_be_there(self, store) -> None:  # noqa: ANN001
+        ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
+        joined = "the fresh issue ... Customer  concentration is 4.12 % of revenue"
+        assert verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": "Customer concentration ... is 4.12% of revenue"}, lookup_for(store)) is None
+        assert verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": "Customer concentration … 4.12% of revenue"}, lookup_for(store)) is None
+        assert "quote is not in" in verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": joined}, lookup_for(store))  # "the fresh issue" is not a part of the evidence text
+        assert "quote is not in" in verify_entry(OBSERVATION, {"text": "t", "evidence": [ev], "quote": "..."}, lookup_for(store))  # nothing but an ellipsis quotes nothing
 
     def test_a_number_must_be_in_the_evidence(self, store) -> None:  # noqa: ANN001
         ev = store.add_evidence("c1", "text", "doc.get", {}, OFFER)
