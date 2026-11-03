@@ -1,0 +1,1 @@
+"""The statements lane: annual statements of listed companies read from the fundamentals store, detectors computed in code, and the same measures for every peer so each result is shown against the field."""
