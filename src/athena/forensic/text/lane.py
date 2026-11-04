@@ -147,7 +147,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         store = ForensicStore(Path(tempfile.gettempdir()) / "forensic_cli.duckdb")
         case = Case(f"{args.doc_id}-{datetime.now():%Y%m%d%H%M%S}", "drhp", args.doc_id, date.today())  # one id per run: evidence and the ledger are kept by case id
-        registry = base_registry(document_tools(data))
+        from athena.forensic.checks.lane import checks_tool, run_code_lane
+
+        registry = base_registry([*document_tools(data), checks_tool(data)])
         if not args.agent:
             ctx = ToolContext(case, store, "text")
             print(json.dumps(registry.call("doc.map", {}, ctx)[0], indent=1, ensure_ascii=False))
@@ -157,7 +159,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         from athena.llm.router import build_router
 
         router = build_router(meter=Meter(), max_tokens=6000)
-        sup = Supervisor(store, registry, {"text": TEXT_LANE}, router.client_for("reader_retry"), total_calls=12, max_rounds=1)
+        sup = Supervisor(store, registry, {"text": TEXT_LANE}, router.client_for("reader_retry"), total_calls=12, max_rounds=1, code_lanes={"checks": run_code_lane(data)})
         print(json.dumps(sup.investigate(case), indent=1, ensure_ascii=False, default=str))
         return 0
     except Exception as exc:  # noqa: BLE001
