@@ -411,4 +411,4 @@ class TestSupervisor:
     def test_no_lane_for_the_kind_is_reported(self, store, registry) -> None:  # noqa: ANN001
         report = self.make(store, registry, Script(), lanes=()).investigate(CASE)
         assert report["stopped_because"] == "no lane is available for this kind of case"
-        assert report["concern"]["low"] == "none established" and {n["lane"] for n in report["not_examined"]} == {"text", "statements", "ownership", "peers"}
+        assert report["concern"]["low"] == "none established" and {n["lane"] for n in report["not_examined"]} == {"checks", "text", "statements", "ownership", "peers"}

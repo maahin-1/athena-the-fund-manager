@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from athena.contracts import AthenaError
@@ -21,8 +21,9 @@ from athena.forensic.store import ForensicStore
 from athena.forensic.tools import Registry
 from athena.guard.scope import advice_in
 
+CodeLane = Callable[[Case, ForensicStore, Registry], AgentResult]  # a lane that is code: no model calls, writes entries as the author named for it (see `athena.forensic.checks.lane`)
 KIND_LANES: Mapping[str, tuple[str, ...]] = {
-    "drhp": ("text", "statements", "ownership", "peers"),
+    "drhp": ("checks", "text", "statements", "ownership", "peers"),
     "listed": ("statements", "ownership", "market", "text"),
     "news": ("market", "text", "ownership"),
 }
@@ -51,31 +52,40 @@ class Supervisor:
         total_calls: int = 40,
         max_rounds: int = 2,
         kind_lanes: Mapping[str, Sequence[str]] = KIND_LANES,
+        code_lanes: Mapping[str, CodeLane] | None = None,
     ):
         self.store, self.registry, self.lanes, self.llm = store, registry, dict(lanes), llm
         self.total_calls, self.max_rounds, self.kind_lanes = total_calls, max_rounds, kind_lanes
+        self.code_lanes = dict(code_lanes or {})
 
     # --- planning ---
     def plan(self, case: Case) -> list[str]:
-        """The lanes that run for this case: those the case kind uses that are available."""
-        return [name for name in self.kind_lanes.get(case.kind, ()) if name in self.lanes]
+        """The lanes that run for this case: those the case kind uses that are available (model lanes and code lanes)."""
+        return [name for name in self.kind_lanes.get(case.kind, ()) if name in self.lanes or name in self.code_lanes]
 
     # --- the investigation ---
     def investigate(self, case: Case, brief: str | None = None) -> dict[str, Any]:
         self.store.add_case(case)
         lane_names = self.plan(case)
+        agent_names = [n for n in lane_names if n in self.lanes]
         budget = CallBudget(self.total_calls, self.store, case.case_id)
         lookup = lambda ev: self.store.evidence(case.case_id, ev)  # noqa: E731
         results: dict[str, list[AgentResult]] = {name: [] for name in lane_names}
+        for name in (n for n in lane_names if n in self.code_lanes):  # code first: what it proves or finds is there for the model lanes to see
+            try:
+                results[name].append(self.code_lanes[name](case, self.store, self.registry))
+            except Exception as exc:  # noqa: BLE001 - a code lane that breaks is reported as not examined, never as clean
+                results[name].append(AgentResult(name, "failed", note=f"{type(exc).__name__}: {exc}"[:200]))
+        classify(self.store, case.case_id, lookup)
         stopped = "rounds finished"
         reserve = 1  # the narrative
         for round_no in range(1, self.max_rounds + 1):
-            if not lane_names:
-                stopped = "no lane is available for this kind of case"
+            if not agent_names:
+                stopped = "no lane is available for this kind of case" if not lane_names else "only code lanes ran"
                 break
-            share = max(1, (max(0, budget.left - reserve)) // max(1, len(lane_names)))
+            share = max(1, (max(0, budget.left - reserve)) // max(1, len(agent_names)))
             before = len([e for e in self.store.entries(case.case_id) if e.kind != NOTE and e.status != REJECTED])
-            for name in lane_names:
+            for name in agent_names:
                 if budget.left - reserve <= 0:
                     results[name].append(AgentResult(name, "budget", note="the case's call cap was reached before this lane ran"))
                     continue
@@ -83,7 +93,7 @@ class Supervisor:
                 client = budget.client(self.llm, name, round_no, cap=min(share, budget.left - reserve))
                 results[name].append(run_agent(self.lanes[name], case, self.store, self.registry, client, round_no, brief or DEFAULT_BRIEFS.get(case.kind, ""), inbox))
             classify(self.store, case.case_id, lookup)
-            self._referee(case, lane_names, round_no)
+            self._referee(case, agent_names, round_no)  # a question can be put to a lane that reads and answers; a code lane does not answer
             after = len([e for e in self.store.entries(case.case_id) if e.kind != NOTE and e.status != REJECTED])
             if budget.left - reserve <= 0:
                 stopped = "the call cap was reached"
@@ -152,7 +162,7 @@ class Supervisor:
             if not runs or not looked or all(r.status in ("budget", "failed") for r in runs):
                 not_examined.append({"lane": name, "why": (runs[-1].note if runs else "never ran") or ("it read nothing and wrote nothing" if runs and not looked else "no usable run")})
         for name in self.kind_lanes.get(case.kind, ()):
-            if name not in self.lanes:
+            if name not in self.lanes and name not in self.code_lanes:
                 not_examined.append({"lane": name, "why": "no such agent is available yet"})
         return {
             "case": {"id": case.case_id, "kind": case.kind, "target": case.target, "as_of": case.as_of.isoformat()},
@@ -172,6 +182,8 @@ class Supervisor:
     def _narrative(self, report: dict[str, Any], budget: CallBudget) -> str:
         facts = {k: report[k] for k in ("concern", "established", "single_source", "not_examined", "unanswered_questions", "stopped_because")}
         fallback = self._plain(report)
+        if self.llm is None:  # a run of code lanes only: nothing to ask, and no call is made
+            return fallback
         try:
             text = budget.client(self.llm, "supervisor", 0).complete(SUPERVISOR_SYSTEM, json.dumps(facts, ensure_ascii=False, default=str)).strip()
         except (AthenaError, BudgetExhausted):

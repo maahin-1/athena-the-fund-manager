@@ -129,7 +129,7 @@ TEXT_LANE = LaneSpec(
     "reads an offer document by navigating its section map; it follows leads (what the money is for, who sells and at what price, how the company describes its business and customers, what litigation and related-party "
     "dealings are disclosed) and looks for places where two parts of the document, or the document and the statements, say different things; it quotes the page word for word, answers other lanes' questions from the text, "
     "and says plainly when the text has no answer",
-    ("doc.map", "doc.open", "doc.search", "doc.figures", "doc.baseline", "ledger.read", "notes.read"),
+    ("doc.map", "doc.open", "doc.search", "doc.figures", "doc.baseline", "doc.checks", "ledger.read", "notes.read"),
     step_cap=8,
 )
 
