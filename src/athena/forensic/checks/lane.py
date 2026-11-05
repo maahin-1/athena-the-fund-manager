@@ -35,7 +35,7 @@ INNOCENT = {
 def checks_tool(data: DocData) -> Tool:
     def doc_checks(ctx: ToolContext, args: dict[str, Any]) -> Any:
         doc = data.document(ctx)
-        return run_checks(data.store.pages(ctx.case.target), data.store.figures(ctx.case.target), doc["unreadable"])
+        return run_checks(data.store.pages(ctx.case.target), data.store.figures(ctx.case.target), doc["unreadable"], data.store.layout(ctx.case.target))
 
     return Tool("doc.checks", "relations that must hold between printed numbers (balance sheet balances, subtotals add up, the same restated figure is the same in every place, the issue is its parts), each ok, differs or not run", "", doc_checks)
 
@@ -121,7 +121,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if doc is None:
             print(f"no document {args.doc_id}", file=sys.stderr)
             return 1
-        result = run_checks(data.store.pages(args.doc_id), data.store.figures(args.doc_id), doc["unreadable"])
+        result = run_checks(data.store.pages(args.doc_id), data.store.figures(args.doc_id), doc["unreadable"], data.store.layout(args.doc_id))
         shown = result["checks"] if args.all else [c for c in result["checks"] if c["status"] != "ok"]
         print(json.dumps({"summary": result["summary"], "notes": result["notes"], "not_built": result["not_built"], "checks": shown}, indent=1, ensure_ascii=False))
         return 0

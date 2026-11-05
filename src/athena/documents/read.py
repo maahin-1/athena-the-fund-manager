@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import io
 import json
+import re
 import sys
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timezone
@@ -42,6 +43,31 @@ def read_pages(data: bytes) -> list[str]:
     return out
 
 
+STATEMENT_WORDS = re.compile(r"total assets|total income|total expenses|profit before|cash and cash equivalents|net cash|total equity|revenue from operations", re.IGNORECASE)
+
+
+def layout_candidates(pages: Sequence[str]) -> list[int]:
+    """The pages (1-based) whose text names lines of a financial statement. Only these are read a second time in layout mode."""
+    return [n for n, text in enumerate(pages, start=1) if STATEMENT_WORDS.search(text)]
+
+
+def read_layout(data: bytes, wanted: Sequence[int]) -> dict[int, str]:
+    """The text of the `wanted` pages (1-based) placed by position on the page, so a label stays on the line of its figures. A page that cannot be read is left out."""
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as exc:  # a damaged file
+        raise AthenaError(f"the PDF could not be opened: {exc}") from exc
+    out: dict[int, str] = {}
+    for n in wanted:
+        try:
+            out[n] = reader.pages[n - 1].extract_text(extraction_mode="layout") or ""
+        except Exception:  # a damaged page, or a page number past the end
+            continue
+    return out
+
+
 def unreadable(pages: Sequence[str]) -> list[int]:
     return [n for n, text in enumerate(pages, start=1) if len("".join(text.split())) < MIN_PAGE_CHARS]
 
@@ -70,7 +96,24 @@ def ingest(
     doc_id = sha[:16]
     store.add(doc_id, kind=kind, company=company, url=url, sha256=sha, published=published, pages=pages, unreadable=unreadable(pages), sections=sections, section_of=section_of, now=when)
     store.save_figures(doc_id, offer_figures(pages, sections).as_dict(), when)
+    try:  # the layout reading is an aid to the checks; a document is kept without it rather than refused
+        store.save_layout(doc_id, read_layout(data, layout_candidates(pages)))
+    except AthenaError:
+        pass
     return doc_id
+
+
+def add_layout(store: DocStore, doc_id: str, *, fetch: Callable[[str], bytes] = fetch_pdf) -> int:
+    """Read the statement-looking pages of a document already held in layout mode too, from the same address; the bytes must be the ones that were read (same hash). The number of pages kept."""
+    doc = store.document(doc_id)
+    if doc is None:
+        raise AthenaError(f"no document {doc_id}")
+    data = fetch(doc["url"])
+    if hashlib.sha256(data).hexdigest() != doc["sha256"]:
+        raise AthenaError("the file at the address is no longer the one that was read (its hash changed); read it again as a new document")
+    kept = read_layout(data, layout_candidates([text for _, _, text in store.pages(doc_id)]))
+    store.save_layout(doc_id, kept)
+    return len(kept)
 
 
 def coverage(store: DocStore, doc_id: str) -> dict[str, Any]:
@@ -93,11 +136,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--kind", default="DRHP")
     parser.add_argument("--coverage", metavar="DOC_ID")
     parser.add_argument("--figures", metavar="DOC_ID")
+    parser.add_argument("--layout", metavar="DOC_ID", help="read the statement-looking pages of a document already held in layout mode too (fetches the file again, checks its hash)")
     parser.add_argument("--db", default=str(DEFAULT_PATH))
     args = parser.parse_args(argv)
     store = DocStore(args.db)
     try:
-        if args.coverage:
+        if args.layout:
+            print(json.dumps({"doc_id": args.layout, "layout_pages_kept": add_layout(store, args.layout)}))
+        elif args.coverage:
             print(json.dumps(coverage(store, args.coverage), indent=1, ensure_ascii=False))
         elif args.figures:
             print(json.dumps(store.figures(args.figures), indent=1, ensure_ascii=False))

@@ -2,6 +2,8 @@
 
     docs       one row per document read: where it came from, its content hash (a document is read once; the same bytes are never read twice), page count, the pages that gave no text
     pages      the text of every page, with the section the page falls in
+    layout_pages  for pages that look like statement pages, the same page read again with the text placed by position on the page (`pages.text` is the reading order of the PDF, which on some
+               drafts separates a label from its figures); the checks lane chooses between the two per page
     sections   the sections the finder saw, with their page ranges
     figures    the offer figures taken by program, as JSON, with the checks that ran on them
 
@@ -25,6 +27,7 @@ DDL = (
     "CREATE TABLE IF NOT EXISTS docs (doc_id VARCHAR PRIMARY KEY, kind VARCHAR, company VARCHAR, url VARCHAR, sha256 VARCHAR NOT NULL UNIQUE, published DATE, n_pages INTEGER, unreadable VARCHAR,"
     " fetched_at TIMESTAMP NOT NULL)",
     "CREATE TABLE IF NOT EXISTS pages (doc_id VARCHAR NOT NULL, page INTEGER NOT NULL, section VARCHAR, text VARCHAR, PRIMARY KEY (doc_id, page))",
+    "CREATE TABLE IF NOT EXISTS layout_pages (doc_id VARCHAR NOT NULL, page INTEGER NOT NULL, text VARCHAR, PRIMARY KEY (doc_id, page))",
     "CREATE TABLE IF NOT EXISTS sections (doc_id VARCHAR NOT NULL, key VARCHAR NOT NULL, title VARCHAR, start_page INTEGER, end_page INTEGER, PRIMARY KEY (doc_id, key))",
     "CREATE TABLE IF NOT EXISTS figures (doc_id VARCHAR PRIMARY KEY, body VARCHAR NOT NULL, built_at TIMESTAMP NOT NULL)",
     "CREATE TABLE IF NOT EXISTS analysis (doc_id VARCHAR PRIMARY KEY, body VARCHAR NOT NULL, built_at TIMESTAMP NOT NULL)",
@@ -64,7 +67,15 @@ class DocStore:
         with self._open() as con:
             con.execute("INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [doc_id, kind, company, url, sha256, published, len(pages), json.dumps(list(unreadable)), stamp])
             con.executemany("INSERT INTO pages VALUES (?, ?, ?, ?)", [(doc_id, n, section_of(sections, n), text) for n, text in enumerate(pages, start=1)])
-            con.executemany("INSERT INTO sections VALUES (?, ?, ?, ?, ?)", [(doc_id, s.key, s.title, s.start, s.end) for s in sections])
+            if sections:  # a document whose sections were not found is still kept
+                con.executemany("INSERT INTO sections VALUES (?, ?, ?, ?, ?)", [(doc_id, s.key, s.title, s.start, s.end) for s in sections])
+
+    def save_layout(self, doc_id: str, pages: dict[int, str]) -> None:
+        """The layout-mode text of some pages of a document (reading again replaces what was kept)."""
+        with self._open() as con:
+            con.execute("DELETE FROM layout_pages WHERE doc_id = ?", [doc_id])
+            if pages:
+                con.executemany("INSERT INTO layout_pages VALUES (?, ?, ?)", [(doc_id, n, text) for n, text in sorted(pages.items())])
 
     def save_figures(self, doc_id: str, body: dict[str, Any], now: datetime) -> None:
         stamp = now.astimezone(timezone.utc).replace(tzinfo=None) if now.tzinfo else now
@@ -110,6 +121,15 @@ class DocStore:
         with self._open() as con:
             rows = con.execute("SELECT page, section, text FROM pages WHERE doc_id = ? ORDER BY page", [doc_id]).fetchall()
         return [r for r in rows if sections is None or r[1] in sections]
+
+    def layout(self, doc_id: str) -> dict[int, str]:
+        """The layout-mode text kept for some pages, by page number (empty when none was kept, or the store is older than this table)."""
+        try:
+            with self._open() as con:
+                rows = con.execute("SELECT page, text FROM layout_pages WHERE doc_id = ?", [doc_id]).fetchall()
+        except duckdb.CatalogException:
+            return {}
+        return {int(page): text or "" for page, text in rows}
 
     def sections(self, doc_id: str) -> list[Section]:
         with self._open() as con:

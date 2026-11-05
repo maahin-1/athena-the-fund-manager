@@ -373,9 +373,33 @@ def offer_checks(figures: Mapping[str, Any] | None) -> list[Check]:
     return out
 
 
-def run_checks(pages: Sequence[tuple[int, str, str]], figures: Mapping[str, Any] | None, unreadable: Sequence[int] = ()) -> dict[str, Any]:
+def _statement_score(page: int, text: str) -> int:
+    """How many labelled lines a page gives as a statement: zero when it does not read as a balance sheet, income statement or cash flow."""
+    table = read_table(page, text)
+    return sum(1 for row in table.rows if row.label) if table and classify(table) else 0
+
+
+def prefer_layout(pages: Sequence[tuple[int, str, str]], layout: Mapping[int, str]) -> tuple[list[tuple[int, str, str]], list[int]]:
+    """The pages with, for each page that was also read in layout mode, whichever text gives more labelled lines of a statement (the default text on a tie). Some drafts put a label in one block of
+    text and its figures in another, so the default reading order loses the rows; others place text so that layout mode loses the year headings. Neither is better in general, so the page decides."""
+    out: list[tuple[int, str, str]] = []
+    used: list[int] = []
+    for page, section, text in pages:
+        placed = layout.get(page)
+        if placed and _statement_score(page, placed) > _statement_score(page, text):
+            out.append((page, section, placed))
+            used.append(page)
+        else:
+            out.append((page, section, text))
+    return out, used
+
+
+def run_checks(pages: Sequence[tuple[int, str, str]], figures: Mapping[str, Any] | None, unreadable: Sequence[int] = (), layout: Mapping[int, str] | None = None) -> dict[str, Any]:
     """Every check, the whole result as one JSON-able structure. `checks.N.left.M.value` is the path of a number in it."""
+    pages, by_position = prefer_layout(pages, layout or {})
     found, notes = locate(pages, unreadable)
+    if by_position:
+        notes.append(f"{len(by_position)} page(s) were read by the position of the text on the page, which gave more of a statement's lines than the reading order: {', '.join(map(str, by_position[:12]))}{' ...' if len(by_position) > 12 else ''}")
     checks = statement_checks(found) + offer_checks(figures)
     if not found:
         checks.insert(0, Check("statements_found", ARITH, "restated statements in the summary and financial sections", None, reason="no statement table could be read (the sections were not found, or the pages carry no readable year columns)"))

@@ -171,6 +171,34 @@ Written down before the second-date run and before the first forward snapshot is
 
 After the fixes: **0 differences in all seven drafts**; checks that ran and held: 104, 81, 52, 39, 24, 15 and 6 (the last, Rathod Jewellery, prints each label in a text block apart from its figures, so rows cannot be rebuilt from the stored page text; reading it needs the PDF's word positions, which the store does not keep). This means two things, said plainly: the arithmetic of real drafts reconciles wherever the checks can read it, and **a genuine inconsistency in a real draft has not yet been seen**, so detection is proven on built examples (tests) and not on a real case.
 
+### 6i. Reading statement pages by the position of the text, and what it did to the seven drafts (Nov 6, 2026)
+
+The stored page text is the PDF's reading order. On some drafts that order puts a label in one block of text and its figures in another, so a statement page gives figures with no labels (Rathod Jewellery's restated statements, pages 367 to 369, gave no table at all). The reader now also keeps, for the pages that name statement lines (`total assets`, `total income`, `profit before`, `net cash` and so on), the same page read with the text placed by position (`layout_pages` in the document store; `python -m athena.documents.read --layout DOC_ID` adds it to a document already held, from the same address, refusing a file whose hash changed). The text lane and the search still use the reading order; only the checks lane chooses, **per page, whichever text gives more labelled lines of a statement** (the reading order on a tie). The choice is by yield and not a preference because position is worse on other drafts: on Inox Air Products it loses the year headings and sets neighbouring columns against each other (`312.84422.91`).
+
+Checks that ran (all held) on the seven drafts, before and after, with **0 differences on every draft before and after**:
+
+| Draft | Before | After |
+|---|---|---|
+| B S Sponge | 104 | 116 (none left unrun) |
+| Electromech | 52 | 76 |
+| Deon Energy | 24 | 42 |
+| Rathod Jewellery | 6 | 51 |
+| Everbrands | 81 | 81 (unrun 33 to 17) |
+| Baanganga | 39 | 39 |
+| Inox Air Products | 15 | 21 (from label fixes; position reading did not help it) |
+
+(Part of each gain is the label and number fixes below, not the position reading alone.)
+
+Testing on all seven found, and fixed, three things a single draft would not have shown:
+
+- **A false difference from a parse rule.** The first run with position text gave Deon three differences on total equity. The printed page reconciles (share capital 240.10 plus other equity 474.40 is 714.50). The row `Equity share capital 20 240.10 0.10 -` has a note number and a real nil in the last year; the rule for a second block of nil columns dropped that nil and shifted the values. A trailing run of dashes is now a block only when it is as wide as the figures.
+- **Rows read with the wrong columns.** A row with one more amount-like figure than there are year columns (Inox: `(414.97) 110.07 21 9.08`, where `21 9.08` is one number broken by a space) had its first figure taken into the label and the last three used as the years. Such a row is now left out, so a check that needs it is *not run* instead of using wrong values. Numbers broken by a space before a comma or point (`10 ,000.00`, `(8 .23)`) or inside a bracket (`(1 79.65)`) are joined, because nothing else starts with a comma or a point and an open bracket needs a closing one. `21 9.08` is not joined: two plain figures side by side cannot be told from a broken one.
+- **Labels.** The cash roll-forward needs net change, opening and closing cash. Aliases now accept `equivalent` or `equivalents`, `and` or `&`, `at` or `as at`, and `cash equivalents` without `cash and`. Totals printed `non - current` (spaces round the hyphen) and the earlier-years tax line worded `taxation pertaining to earlier years` are found too.
+
+Two defects of the document store found by the new tests: a document with no sections found, and a layout reading with no pages, both raised on insert (`executemany` takes no empty list). Both are guarded.
+
+**What is still not read, said plainly.** Inox's cash flow roll-forward (the net change and closing cash are printed with broken figures such as `21 9.08`). Most remaining "not run" checks on the other drafts are lines the draft does not print (for example the tax adjustment for earlier years, or a total equity line), where *not run* is the right answer. Baanganga's financial sections are still not found by the section finder, so every page is searched. As before, **no genuine inconsistency has been seen in a real draft**, so detection is proven on built examples only.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.

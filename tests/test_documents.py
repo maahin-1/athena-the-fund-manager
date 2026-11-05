@@ -246,6 +246,44 @@ class TestIngest:
             reader.ingest(store, "https://x/c.pdf", company="C", kind="DRHP", fetch=lambda url: b"%PDF-1.7 d", now=NOW)
 
 
+class TestLayout:
+    def test_only_pages_that_name_statement_lines_are_read_again_by_position(self) -> None:
+        pages = ["cover", "Restated Statement of Assets and Liabilities\nTotal Assets 1.00 2.00", "risk factors text", "Net cash from operating activities 5.00 4.00"]
+        assert reader.layout_candidates(pages) == [2, 4]
+
+    def test_a_document_is_kept_without_layout_when_the_second_reading_fails(self, stored) -> None:  # noqa: ANN001
+        store, doc_id = stored  # the bytes of the fixture are not a PDF, so the layout reading raises; the document is still kept
+        assert store.document(doc_id) is not None and store.layout(doc_id) == {}
+
+    def test_layout_pages_are_kept_per_document_and_replaced_when_read_again(self, stored, monkeypatch) -> None:  # noqa: ANN001
+        store, doc_id = stored
+        monkeypatch.setattr(reader, "layout_candidates", lambda pages: [2, 3])
+        monkeypatch.setattr(reader, "read_layout", lambda data, wanted: {n: f"layout {n}" for n in wanted})
+        kept = reader.add_layout(store, doc_id, fetch=lambda url: b"%PDF-1.7 a")
+        assert kept == 2 and store.layout(doc_id) == {2: "layout 2", 3: "layout 3"}
+        monkeypatch.setattr(reader, "read_layout", lambda data, wanted: {2: "only"})
+        reader.add_layout(store, doc_id, fetch=lambda url: b"%PDF-1.7 a")
+        assert store.layout(doc_id) == {2: "only"}
+
+    def test_a_document_with_no_statement_looking_page_keeps_an_empty_layout(self, store, monkeypatch) -> None:  # noqa: ANN001
+        monkeypatch.setattr(reader, "read_pages", lambda data: ["cover page of the offer document " * 3, "narrative text only " * 5])
+        monkeypatch.setattr(reader, "read_layout", lambda data, wanted: {n: "x" for n in wanted})
+        doc_id = reader.ingest(store, "https://x/n.pdf", company="N Limited", kind="DRHP", fetch=lambda url: b"%PDF-1.7 n", now=NOW)
+        assert store.layout(doc_id) == {}
+
+    def test_a_file_whose_hash_changed_is_not_added_to_the_document_that_was_read(self, stored) -> None:  # noqa: ANN001
+        store, doc_id = stored
+        with pytest.raises(AthenaError, match="hash changed"):
+            reader.add_layout(store, doc_id, fetch=lambda url: b"%PDF-1.7 changed")
+
+    def test_a_store_made_before_the_table_existed_gives_no_layout(self, tmp_path) -> None:  # noqa: ANN001
+        import duckdb
+
+        path = tmp_path / "old.duckdb"
+        duckdb.connect(str(path)).close()
+        assert DocStore(path, read_only=True).layout("anything") == {}
+
+
 class TestSearch:
     def test_a_question_reads_only_the_sections_it_names(self, stored) -> None:  # noqa: ANN001
         store, doc_id = stored

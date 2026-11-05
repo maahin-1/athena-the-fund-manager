@@ -6,7 +6,7 @@ import pytest
 
 from athena.documents.sections import Section
 from athena.documents.store import DocStore
-from athena.forensic.checks.document import offer_checks, run_checks
+from athena.forensic.checks.document import offer_checks, prefer_layout, run_checks
 from athena.forensic.checks.lane import checks_tool, run_code_lane
 from athena.forensic.checks.rows import classify, parse_number, read_table
 from athena.forensic.model import Case
@@ -230,6 +230,82 @@ def test_a_statement_whose_own_arithmetic_mostly_fails_is_set_aside_as_misread()
     assert result["summary"]["differs"] == 0
     assert any("probably misread" in n for n in result["notes"])
     assert any(c["status"] == "not_run" and c["reason"].startswith("page probably misread") for c in result["checks"])
+
+
+def test_a_nil_year_after_a_note_number_stays_a_nil_year() -> None:
+    page = "Particulars Note No. March 31, 2026 March 31, 2025 March 31, 2024\nEquity share capital 20 240.10 0.10 -\nOther equity 21 474.40 255.71 34.16\nTotal Equity 714.50 255.81 34.16\nTotal Assets 1,440.36 601.11 339.66"
+    table = read_table(2, page)
+    assert table is not None
+    rows = {r.label: r.values for r in table.rows}
+    assert rows["equity share capital 20"] == (240.10, 0.10, 0.0)  # not (20, 240.10, 0.10): the dash is the third year
+    blocks = read_table(3, "Particulars Note No. For the year ended 31st March, 2026 For the year ended 31st March, 2025\nRevenue from operations 26 25,925.24 21,878.19 -  -\nTotal income 26,060.60 21,925.18")
+    assert blocks is not None and {r.label: r.values for r in blocks.rows}["revenue from operations 26"] == (25925.24, 21878.19)  # a block of nils as wide as the figures is still dropped
+
+
+def test_numbers_with_a_space_before_the_comma_or_point_or_inside_a_bracket_are_joined_and_a_row_with_a_figure_too_many_is_not_guessed() -> None:
+    head = "Particulars For the Year Ended March 31, 2026 For the Year Ended March 31, 2025 For the Year Ended March 31, 2024\n"
+    spaced = read_table(2, head + "Proceeds from borrowings -  5,000.00  10 ,000.00\nRepayment (3,624.82) (2,808.75) (3 ,421.74)\nMovement in cash credit 629.14 - (1 79.65)\nPayment of lease liabilities (10.78) (9.26) (8 .23)\nFinance costs (1,068.59) (1,049.24) (8 91.07)")
+    assert spaced is not None
+    assert {r.label: r.values for r in spaced.rows} == {
+        "proceeds from borrowings": (0.0, 5000.0, 10000.0), "repayment": (-3624.82, -2808.75, -3421.74), "movement in cash credit": (629.14, 0.0, -179.65),
+        "payment of lease liabilities": (-10.78, -9.26, -8.23), "finance costs": (-1068.59, -1049.24, -891.07)}
+    shifted = read_table(3, head + "Net cash from financing activities (4,281.86) 1,029.34 5,395.90\nNet increase in cash and cash equivalents (414.97) 110.07 21 9.08\nOther equity 21 474.40 255.71 34.16")
+    assert shifted is not None
+    labels = {r.label: r.values for r in shifted.rows}
+    assert "net increase in cash and cash equivalents (414.97)" not in labels and not any("net increase" in k for k in labels)  # four figures against three columns: the row is left out, not read with the wrong three
+    assert labels["other equity 21"] == (474.40, 255.71, 34.16) and labels["net cash from financing activities"] == (-4281.86, 1029.34, 5395.9)  # a note number in front of the figures is not a figure
+
+
+def test_cash_labels_are_found_whether_they_say_equivalent_or_equivalents_and_as_at_or_at() -> None:
+    from athena.forensic.checks.rows import ALIASES
+
+    cash = ALIASES["cashflow"]
+    for label in ("cash and cash equivalents at the beginning of the year", "cash and cash equivalent at the beginning of the year", "cash equivalents at the beginning of the year", "cash and cash equivalents as at the opening of the year"):
+        assert cash["cash_begin"].search(label), label
+    for label in ("cash and cash equivalents at the end of the year", "cash and cash equivalent at the end of the year (refer note 12)", "cash and cash equivalents as at the end of the year", "cash equivalents at the end of the year", "cash & cash equivalents at the closing of the year"):
+        assert cash["cash_end"].search(label), label
+    for label in ("net increase/(decrease) in cash and cash equivalents", "net increase/(decrease) in cash & cash equivalents (a+b+c)", "net change in cash and cash equivalents"):
+        assert cash["net_change"].search(label), label
+    assert not cash["cash_end"].search("bank balances other than cash and cash equivalents")
+    balance, income_aliases = ALIASES["balance"], ALIASES["income"]
+    for label in ("total non-current liabilities", "total non current liabilities", "total non - current liabilities", "total noncurrent liabilities"):
+        assert balance["non_current_liabilities"].search(label), label
+    for label in ("income tax adjustment for earlier years", "taxation pertaining to earlier years", "tax expense relating to earlier years", "tax in respect of earlier years"):
+        assert income_aliases["tax_earlier"].search(label), label
+    assert not income_aliases["tax_earlier"].search("current tax")
+
+
+def figures_only(text: str) -> str:
+    """A page as some drafts extract it: each statement line keeps its figures and loses its label (the label is in another block of text)."""
+    out = []
+    for line in text.splitlines():
+        tokens = line.split()
+        k = 0
+        while k < len(tokens) and parse_number(tokens[len(tokens) - 1 - k]) is not None:
+            k += 1
+        out.append(" ".join(tokens[len(tokens) - k:]) if k >= 2 else line)
+    return "\n".join(out)
+
+
+def test_the_page_decides_between_the_reading_order_and_the_position_of_the_text() -> None:
+    lost = figures_only(income())
+    assert read_table(3, lost) is None or classify(read_table(3, lost)) is None  # the default reading cannot tell what the page is
+    pages = [(3, "financials", lost), (4, "financials", income())]
+    chosen, used = prefer_layout(pages, {3: income(), 4: "RESTATED STATEMENT OF PROFIT AND LOSS\nRevenue from operations 1,000.00 900.00"})
+    assert used == [3] and chosen[0][2] == income() and chosen[1][2] == income()  # the position gave the rows on page 3; page 4's layout lost the year headings, so the reading order stays
+    assert prefer_layout(pages, {})[1] == []
+    tie, used = prefer_layout([(3, "financials", income())], {3: income()})
+    assert used == [] and tie[0][2] == income()  # the same yield is not a reason to change
+
+
+def test_checks_run_on_a_statement_the_reading_order_lost_when_the_position_of_the_text_gives_it() -> None:
+    pages = doc([balance(), figures_only(income())], [balance(), figures_only(income())])
+    without = run_checks(pages, None)
+    layout = {3: income(), 5: income()}
+    withit = run_checks(pages, None, layout=layout)
+    assert without["summary"]["statement_tables_read"] == 2 and withit["summary"]["statement_tables_read"] == 4
+    assert withit["summary"]["ok"] > without["summary"]["ok"] and withit["summary"]["differs"] == 0
+    assert any("position of the text" in n and "3, 5" in n for n in withit["notes"]) and not any("position of the text" in n for n in without["notes"])
 
 
 @pytest.fixture()
