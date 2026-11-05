@@ -202,6 +202,54 @@ def analyses(rows: Sequence[Row], everyone: Sequence[Row]) -> dict[str, Any]:
     return out
 
 
+COMPOSITE = ("cfo_to_profit", "accruals_ratio")  # the one composite named in spec 6g; they share inputs, so either elevated is one idea
+LEAN_AT = 1.2
+
+
+def composite_verdict(by_size: Mapping[str, Any] | None, by_vol: Mapping[str, Any] | None) -> str:
+    """The reading fixed in spec 6g before the run. Supported: ratio above 1 with the lower end of its interval above 1 on both size and volatility. Leaning: at least 1.2 on both, lower end above 1 on one.
+    Anything else is not replicated; no other control or cut-off is allowed to rescue it."""
+    def parts(r: Mapping[str, Any] | None) -> tuple[float, float] | None:
+        if not r or r.get("ratio") is None or not r.get("ci95") or r["ci95"][0] is None:
+            return None
+        return float(r["ratio"]), float(r["ci95"][0])
+
+    s, v = parts(by_size), parts(by_vol)
+    if s is None or v is None:
+        return "not computable"
+    if all(ratio > 1 and lo > 1 for ratio, lo in (s, v)):
+        return "supported at this date"
+    if all(ratio >= LEAN_AT for ratio, _ in (s, v)) and any(lo > 1 for _, lo in (s, v)):
+        return "leaning"
+    return "not replicated"
+
+
+def composite_test(rows: Sequence[Row]) -> dict[str, Any]:
+    """The cash-flow composite of spec 6g on rows with a price path: elevated if operating cash flow against profit or accruals is elevated, against companies that have one of them computed and neither elevated.
+    Companies with neither computed are out and counted. The primary is the 50% fall; 30% and 70% are shown beside it and not read."""
+    mine = set(COMPOSITE)
+    pool = [r for r in rows if r.computed_measures & mine]
+    out: dict[str, Any] = {
+        "measures": list(COMPOSITE), "neither_computed": len(rows) - len(pool),
+        "elevated_n": sum(1 for r in pool if r.measures & mine), "comparison_n": sum(1 for r in pool if not r.measures & mine),
+        "both_elevated_n": sum(1 for r in pool if mine <= r.measures),
+    }
+    for c in CUTOFFS:
+        flag = lambda r, c=c: (r.out.max_fall or 0) >= c  # noqa: E731
+        result: dict[str, Any] = {}
+        for by in ("size", "vol"):
+            stratum = STRATA[by]
+            usable = [r for r in pool if stratum(r) is not None]
+            found = standardised([(stratum(r), flag(r)) for r in usable if r.measures & mine], [(stratum(r), flag(r)) for r in usable if not r.measures & mine])
+            if found is not None:
+                found["raw_high_rate"] = round(sum(flag(r) for r in usable if r.measures & mine) / max(1, out["elevated_n"]), 3)
+                found["raw_low_rate"] = round(sum(flag(r) for r in usable if not r.measures & mine) / max(1, out["comparison_n"]), 3)
+            result[by] = found
+        out[f"fell_{int(c * 100)}"] = result
+    out["verdict"] = composite_verdict(out["fell_50"]["size"], out["fell_50"]["vol"])
+    return out
+
+
 def _benchmark(wh: Warehouse, name: str) -> dict[date, float]:
     names = {n.casefold(): n for n in wh.index_names()}
     if name.casefold() not in names:
@@ -268,6 +316,8 @@ def run(as_of: date, end: date, fundamentals: Path | str = FUNDAMENTALS, warehou
         "as_of": as_of.isoformat(), "end": end.isoformat(), "benchmark": BENCHMARK, "left_out": left_out,
         "unexplained_price_break_in_window": sum(1 for r in everyone if r.out.unexplained_break),
         "primary": analyses(rows, clean_everyone),
+        "cash_flow_composite": composite_test(rows),
+        "cash_flow_composite_keeping_unexplained_breaks": composite_test(wide),
         "sensitivity_keeping_unexplained_breaks": analyses(wide, everyone),
         "sensitivity_at_least_8_measures_computed": analyses(rich, rich_all),
         "rows": [
@@ -298,6 +348,16 @@ def render(result: Mapping[str, Any]) -> str:
                     lines.append(f"  {outcome_name} / {control}: {r['ratio']} (95% {r['ci95']}), high {r['high_bad']} of {r['high_n']} vs {r['high_expected']} expected; raw {r['raw_high_rate']} vs {r['raw_low_rate']}")
                 else:
                     lines.append(f"  {outcome_name} / {control}: not computable")
+    for name in ("cash_flow_composite", "cash_flow_composite_keeping_unexplained_breaks"):
+        c = result.get(name)
+        if not c:
+            continue
+        lines += ["", f"== {name} (spec 6g; either of {', '.join(c['measures'])} elevated against neither): elevated {c['elevated_n']}, comparison {c['comparison_n']}, neither computed {c['neither_computed']}, both elevated {c['both_elevated_n']} =="]
+        for cut in ("fell_30", "fell_50", "fell_70"):
+            for by in ("size", "vol"):
+                r = c[cut][by]
+                lines.append(f"  {cut} / {by}: " + (f"{r['ratio']} (95% {r['ci95']}), high {r['high_bad']} of {r['high_n']} vs {r['high_expected']} expected; raw {r['raw_high_rate']} vs {r['raw_low_rate']}" if r else "not computable"))
+        lines.append(f"  reading by the rule fixed in the spec (50% fall, size and volatility): {c['verdict']}")
     lines += ["", "== per measure (primary, fell 30% / 50%, standardised on size; 14 looks, so some will appear by chance) =="]
     for key, e in result["primary"]["per_measure"].items():
         a, b = e["fell_30"], e["fell_50"]

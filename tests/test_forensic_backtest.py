@@ -102,6 +102,40 @@ def test_standardising_removes_a_size_mix_effect() -> None:
     assert sum(b for _, b in high) / len(high) > sum(b for _, b in low) / len(low)  # the raw rates would have said "worse"
 
 
+def _row(symbol: str, elevated: set[str], computed: set[str], max_fall: float, size: int = 0, vol: int = 0) -> bt.Row:
+    o = bt.Outcome(symbol, 100.0, max_fall, 0.0, 0.0, 0.0, False, False, False, 0.02, 1e7, END)
+    return bt.Row(symbol, len(elevated), len(computed), frozenset(elevated), frozenset(computed), size, vol, o)
+
+
+def test_composite_verdict_follows_the_rule_fixed_in_the_spec() -> None:
+    def res(ratio: float, lo: float) -> dict:
+        return {"ratio": ratio, "ci95": [lo, ratio + 1]}
+
+    assert bt.composite_verdict(res(1.5, 1.1), res(1.4, 1.05)) == "supported at this date"
+    assert bt.composite_verdict(res(1.5, 1.1), res(1.3, 0.9)) == "leaning"  # at least 1.2 on both, lower end above 1 on one
+    assert bt.composite_verdict(res(1.5, 1.1), res(1.1, 0.95)) == "not replicated"  # volatility ratio under 1.2 and its interval reaches 1
+    assert bt.composite_verdict(res(1.1, 1.01), res(1.1, 1.02)) == "supported at this date"  # the rule is about the interval, as written
+    assert bt.composite_verdict(res(1.3, 0.9), res(1.3, 0.8)) == "not replicated"
+    assert bt.composite_verdict(res(0.9, 0.5), res(1.6, 1.2)) == "not replicated"
+    assert bt.composite_verdict(None, res(1.6, 1.2)) == "not computable"
+    assert bt.composite_verdict({"ratio": None, "ci95": [None, None]}, res(1.6, 1.2)) == "not computable"
+
+
+def test_composite_is_either_cash_flow_measure_and_needs_one_of_them_computed() -> None:
+    a, b = "cfo_to_profit", "accruals_ratio"
+    rows = [_row(f"H{i}", {a}, {a, b, "x"}, 0.6 if i < 5 else 0.0) for i in range(10)]
+    rows += [_row(f"B{i}", {b}, {b}, 0.6) for i in range(10)]  # accruals alone elevated counts
+    rows += [_row(f"L{i}", set(), {a, b}, 0.6 if i < 2 else 0.0) for i in range(30)]
+    rows += [_row(f"N{i}", {"x"}, {"x"}, 0.6) for i in range(20)]  # neither cash-flow measure computed: out
+    out = bt.composite_test(rows)
+    assert out["elevated_n"] == 20 and out["comparison_n"] == 30 and out["neither_computed"] == 20
+    fifty = out["fell_50"]["size"]
+    assert fifty["high_n"] == 20 and fifty["high_bad"] == 15
+    assert fifty["ratio"] > 1.2
+    assert out["both_elevated_n"] == 0
+    assert out["verdict"] in {"supported at this date", "leaning", "not replicated", "not computable"}
+
+
 def test_strata_where_the_low_group_is_too_thin_are_left_out() -> None:
     low = [(0, False)] * 20 + [(1, True)] * 3
     high = [(0, False)] * 5 + [(1, True)] * 5
