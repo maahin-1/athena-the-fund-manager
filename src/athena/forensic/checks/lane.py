@@ -70,6 +70,8 @@ def run_code_lane(data: DocData):  # noqa: ANN201
         reasons = Counter(c["reason"].split(":")[0][:90] for c in checks if c["status"] == "not_run")
         text = f"Document checks: {summary['run']} run ({summary['ok']} hold, {summary['differs']} differ), {summary['not_run']} could not be run" + (
             f" ({'; '.join(r for r, _ in reasons.most_common(3))})" if reasons else "") + f"; {summary['statement_tables_read']} statement tables read. Not built: {len(result['not_built'])} further checks."
+        if result["notes"]:
+            text += " " + "; ".join(result["notes"])[:300] + "."
         if suspicious:
             text += (f" {len(differing)} of the {summary['run']} checks differ at once, which points to a table that was misread more than to that many errors in the document, so none is written as a flag; "
                      "the pages are " + ", ".join(sorted({_pages(c) for _, c in differing}))[:200] + ".")

@@ -158,6 +158,80 @@ def test_the_offer_structure_is_checked_and_a_blank_amount_is_not_run() -> None:
     assert blank == {"offer_structure": "not_run", "objects_within_fresh_issue": "not_run"}
 
 
+def test_a_number_broken_after_its_thousands_comma_is_joined_and_a_half_number_is_not_an_amount() -> None:
+    page = "Particulars For the year ended 31st March, 2026 For the year ended 31st March, 2025\nTOTAL INCOME 12, 331.03 4, 032.79\nTOTAL EXPENSES 11,000.00 3,000.00\nPROFIT BEFORE TAX 1,331.03 1,032.79"
+    table = read_table(3, page)
+    assert table is not None and {r.label: r.values for r in table.rows}["total income"] == (12331.03, 4032.79)
+    assert parse_number("12,") is None and parse_number("032.79") is None and parse_number("0.79") == (0.79, 2)  # pieces of a number are not amounts
+    assert parse_number("(1") is None and parse_number("4,114.03)") is None and parse_number("(1,114.03)") == (-1114.03, 2)  # nor are the halves of a bracketed one
+
+
+def test_a_year_range_is_the_year_in_which_it_ends_and_a_broken_decimal_is_joined() -> None:
+    page = "Particulars 2025-26 2024-25\nTOTAL INCOME 21,002. 68 19,000.50\nTOTAL EXPENSES 20,000.00 18,000.00\nPROFIT BEFORE TAX 1,002.68 1,000.50"
+    table = read_table(3, page)
+    assert table is not None and table.years == (2026, 2025)  # not (2025, 2024): `2025-26` is the year ended March 2026
+    assert {r.label: r.values for r in table.rows}["total income"] == (21002.68, 19000.5)
+    glued = read_table(3, "2023-24Particulars\n2024-25 2025-26\nTOTAL INCOME 1.00 2.00 3.00\nTOTAL EXPENSES 0.50 1.00 1.50")
+    assert glued is not None and glued.years == (2024, 2025, 2026)
+
+
+def test_a_page_of_adjustments_to_profit_is_not_taken_for_an_income_statement() -> None:
+    page = ("Particulars For the year ended 31st March, 2026 For the year ended 31st March, 2025\nProfit before tax 1,000.00 900.00\nDepreciation and amortization expense 100.00 90.00\n"
+            "Other income (102.30) (42.31)\nInterest income (5.00) (4.00)\nChanges in working capital 20.00 10.00")
+    table = read_table(5, page)
+    assert table is not None and classify(table) != "income"  # no revenue, total income or total expenses line: the pieces of an income statement are there, the statement is not
+
+
+def test_two_tables_that_disagree_almost_everywhere_are_two_statements_not_many_errors() -> None:
+    other = income(revenue="1,400.00", other="30.00", total="1,430.00", expenses="1,200.00", pbt="230.00")  # another entity's figures on the financial page, in both years
+    for old, new in (("900.00", "1,300.00"), ("915.00", "1,325.00"), ("15.00", "25.00"), ("810.00", "1,100.00"), ("105.00", "225.00"), ("92.00 78.50", "202.00 198.50")):
+        other = other.replace(old, new)
+    result = run_checks(doc([income()], [other]), None)
+    assert result["summary"]["differs"] == 0
+    assert any(c["reason"].startswith("the two tables differ in most of their figures") for c in result["checks"])
+
+
+def test_statements_of_no_stated_basis_are_not_compared_when_there_are_more_than_two() -> None:
+    a, b, c = income(), income(revenue="1,100.00", total="1,120.00", pbt="220.00"), income()
+    result = run_checks(doc([a, b], [c]), None)
+    assert not any(i.startswith("revenue_same_in") for i in statuses(result))  # three tables, none says consolidated or standalone: two of them may be two entities
+
+
+def test_a_statement_that_runs_onto_the_next_page_is_one_statement() -> None:
+    assets_only = "\n".join(balance().splitlines()[:11])
+    rest = "Particulars As at March 31,\n2026\nAs at March 31,\n2025\nEquity share capital 40.00 40.00\nOther equity 160.00 120.00\nTOTAL EQUITY (A) 200.00 160.00\nTOTAL NON-CURRENT LIABILITIES (B) 60.00 50.00\nTOTAL CURRENT LIABILITIES (C) 40.00 40.00\nTOTAL EQUITY & LIABILITIES (A+B+C) 300.00 250.00\n"
+    split_result = run_checks(doc([assets_only + "\nTOTAL ASSETS (A+B) 300.00 250.00\n", rest], []), None)
+    assert statuses(split_result)["balance_sheet_balances@2:2026"] == "ok" and statuses(split_result)["liabilities_add_up@2:2025"] == "ok"
+
+
+def test_a_closing_total_alone_on_the_next_page_joins_the_statement() -> None:
+    body = balance().replace("TOTAL EQUITY & LIABILITIES (A+B+C) 300.00 250.00\n", "")
+    tail = "As at March 31,\n2026\nAs at March 31,\n2025\nTotal equity and liabilities 300.00 250.00\n[The remainder of this page has been intentionally left blank]"
+    result = run_checks(doc([body, tail], []), None)
+    assert statuses(result)["balance_sheet_balances@2:2026"] == "ok"
+
+
+def test_a_line_the_relation_does_not_name_is_included_when_it_reconciles_and_not_judged_when_it_does_not() -> None:
+    # total equity 260 = share capital 40 + other equity 160 + instruments entirely equity in nature 60 (a line the relation does not name)
+    with_instruments = balance().replace("Other equity 160.00 120.00\nTOTAL EQUITY (A) 200.00 160.00", "Other equity 160.00 120.00\nInstruments entirely equity in nature 60.00 40.00\nTOTAL EQUITY (A) 260.00 200.00")
+    result = run_checks(doc([with_instruments], []), None)
+    equity = {c["id"]: c for c in result["checks"]}["equity_adds_up@2:2026"]
+    assert equity["status"] == "ok" and "included" in equity["reason"]
+    unexplained = balance().replace("Other equity 160.00 120.00\nTOTAL EQUITY (A) 200.00 160.00", "Other equity 160.00 120.00\nSecurities premium reserve 7.00 7.00\nTOTAL EQUITY (A) 260.00 200.00")
+    unjudged = {c["id"]: c for c in run_checks(doc([unexplained], []), None)["checks"]}["equity_adds_up@2:2026"]
+    assert unjudged["status"] == "not_run" and "does not name" in unjudged["reason"]
+    plain = {c["id"]: c for c in run_checks(doc([balance().replace("TOTAL EQUITY (A) 200.00", "TOTAL EQUITY (A) 230.00")], []), None)["checks"]}["equity_adds_up@2:2026"]
+    assert plain["status"] == "differs"  # nothing unnamed sits between the terms: a real difference stays one
+
+
+def test_a_statement_whose_own_arithmetic_mostly_fails_is_set_aside_as_misread() -> None:
+    wrecked = income(revenue="1,000.00", other="21.00", total="1,000.00", expenses="1.00", pbt="2.00")  # total income, profit before tax and profit after tax all fail
+    result = run_checks(doc([wrecked], [wrecked]), None)
+    assert result["summary"]["differs"] == 0
+    assert any("probably misread" in n for n in result["notes"])
+    assert any(c["status"] == "not_run" and c["reason"].startswith("page probably misread") for c in result["checks"])
+
+
 @pytest.fixture()
 def docs(tmp_path):  # noqa: ANN001, ANN201
     def make(summary: list[str], financials: list[str]):  # noqa: ANN202

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import combinations, product
 from typing import Any
 
 from athena.forensic.checks.rows import ALIASES, Row, Table, classify, find, read_table
@@ -115,17 +116,45 @@ def locate(pages: Sequence[tuple[int, str, str]], unreadable: Sequence[int] = ()
     """The statement tables found in the summary and financial sections, and why any page in them was not read."""
     found: list[Located] = []
     notes: list[str] = []
+    last: Located | None = None  # the statement the previous page belonged to, to which a continuation page may add its rows
+    sectioned = any(section in STATEMENT_SECTIONS for _, section, _ in pages)  # when the section finder did not find the financial sections at all, every page is looked at: a page is a statement by what it holds
+    if not sectioned:
+        notes.append("the financial sections were not found in the document, so every page was looked at for statements")
     for page, section, text in pages:
-        if section not in STATEMENT_SECTIONS:
+        if sectioned and section not in STATEMENT_SECTIONS:
+            last = None
             continue
         if page in unreadable:
             notes.append(f"page {page} has no readable text")
+            last = None
             continue
         table = read_table(page, text)
         kind = classify(table) if table else None
+        if table and last is not None and _continues(last, table, kind, page, section):
+            merged = Located(last.section, Table(last.table.page, last.table.years, last.table.basis, last.table.rows + table.rows), last.kind, last.unit)
+            found[found.index(last)] = merged
+            last = merged
+            continue
         if table and kind:
-            found.append(Located(section, table, kind, _unit(text)))
+            last = Located(section, table, kind, _unit(text))
+            found.append(last)
+        else:
+            last = None
     return found, notes
+
+
+MAX_CONTINUATION_ROWS = 8
+
+
+def _continues(prev: Located, table: Table, kind: str | None, page: int, section: str) -> bool:
+    """A statement often runs onto the next page (assets on one, equity and liabilities on the next; or a closing total alone on a short page). The next page continues it when it follows directly, in the
+    same section, with the same year columns and either the same kind of statement or no kind at all and only a few rows, and a basis that is the same or not stated."""
+    last_page = max(r.page for r in prev.table.rows)
+    if page != last_page + 1 or section != prev.section or table.years != prev.table.years:
+        return False
+    if table.basis not in (prev.table.basis, "unspecified"):
+        return False
+    return kind == prev.kind or (kind is None and len(table.rows) <= MAX_CONTINUATION_ROWS)
 
 
 def _row(loc: Located, key: str) -> Row | None:
@@ -148,8 +177,44 @@ def _arith(loc: Located, spec: tuple[str, str, Sequence[str], Sequence[str], str
             c.left = [_term(LABELS.get(k, k), rows[k], j) for k in left]  # type: ignore[arg-type]
             c.right = [_term(LABELS.get(k, k), rows[k], j) for k in right]  # type: ignore[arg-type]
             decide(c)
+            if c.status == "differs" and cid in OPEN_RELATIONS:
+                c = _with_unnamed_lines(loc, c, [r for r in rows.values() if r is not None], j)
         out.append(c)
     return out
+
+
+# Relations whose statement can carry lines the relation does not name (instruments entirely equity in nature or non-controlling interest between share capital and total equity; exceptional items or a share of an
+# associate's profit between expenses and profit; an exchange effect between the net change and the closing cash). A difference there is believed only when no such line sits between the terms.
+OPEN_RELATIONS = frozenset({"equity_adds_up", "profit_before_tax", "profit_after_tax", "cash_rolls_forward"})
+MAX_UNNAMED_ROWS = 4
+MAX_UNNAMED_USED = 3
+
+
+def _with_unnamed_lines(loc: Located, check: Check, used: Sequence[Row], column: int) -> Check:
+    """The check as it stands when no unnamed line sits between its terms; otherwise the lines are tried (each in or out, either sign) and the check holds if some set reconciles it, and is not run when none does:
+    the relation as stated is then incomplete, so a difference would be a claim about numbers that are not all in it."""
+    rows = loc.table.rows
+    where = sorted(i for r in used for i, x in enumerate(rows) if x is r)
+    named = {id(r) for r in used}
+    extras = [x for x in rows[where[0] + 1 : where[-1]] if id(x) not in named and x.values[column] != 0] if len(where) >= 2 else []
+    if not extras:
+        return check
+    names = "; ".join(f"{x.label[:50]} ({x.printed[column]})" for x in extras[:MAX_UNNAMED_ROWS])
+    if len(extras) > MAX_UNNAMED_ROWS:
+        check.status, check.reason = "not_run", f"{len(extras)} lines the relation does not name sit between its terms ({names}, ...); not judged"
+        return check
+    for size in range(1, min(len(extras), MAX_UNNAMED_USED) + 1):
+        for combo in combinations(extras, size):
+            for signs in product((1, -1), repeat=size):
+                trial = Check(check.id, check.type, check.title, check.year, check.relation, list(check.left), list(check.right) + [
+                    Term(f"{x.label[:40]} (a line the relation does not name)", s * x.values[column], x.page, x.printed[column], 0.5 * 10.0 ** -x.decimals[column]) for x, s in zip(combo, signs)
+                ])
+                decide(trial)
+                if trial.status == "ok":
+                    trial.reason = f"holds with {', '.join(x.label[:40] for x in combo)} included"
+                    return trial
+    check.status, check.reason = "not_run", f"lines the relation does not name sit between its terms ({names}) and no way of including them reconciles the figures; not judged"
+    return check
 
 
 ARITH_SPECS: dict[str, tuple[tuple[str, str, Sequence[str], Sequence[str], str], ...]] = {
@@ -188,23 +253,64 @@ def _cross(a: Located, b: Located, key: str, kind: str) -> list[Check]:
     return out
 
 
+MAX_UNSTATED_BASIS_TABLES = 2
+UNLIKE_REASON = "the two tables differ in most of their figures, so they are probably two different statements (another entity or basis), not one figure printed twice; not judged"
+
+
+def _distrust_unlike_tables(pair: list[Check]) -> list[Check]:
+    """Two tables that disagree on half or more of the figures they share (at least three) are two statements, not one statement with several typing errors."""
+    decided = [c for c in pair if c.status in ("ok", "differs")]
+    differing = [c for c in decided if c.status == "differs"]
+    if len(differing) >= MISREAD_MIN and len(differing) >= MISREAD_SHARE * len(decided):
+        for c in differing:
+            c.status, c.reason = "not_run", UNLIKE_REASON
+    return pair
+
+
+MISREAD_REASON ="page probably misread (most of the arithmetic on this statement's pages fails at once, which points to a table read wrongly more than to many errors); not judged"
+MISREAD_SHARE = 0.5
+MISREAD_MIN = 3  # one wrong figure fails the two or three relations it sits in, which is a finding; three or more failing, and half of those decided, is a page that was read wrongly
+
+
+def _distrust_misread_pages(checks: list[Check], arithmetic_by_loc: Sequence[list[Check]]) -> None:
+    """A statement whose own arithmetic mostly fails (at least three checks, half or more of those decided) is probably misread, not wrong in many places at once: its differences, and any comparison that uses a
+    figure from its pages, are turned into "not run" with that reason."""
+    bad_pages: set[int] = set()
+    for own in arithmetic_by_loc:
+        decided = [c for c in own if c.status in ("ok", "differs")]
+        differing = [c for c in decided if c.status == "differs"]
+        if len(differing) >= MISREAD_MIN and len(differing) >= MISREAD_SHARE * len(decided):
+            bad_pages |= {t.page for c in own for t in (*c.left, *c.right)}
+    for c in checks:
+        if c.status == "differs" and bad_pages & {t.page for t in (*c.left, *c.right)}:
+            c.status, c.reason = "not_run", MISREAD_REASON
+
+
 def statement_checks(found: Sequence[Located]) -> list[Check]:
     out: list[Check] = []
+    own_by_loc: list[list[Check]] = []
     for loc in found:
+        own: list[Check] = []
         for spec in ARITH_SPECS[loc.kind]:
-            out += _arith(loc, spec)
+            own += _arith(loc, spec)
+        own_by_loc.append(own)
+        out += own
     # the same restated figure wherever the document prints it: the first table of a kind and basis is the anchor, the others are compared to it
     for kind, keys in CROSS_KEYS.items():
         by_basis: dict[str, list[Located]] = {}
         for loc in found:
             if loc.kind == kind:
                 by_basis.setdefault(loc.table.basis, []).append(loc)
-        for group in by_basis.values():
+        for basis, group in by_basis.items():
+            if basis == "unspecified" and len(group) > MAX_UNSTATED_BASIS_TABLES:  # with several statements of no stated basis, two may be two entities; they are not compared
+                continue
             anchor = next((g for g in group if g.section == "financials"), group[0])
             for other in group:
                 if other is not anchor and other.table.page != anchor.table.page:
+                    pair: list[Check] = []
                     for key in keys:
-                        out += _cross(anchor, other, key, kind)
+                        pair += _cross(anchor, other, key, kind)
+                    out += _distrust_unlike_tables(pair)
     # the same figure in two statements: depreciation and profit before tax (income against cash flow), cash at the end (cash flow against balance sheet)
     anchors: dict[tuple[str, str], Located] = {}
     for loc in found:
@@ -218,6 +324,7 @@ def statement_checks(found: Sequence[Located]) -> list[Check]:
                 out += _across(pair, cash, key_a, key_b)
         if cash and bal:
             out += _across(cash, bal, "cash_end", "cash")
+    _distrust_misread_pages(out, own_by_loc)
     return out
 
 
@@ -272,5 +379,9 @@ def run_checks(pages: Sequence[tuple[int, str, str]], figures: Mapping[str, Any]
     checks = statement_checks(found) + offer_checks(figures)
     if not found:
         checks.insert(0, Check("statements_found", ARITH, "restated statements in the summary and financial sections", None, reason="no statement table could be read (the sections were not found, or the pages carry no readable year columns)"))
+    set_aside = [c for c in checks if c.reason == MISREAD_REASON]
+    if set_aside:
+        pages = sorted({t.page for c in set_aside for t in (*c.left, *c.right)})
+        notes = [*notes, f"{len(set_aside)} difference(s) were set aside because the statement on page(s) {', '.join(map(str, pages))} was probably misread: most of its own arithmetic failed at once"]
     counts = {s: sum(1 for c in checks if c.status == s) for s in ("ok", "differs", "not_run")}
     return {"checks": [c.as_dict() for c in checks], "summary": {"run": counts["ok"] + counts["differs"], **counts, "statement_tables_read": len(found)}, "notes": notes, "not_built": list(NOT_BUILT)}

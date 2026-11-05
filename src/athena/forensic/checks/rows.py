@@ -40,12 +40,31 @@ def parse_number(token: str) -> tuple[float, int] | None:
         return 0.0, 0
     if not NUMBER.match(token):
         return None
+    if token.startswith("(") != token.endswith(")"):  # `(1` and `4,114.03)` are the two halves of one bracketed number broken across the line
+        return None
+    digits = token.strip("()").lstrip("-")
+    if digits.endswith(",") or (len(digits.split(".")[0].replace(",", "")) > 1 and digits.startswith("0")):  # `12,` and `032.79` are pieces of a number broken across a line, not amounts
+        return None
     negative = token.startswith("(") or token.lstrip("(").startswith("-")
     body = token.strip("()").lstrip("-").replace(",", "")
     if not body or not body[0].isdigit():
         return None
     value = float(body)
     return (-value if negative else value), (len(body.split(".")[1]) if "." in body else 0)
+
+
+FISCAL = re.compile(r"\b(20\d\d)\s*[-–]\s*(\d{2})(?!\d)|\b(20\d\d)\b")  # `2025-26` is the year ended March 2026; `March 31, 2026` is 2026
+
+
+def _fiscal_years(line: str) -> list[int]:
+    """The fiscal years named on a line, each as the calendar year in which it ends. A range `2025-26` names 2026 and only when its second part is the next year (not `2019-20 and 2021`)."""
+    out = []
+    for m in FISCAL.finditer(line):
+        if m.group(3):
+            out.append(int(m.group(3)))
+        elif (int(m.group(1)) + 1) % 100 == int(m.group(2)):
+            out.append(int(m.group(1)) + 1)
+    return out
 
 
 def _years(lines: list[str]) -> tuple[int, ...]:
@@ -58,7 +77,7 @@ def _years(lines: list[str]) -> tuple[int, ...]:
         if started:
             if sum(1 for t in line.split() if parse_number(t) is not None and "." in t) >= 2:  # a line of figures ends the heading
                 break
-            found += [int(y) for y in YEAR.findall(line)]
+            found += _fiscal_years(line)
     seen: list[int] = []
     for y in found:
         if y not in seen:
@@ -83,7 +102,7 @@ def read_table(page: int, text: str) -> Table | None:
     rows: list[Row] = []
     pending: list[str] = []
     for line in lines:
-        tokens = _without_empty_columns(line.split(), n)
+        tokens = _without_empty_columns(_rejoin_split_numbers(line.split()), n)
         trailing = 0
         for token in reversed(tokens):
             if parse_number(token) is None:
@@ -102,6 +121,32 @@ def read_table(page: int, text: str) -> Table | None:
         rows.append(Row(" ".join(label.lower().split()), tuple(p[0] for p in parsed if p), tuple(p[1] for p in parsed if p), tuple(figures), page))
         pending = []
     return Table(page, years, _basis(text), tuple(rows)) if rows else None
+
+
+SPLIT_HEAD = re.compile(r"^\(?-?\d{1,3}(?:,\d{3})*,\)?$")  # `4,` : the front of a number whose thousands separator was followed by a space in the extracted text
+SPLIT_TAIL = re.compile(r"^\d{3}(?:\.\d+)?\)?$")
+
+
+SPLIT_POINT_HEAD = re.compile(r"^\(?-?\d[\d,]*\.$")  # `21,002.` : the front of a number broken after its decimal point
+SPLIT_POINT_TAIL = re.compile(r"^\d{1,4}\)?$")
+
+
+def _rejoin_split_numbers(tokens: list[str]) -> list[str]:
+    """Text extraction sometimes breaks a number after its thousands comma (`4, 032.79`) or its decimal point (`21,002. 68`). The two pieces are one number when the first ends in the comma or the point and the
+    second is three digits (with any decimals) or the decimals."""
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if i + 1 < len(tokens) and SPLIT_HEAD.match(tokens[i]) and SPLIT_TAIL.match(tokens[i + 1]) and not tokens[i].endswith(")"):
+            out.append(tokens[i] + tokens[i + 1])
+            i += 2
+        elif i + 1 < len(tokens) and SPLIT_POINT_HEAD.match(tokens[i]) and SPLIT_POINT_TAIL.match(tokens[i + 1]):
+            out.append(tokens[i] + tokens[i + 1])
+            i += 2
+        else:
+            out.append(tokens[i])
+            i += 1
+    return out
 
 
 def _without_empty_columns(tokens: list[str], n: int) -> list[str]:
@@ -153,14 +198,20 @@ ALIASES: dict[str, dict[str, re.Pattern[str]]] = {
 }
 
 
+CASHFLOW_MARKERS = ("adjustments for", "working capital", "operating activities", "investing activities", "financing activities")
+
+
 def classify(table: Table) -> str | None:
     """Which statement a table is, from the rows it holds: "balance", "income" or "cashflow"; None when it is none of them (or holds several kinds of rows)."""
     hits = {kind: sum(1 for row in table.rows for pat in pats.values() if pat.search(row.label)) for kind, pats in ALIASES.items()}
     if hits["cashflow"] >= 2 and any("operating activities" in r.label for r in table.rows):
         return "cashflow"
+    if any(marker in r.label for r in table.rows for marker in CASHFLOW_MARKERS):  # a page of adjustments to profit lists income and expense lines but is not an income statement
+        return "cashflow" if hits["cashflow"] >= 2 else None
     if hits["balance"] >= 3:
         return "balance"
-    if hits["income"] >= 3:
+    structural = any(ALIASES["income"][k].search(r.label) for r in table.rows for k in ("revenue", "total_income", "total_expenses"))  # profit before tax, depreciation and other income also list in a cash flow statement's adjustments
+    if hits["income"] >= 3 and structural:
         return "income"
     return None
 
