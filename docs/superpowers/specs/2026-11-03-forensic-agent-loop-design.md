@@ -249,6 +249,22 @@ Two generic reading fixes came with it and raised coverage elsewhere with no new
 
 **Not built, on purpose.** The indebtedness section of the one draft dated at the balance sheet date (Everbrands, 1,497.07, the same as its capitalisation total borrowings) against its capitalisation table: one draft in seven, and a match could only confirm, so it is left in the not-built list.
 
+### 6m. The management's discussion against the restated statements (Nov 7, 2026)
+
+The management's discussion states, in words, changes in the lines of the income statement, and prints key-figure tables. `athena.forensic.checks.discussion` tests both against the statements the checks already read, with no model.
+
+**A sentence of the form** `our total income increased by 5.39% to ₹ 32,128.69 million in Fiscal 2026 from ₹ 30,486.39 million in Fiscal 2025` (either order of the two figures; also `grew at a CAGR of 32.68% to ... from ... in Fiscal 2024`) gives three relations: the **percentage follows from the two figures** (the compound rate over the years between, for a CAGR), within the rounding of the percentage and of what the rounding of the two figures does to a quotient; the **direction word agrees with the sign** (`decreased by 5%` against figures that rose is a difference); and **each figure is the restated statement's** for that line and year. The line is one of total income, revenue from operations, total expenses, other income, profit before tax, profit for the year or after tax. The subject is the name nearest the verb, so a heading above the sentence is not taken for it. Figures are compared with the statement only when nothing but `for the year` sits between the name and the verb: a sentence about a part (`revenue from operations from our QSR vertical`, `revenue from sale of studded gold jewellery`) has its percentage checked and its figures left alone. A statement in other units is not run (the reason is stated), and so is a line the statements do not carry under a name the code matches.
+
+**A key-figure table** that the table reader can read (a bare line name such as `revenue from operations (d)` or `total income (g)`, with at most footnote letters and a unit; not a margin, a growth rate, a part of the business, or a line with a lead-in such as `add:`) is compared year by year, each figure once.
+
+Result on the seven drafts, **0 differences, 184 held, 4 not run** (Electromech's profit line is not found under the name the discussion gives it): the sentences gave 154 and the tables 30. Whole-document checks now: Sponge 169 run, Electromech 135, Everbrands 130, Rathod 104, Deon 93, Baanganga 93, Inox 89, none differing.
+
+**Sensitivity**: in every sentence the stated percentage, the new figure and the old figure were changed in turn in the real text: **165 of 168 caught**. The three not caught are Rathod's sentences about a named sub-line of revenue, where a change of 1 in 66,733 lakhs does not move a percentage printed to two decimals and the figures are not compared with the statement.
+
+Testing on the seven drafts found two things: six false differences on Everbrands, where a sentence about one business vertical was read as the company's line (fixed by the rule on what may sit between the name and the verb), and a sentence preceded by a heading that is itself a line name (`Revenue from operations` above `Our revenue from operations increased ...`), which the first version took as one subject with a long gap.
+
+**Said plainly.** A sentence in another form (`was ₹ X million, a rise of Y`, or one that gives the change in rupees only) is not read. The discussion is checked against the restated statements, so a figure wrong in both is not seen. A quoted figure that is the standalone one when the statement found is consolidated would be reported as a difference if no statement found agrees; no case of this arose in the seven drafts.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.

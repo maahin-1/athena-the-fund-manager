@@ -22,7 +22,7 @@ UNIT = re.compile(r"(?:in|rs\.?|₹|inr)\s*\.?\s*(thousands?|lakhs?|lacs?|millio
 UNIT_FACTORS = (10.0, 100.0, 1000.0, 10000.0)  # a ratio near one of these between two prints of one figure is a unit, not a difference
 NOT_BUILT = (
     "borrowings in the indebtedness section against the statements (the section is as at a later date than the balance sheet in most drafts, so the two are not comparable; the capitalisation table, which is, is checked)",
-    "restated figures against the management discussion",
+    "the management discussion's sentences in forms other than a stated change, and its tables that give more than one number per year (the sentences that state a change and the key-figure tables of whole lines are checked)",
     "the indebtedness section of a draft dated at the balance sheet date against its capitalisation table (one draft in the seven)",
 )
 CROSS_KEYS: dict[str, tuple[str, ...]] = {
@@ -403,10 +403,11 @@ def run_checks(pages: Sequence[tuple[int, str, str]], figures: Mapping[str, Any]
 
     from athena.forensic.checks.capitalisation import capitalisation_checks
     from athena.forensic.checks.creditors import creditors_checks
+    from athena.forensic.checks.discussion import discussion_checks
 
     totalled, total_notes = total_checks(pages, figures)
     notes.extend(total_notes)
-    checks = statement_checks(found) + offer_checks(figures) + totalled + capitalisation_checks(pages, found) + creditors_checks(pages, found)
+    checks = statement_checks(found) + offer_checks(figures) + totalled + capitalisation_checks(pages, found) + creditors_checks(pages, found) + discussion_checks(pages, found)
     if not found:
         checks.insert(0, Check("statements_found", ARITH, "restated statements in the summary and financial sections", None, reason="no statement table could be read (the sections were not found, or the pages carry no readable year columns)"))
     set_aside = [c for c in checks if c.reason == MISREAD_REASON]
