@@ -41,7 +41,13 @@ class Question:
     query: str  # what to search for; empty means "the opening passages of the section"
     ask: str
     kind: str = "risk"  # "risk" for something a reader would weigh against the issue, "fact" for a plain description
+    after: str = ""  # with no query: a pattern (case and line insensitive) where the passages start, because the section opens with a preamble that is not what the question is about
+    passages: int = PASSAGES
 
+
+# Where the risk factors themselves start. Every draft opens its risk section with a warning and notes on presentation, then a heading (`Internal Risk Factors`, or `Risks related to our business`), then
+# `1. <the first risk factor>`; the heading, or failing that the first numbered headline, is where the first risk factors begin.
+FIRST_RISK = r"^\s*internal\s+risk\s+factors?\s*$|^\s*risks?\s+(?:relating|related)\s+to\s+our\s+(?:business|company)[^\n]*$|^\s*1\.\s+[A-Z][^\n]{50,}"
 
 QUESTIONS: tuple[Question, ...] = (
     Question("business", "What the company does", ("business", "about_company"), "overview of our business products customers", "In two sentences, what does the company make or sell, and to whom?", "fact"),
@@ -49,7 +55,7 @@ QUESTIONS: tuple[Question, ...] = (
              "What are the net proceeds to be used for, and how much of it repays existing borrowings or goes to general corporate purposes?", "fact"),
     Question("sellers", "Who sells shares in the offer", ("capital_structure", "offer_summary", "objects"), "selling shareholders offer for sale shares offered promoter selling",
              "Do existing shareholders sell shares in the offer? Name them and say how much each sells, if the passages say.", "fact"),
-    Question("top_risks", "Risks the document lists first", ("risk_factors",), "", "List the first three risk factors the document gives, each in one short line."),
+    Question("top_risks", "Risks the document lists first", ("risk_factors",), "", "List the first risk factors these passages give, in the order given and at most three, each in one short line.", after=FIRST_RISK, passages=12),  # risk factors run to a page or more each: twelve passages reach the third in every draft tried
     Question("customers", "Customer concentration", ("risk_factors", "business"), "top customers contribute significant portion of our revenue from operations loss of customer",
              "Does a small number of customers account for a large share of revenue? Give the shares the passages print."),
     Question("suppliers", "Supplier or raw-material concentration", ("risk_factors", "business"), "dependence on suppliers raw material top suppliers purchases single supplier",
@@ -92,7 +98,11 @@ def _wrap(found: Found) -> str:
 
 
 def _retrieve(finder: Finder, q: Question) -> list[Found]:
-    return finder.opening(q.sections[:1], PASSAGES) if not q.query else finder.search(q.query, q.sections, PASSAGES)
+    if q.query:
+        return finder.search(q.query, q.sections, q.passages)
+    if q.after:
+        return finder.opening_after(q.sections[:1], re.compile(q.after, re.IGNORECASE | re.MULTILINE), q.passages)
+    return finder.opening(q.sections[:1], q.passages)
 
 
 def _prompt(q: Question, found: Sequence[Found]) -> str:

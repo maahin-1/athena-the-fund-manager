@@ -4,6 +4,7 @@ It reuses the keyword ranking and the quote check of `athena.retrieval.index` (t
 sections it should read (the risks of a company are in `risk_factors`, what the money is for in `objects`), so a search over a 500-page document looks only at the pages that can hold the answer."""
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -60,6 +61,24 @@ class Finder:
         """The first `k` passages of the named sections, in document order: for a question about how a section begins (a document lists its most important risks first)."""
         index, where = self._index(sections)
         return [self._found(Hit(p, 0.0, None, None), where) for p in index.first(k)]
+
+    def opening_after(self, sections: Sequence[str], marker: re.Pattern[str], k: int = 5) -> list[Found]:
+        """The first `k` passages that begin where `marker` first matches in the named sections: the text of that page from the match on, then the pages after it. Nothing when it never matches. For a question
+        about what a section lists first when the section opens with a preamble of its own (a risk factors section begins with a warning and notes on presentation, and `Internal Risk Factors` comes after)."""
+        wanted, found, started = set(sections), [], False
+        for page, section, text in self._pages:
+            if section not in wanted:
+                continue
+            if not started:
+                m = marker.search(text)
+                if m is None:
+                    continue
+                text, started = text[m.start() :], True
+            for piece in chunk(text, CHUNK_WORDS, CHUNK_OVERLAP):
+                if len(found) >= k:
+                    return found
+                found.append(Found(f"{self._doc_id}#o{len(found)}", page, section, piece, 0.0))
+        return found
 
     def _found(self, hit: Hit, where: dict[int, tuple[int, str]]) -> Found:
         page, section = where[hit.passage.chunk]

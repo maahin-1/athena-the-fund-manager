@@ -91,7 +91,7 @@ def test_the_report_has_every_key_the_pages_reader_uses(tmp_path) -> None:  # no
     assert {"summary", "groups", "differences", "not_run", "notes", "not_built"} <= set(doc["checks"])
     assert {"held", "differ", "not_run"} <= set(doc["checks"]["summary"])
     assert {"id", "title", "held", "differ", "not_run"} <= set(doc["checks"]["groups"][0])
-    assert {"id", "group", "title", "reason", "pages", "left", "right"} <= set(doc["checks"]["differences"][0])
+    assert {"id", "group", "title", "reason", "pages", "printed_pages", "left", "right"} <= set(doc["checks"]["differences"][0])
     assert {"name", "printed", "page"} <= set(doc["checks"]["differences"][0]["left"][0])
     assert {"lane", "why"} <= set(doc["not_examined"][0]) and "model_calls" in doc["cost"]
     assert set(error_document("x")) == {"schema", "ok", "error"}

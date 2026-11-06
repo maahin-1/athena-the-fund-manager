@@ -13,6 +13,8 @@ export interface Difference {
   title: string;
   reason: string;
   pages: number[];
+  /** The numbers printed on those pages, where known (the PDF page is the position in the file). */
+  printedPages: number[];
   left: Term[];
   right: Term[];
 }
@@ -72,6 +74,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const int = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0);
 const list = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter(isObject) : []);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+const numbers = (v: unknown): number[] => (Array.isArray(v) ? v.filter((p): p is number => typeof p === 'number' && Number.isFinite(p)) : []);
 const term = (r: Record<string, unknown>): Term => ({ name: str(r.name), printed: str(r.printed), page: typeof r.page === 'number' && Number.isFinite(r.page) ? Math.trunc(r.page) : null });
 
 /** The report of the job, or null when the document is not one of this schema, did not succeed, or lacks its core parts. */
@@ -87,7 +90,7 @@ export function readReport(raw: unknown): ReportDoc | null {
     flags: list(raw.flags).map((f): FlagRow => ({ id: str(f.id), status: str(f.status), text: str(f.text), why: str(f.why), innocent: strings(f.innocent_explanations) })),
     held: int(s.held), differ: int(s.differ), notRunCount: int(s.not_run),
     groups: list(k.groups).map((g): GroupRow => ({ id: str(g.id), title: str(g.title), held: int(g.held), differ: int(g.differ), notRun: int(g.not_run) })),
-    differences: list(k.differences).map((x): Difference => ({ id: str(x.id), group: str(x.group), title: str(x.title), reason: str(x.reason), pages: Array.isArray(x.pages) ? x.pages.filter((p): p is number => typeof p === 'number') : [], left: list(x.left).map(term), right: list(x.right).map(term) })),
+    differences: list(k.differences).map((x): Difference => ({ id: str(x.id), group: str(x.group), title: str(x.title), reason: str(x.reason), pages: numbers(x.pages), printedPages: numbers(x.printed_pages), left: list(x.left).map(term), right: list(x.right).map(term) })),
     notRun: list(k.not_run).map((x) => ({ reason: str(x.reason), count: int(x.count) })),
     notes: strings(k.notes), notBuilt: strings(k.not_built),
     notExamined: list(raw.not_examined).map((x) => ({ lane: str(x.lane), why: str(x.why) })),

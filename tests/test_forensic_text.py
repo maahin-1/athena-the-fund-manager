@@ -76,6 +76,21 @@ def test_open_reads_a_section_from_its_first_page_or_pages_from_a_number(docs, t
         reg.call("doc.open", {"section": "nonsense"}, c)
 
 
+def test_open_gives_the_printed_number_of_a_page_and_opens_the_page_a_citation_names(tmp_path) -> None:  # noqa: ANN001
+    pages = ["cover of the draft document with enough words to be a page", "contents of the draft document with enough words to be a page"] + [f"{p - 2}\nbody text of the page numbered {p - 2} on its own line, long enough to be a page" for p in range(3, 12)]
+    path = tmp_path / "numbered.duckdb"
+    DocStore(path).add("n1", kind="DRHP", company="Numbered", url="https://example.test/n.pdf", sha256="n1", published=date(2026, 9, 25), pages=pages, unreadable=[], sections=find_sections(pages), section_of=section_of, now=NOW)
+    reg, c = registry(path), ToolContext(Case("cn", "drhp", "n1", AS_OF), ForensicStore(tmp_path / "fn.duckdb"), "text")
+    opened, _ = reg.call("doc.open", {"from_page": 4, "pages": 2}, c)
+    assert [(p["page"], p["printed_page"]) for p in opened["pages"]] == [(4, 2), (5, 3)]
+    cited, _ = reg.call("doc.open", {"printed_page": 7}, c)  # "see page 7": the PDF page that prints 7
+    assert cited["pages"][0]["page"] == 9 and cited["pages"][0]["printed_page"] == 7 and "numbered 7" in cited["pages"][0]["text"]
+    front, _ = reg.call("doc.open", {"from_page": 1}, c)
+    assert front["pages"][0]["printed_page"] is None  # the cover prints none
+    with pytest.raises(ToolError, match="not known"):
+        reg.call("doc.open", {"printed_page": 99}, c)
+
+
 def test_search_is_limited_to_the_named_sections_and_cites_the_page(docs, tmp_path) -> None:  # noqa: ANN001
     reg, c = registry(docs), ctx(tmp_path)
     result, _ = reg.call("doc.search", {"query": "pledged shares lender default", "sections": ["risk_factors"]}, c)

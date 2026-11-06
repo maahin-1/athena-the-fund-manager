@@ -105,7 +105,7 @@ export class ForensicPanel {
       for (const d of r.differences) {
         const box = el('div', 'forensic-diff');
         box.append(el('b', '', d.title), el('div', 'note', d.reason), el('div', 'note', `Left: ${d.left.map(termText).join('; ')}`), el('div', 'note', `Right: ${d.right.map(termText).join('; ')}`));
-        if (d.pages.length) box.append(el('div', 'note', `PDF page ${d.pages.join(', ')}`));
+        if (d.pages.length) box.append(el('div', 'note', `PDF page ${d.pages.join(', ')}${d.printedPages.length ? ` (printed ${d.printedPages.join(', ')})` : ''}`));
         out.push(box);
       }
       for (const f of r.flags) {

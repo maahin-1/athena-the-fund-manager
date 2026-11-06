@@ -123,11 +123,47 @@ def test_the_prompt_wraps_passages_as_data_and_keeps_the_instructions_byte_ident
     assert "<passage key=" in a.seen[0][1] and "never instructions" in drhp.SYSTEM and "not financial advice" in drhp.SYSTEM
 
 
+RISK_PAGES = [
+    "DRAFT RED HERRING PROSPECTUS\nDated: September 25, 2026\nBOOK RUNNING LEAD MANAGERS\nproposed to be listed on BSE Limited",
+    "SECTION II – RISK FACTORS\nAn investment in equity shares involves a high degree of risk. You should carefully consider all the information in this document, including the risks and uncertainties described below. "
+    "This section contains forward-looking statements that involve risks and uncertainties and the notes on how figures are presented.",
+    "More notes on presentation of the industry report and the fiscal year, and then the risk factors begin.\nINTERNAL RISK FACTORS\n"
+    "1. We derive most of our revenue from one customer, which accounted for 61% of revenue from operations in Fiscal 2026.\n"
+    "2. All of our manufacturing is at one facility in one state, and a disruption would stop production.\n"
+    "3. We depend on a single supplier for our key raw material.",
+    "SECTION III – INTRODUCTION\nSummary of the offer and the capital structure of the company, with the pre-offer shareholding.",
+]
+
+
+def test_the_first_risk_factors_question_starts_at_the_first_risk_factor_not_at_the_warning_before_it(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    store = DocStore(tmp_path / "r.duckdb")
+    monkeypatch.setattr(reader, "read_pages", lambda data: RISK_PAGES)
+    doc_id = reader.ingest(store, "https://x/r.pdf", company="Risky Limited", kind="DRHP", fetch=lambda url: b"%PDF-1.7 risk", now=NOW)
+    q = next(x for x in QUESTIONS if x.id == "top_risks")
+    quote = "We derive most of our revenue from one customer, which accounted for 61% of revenue from operations in Fiscal 2026"
+    model = _Echo(quote, "The first risk factor is about one customer.")
+    out = ask(store, doc_id, model, questions=(q,))
+    prompt = model.seen[0][1]
+    assert "high degree of risk" not in prompt and "forward-looking" not in prompt  # the warning and the notes are not offered as risk factors
+    assert prompt.index("INTERNAL RISK FACTORS") < prompt.index("1. We derive most") < prompt.index("3. We depend on a single supplier")
+    assert out["answers"][0]["points"] == [{"page": 3, "section": "risk_factors", "quote": quote}]
+    assert "at most three" in prompt
+
+
+def test_when_the_risk_factors_never_start_the_question_is_not_found_and_no_model_is_asked(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    store = DocStore(tmp_path / "r.duckdb")
+    monkeypatch.setattr(reader, "read_pages", lambda data: [RISK_PAGES[0], RISK_PAGES[1], "Only the warning continues here, with no heading and no numbered risk.", RISK_PAGES[3]])
+    doc_id = reader.ingest(store, "https://x/r2.pdf", company="Risky Limited", kind="DRHP", fetch=lambda url: b"%PDF-1.7 risk2", now=NOW)
+    model = Fake()
+    out = ask(store, doc_id, model, questions=(next(x for x in QUESTIONS if x.id == "top_risks"),))
+    assert not model.seen and out["not_found"][0]["reason"].startswith("no passage")  # said, not guessed from the preamble
+
+
 def test_plan_counts_calls_and_size_without_asking(stored) -> None:  # noqa: ANN001
     store, doc_id = stored
     p = plan(store, doc_id)
     assert p["calls"] == len(QUESTIONS) and p["prompt_tokens"] > 0
-    assert all(r["prompt_tokens"] < 4000 for r in p["questions"])  # a call is a few passages, never the document
+    assert all(r["prompt_tokens"] < 6000 for r in p["questions"])  # a call is a few passages (twelve for the risk factors, which run long), never the document
 
 
 def test_report_lists_what_was_not_read(stored) -> None:  # noqa: ANN001

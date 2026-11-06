@@ -15,7 +15,7 @@ const report = (over: Record<string, unknown> = {}) => ({
   checks: {
     summary: { held: 93, differ: 1, not_run: 14, statement_tables_read: 6 },
     groups: [{ id: 'statements', title: 'Restated statements', held: 42, differ: 1, not_run: 12 }, { id: 'holdings', title: 'Shareholding tables', held: 17, differ: 0, not_run: 0 }],
-    differences: [{ id: 'balance_sheet_balances@4:2026', group: 'statements', title: 'total assets equal total equity and liabilities, page 4', reason: 'left 305.00 against right 300.00', pages: [4], left: [{ name: 'total assets', printed: '305.00', page: 4 }], right: [{ name: 'total equity and liabilities', printed: '300.00', page: 4 }], tolerance: 0.01 }],
+    differences: [{ id: 'balance_sheet_balances@4:2026', group: 'statements', title: 'total assets equal total equity and liabilities, page 4', reason: 'left 305.00 against right 300.00', pages: [4], printed_pages: [2], left: [{ name: 'total assets', printed: '305.00', page: 4 }], right: [{ name: 'total equity and liabilities', printed: '300.00', page: 4 }], tolerance: 0.01 }],
     not_run: [{ reason: 'not found on the page (or printed more than once)', count: 12 }],
     notes: ['the financial sections were not found'], not_built: ['the management discussion in other forms'],
   },
@@ -26,7 +26,7 @@ describe('the report document', () => {
   it('is read defensively: a different schema, a failed job or a missing core part is refused, and bad numbers become zero', () => {
     const got = readReport(report())!;
     expect(got).toMatchObject({ company: 'Deon Energy Limited', pages: 520, sectionsFound: 1, held: 93, differ: 1, notRunCount: 14, established: 1, modelCalls: 0 });
-    expect(got.differences[0]).toMatchObject({ pages: [4], left: [{ name: 'total assets', printed: '305.00', page: 4 }] });
+    expect(got.differences[0]).toMatchObject({ pages: [4], printedPages: [2], left: [{ name: 'total assets', printed: '305.00', page: 4 }] });
     expect(got.flags[0].innocent).toEqual(['a typing error that the final document corrects']);
     expect(readReport(report({ schema: 'athena.forensic.report/2' }))).toBeNull();
     expect(readReport({ schema: 'athena.forensic.report/1', ok: false, error: 'x' })).toBeNull();
@@ -99,7 +99,7 @@ describe('the panel', () => {
     expect(text).toContain('Shareholding tables');
     expect(text).toContain('Differences to look at (1)');
     expect(text).toContain('total assets: 305.00 (page 4)');
-    expect(text).toContain('PDF page 4');
+    expect(text).toContain('PDF page 4 (printed 2)');
     expect(text).toContain('Possible innocent explanations: a typing error that the final document corrects');
     expect(text).toContain('12 × not found on the page');
     expect(text).toContain('Not examined: text (no such agent is available yet).');

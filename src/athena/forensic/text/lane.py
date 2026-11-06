@@ -17,6 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from athena.documents.pagenum import pdf_page_of, printed_numbers
 from athena.documents.read import coverage
 from athena.documents.search import Finder
 from athena.documents.store import DEFAULT_PATH, DocStore
@@ -28,7 +29,7 @@ MAX_PAGE_CHARS = 5000
 MAX_SEARCH_HITS = 8
 LIMITS = (
     "Text is read from the PDF page by page; tables can lose their layout, so a figure in a table is only as reliable as the page text shows. A figure printed as [●] is left blank in a draft and is not an omission. "
-    "The page number is the position in the PDF, which can differ from the number printed on the page."
+    "The page number is the position in the PDF, which differs from the number printed on the page (the text cites printed numbers: `on page 44`); `doc.open` gives the printed number of each page it opens when it is known, and takes `printed_page` to open the page a citation names."
 )
 
 
@@ -39,6 +40,7 @@ class DocData:
         self._path = path
         self._store: DocStore | None = None
         self._finders: dict[str, Finder] = {}
+        self._printed: dict[str, dict[int, int]] = {}
 
     @property
     def store(self) -> DocStore:
@@ -50,6 +52,12 @@ class DocData:
         if doc_id not in self._finders:
             self._finders[doc_id] = Finder(self.store, doc_id)
         return self._finders[doc_id]
+
+    def printed(self, doc_id: str) -> dict[int, int]:
+        """{PDF page: the number printed on it} where that is known with confidence (see `athena.documents.pagenum`)."""
+        if doc_id not in self._printed:
+            self._printed[doc_id] = printed_numbers([(p, text) for p, _, text in self.store.pages(doc_id)])
+        return self._printed[doc_id]
 
     def document(self, ctx: ToolContext) -> dict[str, Any]:
         doc = self.store.document(ctx.case.target)
@@ -74,6 +82,12 @@ def document_tools(data: DocData) -> list[Tool]:
         doc = data.document(ctx)
         section, first, count = args.get("section"), _int(args, "from_page"), min(MAX_PAGES_PER_OPEN, max(1, _int(args, "pages", 1) or 1))
         sections = {s.key: s for s in data.store.sections(ctx.case.target)}
+        numbers = data.printed(ctx.case.target)
+        cited = _int(args, "printed_page")
+        if first is None and cited is not None:
+            first = pdf_page_of(cited, numbers)
+            if first is None:
+                raise ToolError(f"the page printed as {cited} is not known (the number is missing, or printed twice in this document); give from_page, the position in the PDF")
         if first is None:
             if section not in sections:
                 raise ToolError(f"give a section from the map ({sorted(sections)}) or from_page")
@@ -82,7 +96,7 @@ def document_tools(data: DocData) -> list[Tool]:
             raise ToolError(f"page {first} is outside the document (1 to {doc['n_pages']})")
         wanted = range(first, min(doc["n_pages"], first + count - 1) + 1)
         pages = [p for p in data.store.pages(ctx.case.target) if p[0] in wanted]
-        return {"pages": [{"page": n, "section": sec, "text": text[:MAX_PAGE_CHARS], "cut": len(text) > MAX_PAGE_CHARS} for n, sec, text in pages], "document_pages": doc["n_pages"]}
+        return {"pages": [{"page": n, "printed_page": numbers.get(n), "section": sec, "text": text[:MAX_PAGE_CHARS], "cut": len(text) > MAX_PAGE_CHARS} for n, sec, text in pages], "document_pages": doc["n_pages"]}
 
     def doc_search(ctx: ToolContext, args: dict[str, Any]) -> Any:
         data.document(ctx)
@@ -117,7 +131,7 @@ def document_tools(data: DocData) -> list[Tool]:
 
     return [
         Tool("doc.map", "the document's sections with start and end pages, sections not found, pages without text, and which offer figures are held", "", doc_map),
-        Tool("doc.open", "whole pages of the document, with page numbers and section", "section?: a key from doc.map (starts at its first page), from_page?: PDF page number, pages?: 1 to 3", doc_open),
+        Tool("doc.open", "whole pages of the document, with page numbers and section", "section?: a key from doc.map (starts at its first page), from_page?: PDF page number, printed_page?: the number printed on the page, as a citation in the text gives it (`on page 44`), pages?: 1 to 3", doc_open),
         Tool("doc.search", "the passages that best match a query, with page and section", "query: words to look for, sections?: list of keys from doc.map to search in, k?: up to 8", doc_search),
         Tool("doc.figures", "the offer figures taken by program (offer size, fresh issue, offer for sale, objects with amounts, shares before the offer) and the arithmetic checks on them", "", doc_figures),
         Tool("doc.baseline", "answers to the fixed questions already asked of this document, with the pages and quotes they rest on: leads to follow, not findings", "", doc_baseline),

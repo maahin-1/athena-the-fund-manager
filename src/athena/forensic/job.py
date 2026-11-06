@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 from athena.contracts import AthenaError
 from athena.documents.fetch import fetch_pdf
+from athena.documents.pagenum import printed_numbers
 from athena.documents.read import coverage, ingest
 from athena.documents.store import DEFAULT_PATH as DOCS_PATH, DocStore
 from athena.forensic.checks.document import NOT_BUILT, run_checks
@@ -64,7 +65,7 @@ LIMITS = (
     "The checks compare numbers the document prints with each other. They do not tell whether the numbers are true, and a figure wrong in every place it is printed is not seen.",
     "A check that could not be run is listed with the reason. It is not a clean result.",
     "A difference is a place to look, with the innocent explanations that are possible. It is not a finding of wrongdoing and not investment advice.",
-    "Page numbers are the position in the PDF, which can differ from the number printed on the page.",
+    "Page numbers are the position in the PDF; the number printed on the page is given beside it where it could be read, and differs from it by the cover and the front matter.",
 )
 CAVEAT = "A stylized analytical framework for the owner. Differences are things to examine, not findings of wrongdoing, and not investment advice."
 
@@ -106,14 +107,15 @@ def terms(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [{"name": str(t["name"])[:80], "printed": str(t["printed"])[:40], "page": int(t["page"]) if t.get("page") else None} for t in items]
 
 
-def checks_view(result: Mapping[str, Any]) -> dict[str, Any]:
-    """The checks as the owner reads them: counts per group, every difference with its figures and pages, and why the checks that did not run did not."""
+def checks_view(result: Mapping[str, Any], printed: Mapping[int, int] | None = None) -> dict[str, Any]:
+    """The checks as the owner reads them: counts per group, every difference with its figures and pages (the PDF page, and the number printed on it where that is known), and why the checks that did not run did not."""
+    printed = printed or {}
     counts: dict[str, Counter[str]] = {}
     for c in result["checks"]:
         counts.setdefault(group_of(c["id"]), Counter())[c["status"]] += 1
     order = ["statements", *(name for name, _ in GROUPS)]
     groups = [{"id": g, "title": GROUP_TITLES[g], "held": counts[g]["ok"], "differ": counts[g]["differs"], "not_run": counts[g]["not_run"]} for g in order if g in counts]
-    differences = [{"id": c["id"], "group": group_of(c["id"]), "title": c["title"], "reason": c["reason"], "pages": pages_of(c), "left": terms(c["left"]), "right": terms(c["right"]), "tolerance": c["tolerance"]}
+    differences = [{"id": c["id"], "group": group_of(c["id"]), "title": c["title"], "reason": c["reason"], "pages": pages_of(c), "printed_pages": [printed[p] for p in pages_of(c) if p in printed], "left": terms(c["left"]), "right": terms(c["right"]), "tolerance": c["tolerance"]}
                    for c in result["checks"] if c["status"] == "differs"][:MAX_DIFFERENCES]
     reasons = Counter(c["reason"].split(":")[0][:110] for c in result["checks"] if c["status"] == "not_run")
     return {
@@ -159,7 +161,7 @@ def run_job(url: str, company: str = "", kind: str = "DRHP", *, docs_path: Path 
         "document": document_view(docs, doc_id),
         "concern": report["concern"],
         "flags": [flag_view(f, "established") for f in report["established"]] + [flag_view(f, "single_source") for f in report["single_source"]],
-        "checks": checks_view(result),
+        "checks": checks_view(result, printed_numbers([(p, text) for p, _, text in docs.pages(doc_id)])),
         "not_examined": [{"lane": n["lane"], "why": str(n["why"])[:200]} for n in report["not_examined"]],
         "limits": list(LIMITS), "narrative": report["narrative"], "caveat": CAVEAT, "cost": report["cost"],
     }
