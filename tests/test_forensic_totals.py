@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from athena.forensic.checks.document import NOT_BUILT, run_checks
-from athena.forensic.checks.holdings import holding_checks, read_line
+from athena.forensic.checks.totals import LITIGATION, read_line, total_checks
 
 SECTION = "capital_structure"
 
@@ -35,7 +35,7 @@ Total (C=A+B) {c_shares} {c_pct} [●] [●]
 
 
 def run(text: str, figures=None, section: str = SECTION):
-    return holding_checks([(7, section, text)], figures)[0]
+    return total_checks([(7, section, text)], figures)[0]
 
 
 def statuses(checks) -> dict[str, str]:
@@ -43,7 +43,7 @@ def statuses(checks) -> dict[str, str]:
 
 
 def test_a_table_with_wrapped_names_and_blank_columns_is_read_and_every_sum_holds():
-    checks, notes = holding_checks([(7, SECTION, table())], {"pre_offer_shares": 24_010_000})
+    checks, notes = total_checks([(7, SECTION, table())], {"pre_offer_shares": 24_010_000})
     got = statuses(checks)
     assert got["holding_shares:7:1"] == got["holding_pct:7:1"] == "ok"  # the promoters add up to Total (A)
     assert got["holding_shares:7:2"] == got["holding_pct:7:2"] == "ok"  # the promoter group to Total (B)
@@ -85,7 +85,7 @@ def test_the_total_of_a_table_of_another_shape_is_not_checked_and_is_counted():
 03-Jun-2021 7,763,650 10 25.00 32.34
 Total 8,763,650 36.50 [●]
 """
-    checks, notes = holding_checks([(7, SECTION, buildup)], None)
+    checks, notes = total_checks([(7, SECTION, buildup)], None)
     assert checks == [] and len(notes) == 1 and "1 total row(s)" in notes[0]
 
 
@@ -93,12 +93,12 @@ def test_a_wide_pattern_row_is_not_read_as_a_narrow_one():
     kind, _ = read_line("Total 30*^ 61,940,590* - - 61,940,590* 100.00", 3)
     assert kind == "mixed"
     kind, row = read_line("Kalariya Archanaben 2,160,900 9.00 [●] [●]", 3)
-    assert kind == "row" and (row.shares, row.pct, row.label) == (2160900, 9.0, "Kalariya Archanaben")
+    assert kind == "row" and (row.count, row.second, row.label) == (2160900, 9.0, "Kalariya Archanaben")
     kind, row = read_line("Nachiketa Gift-Ads Private Limited 1,386,610 29.54", 3)
-    assert kind == "row" and row.shares == 1386610
+    assert kind == "row" and row.count == 1386610
     assert read_line("Promoter Group (other than Promoters)", 3)[0] == "label"
-    assert read_line("Total (B) Nil NA [●] [●]", 3)[1].shares == 0
-    assert read_line("Total (B) 620 Negligible [●] [●]", 3)[1].pct is None
+    assert read_line("Total (B) Nil NA [●] [●]", 3)[1].count == 0
+    assert read_line("Total (B) 620 Negligible [●] [●]", 3)[1].second is None
 
 
 def test_a_total_of_the_totals_above_it_is_checked_when_the_total_is_not_lettered():
@@ -157,19 +157,74 @@ def test_the_tie_says_why_it_did_not_run():
 
 
 def test_only_the_sections_that_print_holdings_are_read():
-    assert holding_checks([(7, "risk_factors", table())], None) == ([], [])
+    assert total_checks([(7, "risk_factors", table())], None) == ([], [])
 
 
 def test_pages_that_are_not_next_to_each_other_do_not_make_one_table():
     first, second = "Name\nAshish Agarwal 100 50.00 [●]\nRichhi Agarwal 100 50.00 [●]\n", "Total 300 100.00 [●]\n"
     figures = {"pre_offer_shares": 300}
-    together, _ = holding_checks([(7, SECTION, first), (8, SECTION, second)], figures)
-    apart, notes = holding_checks([(7, SECTION, first), (9, SECTION, second)], figures)
+    together, _ = total_checks([(7, SECTION, first), (8, SECTION, second)], figures)
+    apart, notes = total_checks([(7, SECTION, first), (9, SECTION, second)], figures)
     assert together[0].status == "differs"  # 100 + 100 is not 300
     assert [c.id for c in apart] == ["holding_reaches_capital"] and "1 total row(s)" in notes[0]  # the total was set aside, not checked against rows it does not belong to
 
 
+def creditors(msme="164 168.26", material="3 532.96", other="58 83.72", total="225 784.94") -> str:
+    return f"""VIII. Outstanding dues to creditors
+Types of creditors Number of creditors Amount (₹ million)
+Dues to micro, small and medium enterprises  {msme}
+Dues to Material Creditor(s)  {material}
+Dues to other creditors {other}
+Total  {total}
+"""
+
+
+def test_a_table_of_dues_to_creditors_is_read_and_the_numbers_and_amounts_add_up():
+    checks = total_checks([(9, "litigation", creditors())], None)[0]
+    assert {c.id: c.status for c in checks} == {"litigation_count:9:1": "ok", "litigation_amount:9:1": "ok"}
+
+
+def test_a_wrong_number_or_amount_of_creditors_differs_and_only_in_its_own_column():
+    wrong_number = {c.id: c.status for c in total_checks([(9, "litigation", creditors(total="226 784.94"))], None)[0]}
+    assert wrong_number == {"litigation_count:9:1": "differs", "litigation_amount:9:1": "ok"}
+    wrong_amount = {c.id: c.status for c in total_checks([(9, "litigation", creditors(total="225 785.94"))], None)[0]}
+    assert wrong_amount == {"litigation_count:9:1": "ok", "litigation_amount:9:1": "differs"}
+    one_hundredth = total_checks([(9, "litigation", creditors(total="225 784.95"))], None)[0]
+    amount = next(c for c in one_hundredth if c.id.endswith("amount:9:1"))
+    assert amount.status == "ok" and amount.tolerance < 0.03  # a hundredth is inside the rounding of four two-decimal figures, and the rounding allowed is no more than that
+
+
+def test_rows_that_are_parts_of_a_numbered_heading_are_not_added_to_the_rows_that_contain_them():
+    nested = """VII. Outstanding dues to creditors
+Type of creditor No. of cases Amount outstanding
+1. Dues to micro, small and medium enterprises  45 98.82
+2. Dues to Material Creditor(s)
+MSME 4 86.93
+Other than MSME - -
+3. Dues to other creditors  116 33.30
+Total  161 132.12
+"""
+    assert {c.status for c in total_checks([(9, "litigation", nested)], None)[0]} == {"ok"}  # 45 + 116, the four are already inside the 45
+    assert {c.status for c in total_checks([(9, "litigation", nested.replace("Total  161 132.12", "Total  162 132.12"))], None)[0]} == {"differs", "ok"}
+
+
+def test_a_table_of_nothing_but_nil_says_nothing_and_is_not_counted():
+    nil = """Indirect tax Nil Nil
+Direct tax Nil Nil
+Total Nil Nil
+"""
+    assert total_checks([(9, "litigation", nil)], None) == ([], [])
+
+
+def test_the_litigation_lines_use_amounts_not_percentages():
+    kind, row = read_line("Dues to other creditors 58 2,513.96", 3, LITIGATION)
+    assert kind == "row" and (row.count, row.second, row.second_decimals) == (58, 2513.96, 2)
+    assert read_line("Dues to other creditors 58 2,513.96", 3)[0] == "mixed"  # a holdings table has no such second figure, so the line is another shape of table
+    assert read_line("Indirect tax Nil NA", 3, LITIGATION)[1].second == 0.0  # nothing counted, so nothing to add
+
+
 def test_the_checks_are_part_of_the_document_checks_and_no_longer_listed_as_not_built():
-    result = run_checks([(7, SECTION, table())], None)
-    assert any(c["id"].startswith("holding_") for c in result["checks"])
-    assert not any("shareholding" in item for item in result["not_built"]) and not any("shareholding" in item for item in NOT_BUILT)
+    result = run_checks([(7, SECTION, table()), (9, "litigation", creditors())], None)
+    assert any(c["id"].startswith("holding_") for c in result["checks"]) and any(c["id"].startswith("litigation_") for c in result["checks"])
+    listed = " ".join((*result["not_built"], *NOT_BUILT))
+    assert "shareholding" not in listed and "litigation" not in listed

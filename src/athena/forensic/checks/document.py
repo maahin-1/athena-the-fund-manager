@@ -21,7 +21,6 @@ EPS = 1e-9
 UNIT = re.compile(r"(?:in|rs\.?|₹|inr)\s*\.?\s*(thousands?|lakhs?|lacs?|millions?|crores?)", re.IGNORECASE)
 UNIT_FACTORS = (10.0, 100.0, 1000.0, 10000.0)  # a ratio near one of these between two prints of one figure is a unit, not a difference
 NOT_BUILT = (
-    "litigation category rows summing to their totals",
     "borrowings in the statements against the indebtedness section",
     "restated figures against the management discussion",
 )
@@ -399,11 +398,11 @@ def run_checks(pages: Sequence[tuple[int, str, str]], figures: Mapping[str, Any]
     found, notes = locate(pages, unreadable)
     if by_position:
         notes.append(f"{len(by_position)} page(s) were read by the position of the text on the page, which gave more of a statement's lines than the reading order: {', '.join(map(str, by_position[:12]))}{' ...' if len(by_position) > 12 else ''}")
-    from athena.forensic.checks.holdings import holding_checks  # holdings builds on this module's Check and Term
+    from athena.forensic.checks.totals import total_checks  # builds on this module's Check and Term
 
-    held, held_notes = holding_checks(pages, figures)
-    notes.extend(held_notes)
-    checks = statement_checks(found) + offer_checks(figures) + held
+    totalled, total_notes = total_checks(pages, figures)
+    notes.extend(total_notes)
+    checks = statement_checks(found) + offer_checks(figures) + totalled
     if not found:
         checks.insert(0, Check("statements_found", ARITH, "restated statements in the summary and financial sections", None, reason="no statement table could be read (the sections were not found, or the pages carry no readable year columns)"))
     set_aside = [c for c in checks if c.reason == MISREAD_REASON]
