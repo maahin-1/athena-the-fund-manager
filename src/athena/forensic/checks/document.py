@@ -23,6 +23,7 @@ UNIT_FACTORS = (10.0, 100.0, 1000.0, 10000.0)  # a ratio near one of these betwe
 NOT_BUILT = (
     "borrowings in the indebtedness section against the statements (the section is as at a later date than the balance sheet in most drafts, so the two are not comparable; the capitalisation table, which is, is checked)",
     "restated figures against the management discussion",
+    "the indebtedness section of a draft dated at the balance sheet date against its capitalisation table (one draft in the seven)",
 )
 CROSS_KEYS: dict[str, tuple[str, ...]] = {
     "balance": ("total_assets", "total_equity", "non_current_assets", "current_assets", "non_current_liabilities", "current_liabilities", "cash"),
@@ -401,10 +402,11 @@ def run_checks(pages: Sequence[tuple[int, str, str]], figures: Mapping[str, Any]
     from athena.forensic.checks.totals import total_checks  # builds on this module's Check and Term
 
     from athena.forensic.checks.capitalisation import capitalisation_checks
+    from athena.forensic.checks.creditors import creditors_checks
 
     totalled, total_notes = total_checks(pages, figures)
     notes.extend(total_notes)
-    checks = statement_checks(found) + offer_checks(figures) + totalled + capitalisation_checks(pages, found)
+    checks = statement_checks(found) + offer_checks(figures) + totalled + capitalisation_checks(pages, found) + creditors_checks(pages, found)
     if not found:
         checks.insert(0, Check("statements_found", ARITH, "restated statements in the summary and financial sections", None, reason="no statement table could be read (the sections were not found, or the pages carry no readable year columns)"))
     set_aside = [c for c in checks if c.reason == MISREAD_REASON]

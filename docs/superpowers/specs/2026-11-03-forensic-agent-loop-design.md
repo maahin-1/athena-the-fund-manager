@@ -239,6 +239,16 @@ Testing on the seven drafts found: a bare heading (`Total Equity`) glued to the 
 
 **Said plainly.** A total with no formula that equals the rows above it is a reading that fits all seven drafts; a table with a memo line among its rows (an *of which*) would fail it and be reported as a difference, so this is the check most likely to be wrong on a draft not yet seen. The capitalisation figures are derived from the same statements, so a restated figure that is wrong in both is not seen here.
 
+### 6l. Dues to creditors against trade payables (Nov 7, 2026)
+
+The table of outstanding dues to creditors in the litigation section (micro and small enterprises, material creditors, others, total) and the restated balance sheet describe the same debts at the same date: the balance sheet prints trade payables as two lines (dues to micro and small enterprises, dues to the other creditors) and the table's total must be those two added. `athena.forensic.checks.creditors` checks it, with no model. The date is the one the table's text states (a March 31 year end only); the units must be the same or the check does not run.
+
+**It only ever confirms.** A table may be wider or narrower than trade payables (capital creditors, another basis), so a mismatch is *not run* with that reason, never a difference. On the seven drafts: **4 hold** (B S Sponge 784.94, Baanganga 2,513.96, Deon 132.12, Electromech 9,906.51), **1 not judged** (Everbrands: the table totals 286.08 against 712.25 of trade payables, a narrower table), **2 not read** (Inox: its balance sheet is not in the sections found; Rathod: the position-reading text repeats the payables labels, so the lines are ambiguous). 0 differences.
+
+Two generic reading fixes came with it and raised coverage elsewhere with no new difference: a label wrapped over three lines (`... of micro enterprises` / `and` / `small enterprises 6,918.74`) is now joined, and two spellings are accepted (`creditors others than`, `Trade payables - micro ...`). Rathod's runs went from 78 to 81 and Electromech's from 105 to 112.
+
+**Not built, on purpose.** The indebtedness section of the one draft dated at the balance sheet date (Everbrands, 1,497.07, the same as its capitalisation total borrowings) against its capitalisation table: one draft in seven, and a match could only confirm, so it is left in the not-built list.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.

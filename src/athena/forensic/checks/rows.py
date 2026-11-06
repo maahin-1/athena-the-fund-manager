@@ -120,7 +120,8 @@ def read_table(page: int, text: str) -> Table | None:
         own = " ".join(tokens[: len(tokens) - n])
         label = own
         if (not own or own[0].islower() or own[0] == "(") and pending:
-            label = " ".join(pending[-1:] + ([own] if own else []))
+            lead = pending[-2:] if len(pending) > 1 and pending[-1][0].islower() else pending[-1:]  # a label wrapped over three lines: its middle fragment starts in lower case too (`... of micro enterprises` / `and` / `small enterprises 6,918.74`)
+            label = " ".join(lead + ([own] if own else []))
         rows.append(Row(" ".join(label.lower().split()), tuple(p[0] for p in parsed if p), tuple(p[1] for p in parsed if p), tuple(figures), page))
         pending = []
     return Table(page, years, _basis(text), tuple(rows)) if rows else None
@@ -189,6 +190,8 @@ ALIASES: dict[str, dict[str, re.Pattern[str]]] = {
         "equity_capital": re.compile(r"\bequity share capital\b"),
         "other_equity": re.compile(r"\bother equity\b"),
         "cash": re.compile(r"^cash and cash equivalents\b"),  # not "bank balances other than cash and cash equivalents"
+        "payables_msme": re.compile(r"\boutstanding dues of micro\b|\btrade payables\s*-\s*micro\b"),  # trade payables are printed as two lines, not a total
+        "payables_other": re.compile(r"\boutstanding dues of creditors?\s+others?\b|\btrade payables\s*-\s*other than\b"),
     },
     "income": {
         "revenue": re.compile(r"\brevenue from operations\b"),
