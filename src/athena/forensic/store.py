@@ -32,6 +32,10 @@ DDL = (
     "CREATE TABLE IF NOT EXISTS notes (case_id VARCHAR NOT NULL, lane VARCHAR NOT NULL, round INTEGER, text VARCHAR, created_at TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS calls (case_id VARCHAR NOT NULL, lane VARCHAR, round INTEGER, chars_in INTEGER, chars_out INTEGER, ok BOOLEAN, created_at TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS reports (case_id VARCHAR NOT NULL, built_at TIMESTAMP, body VARCHAR)",
+    # what the provider said the call used and which model answered (empty when it said nothing: the cost line then estimates from the characters)
+    "ALTER TABLE calls ADD COLUMN IF NOT EXISTS model VARCHAR",
+    "ALTER TABLE calls ADD COLUMN IF NOT EXISTS prompt_tokens INTEGER",
+    "ALTER TABLE calls ADD COLUMN IF NOT EXISTS completion_tokens INTEGER",
 )
 
 
@@ -132,14 +136,17 @@ class ForensicStore:
         return [r[0] for r in rows]
 
     # --- cost and reports ---
-    def add_call(self, case_id: str, lane: str, round_no: int, chars_in: int, chars_out: int, ok: bool) -> None:
+    def add_call(self, case_id: str, lane: str, round_no: int, chars_in: int, chars_out: int, ok: bool, model: str = "", prompt_tokens: int | None = None, completion_tokens: int | None = None) -> None:
         with self._open() as con:
-            con.execute("INSERT INTO calls VALUES (?, ?, ?, ?, ?, ?, ?)", [case_id, lane, round_no, chars_in, chars_out, ok, _now()])
+            con.execute(
+                "INSERT INTO calls (case_id, lane, round, chars_in, chars_out, ok, created_at, model, prompt_tokens, completion_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [case_id, lane, round_no, chars_in, chars_out, ok, _now(), model or None, prompt_tokens, completion_tokens],
+            )
 
     def calls(self, case_id: str) -> list[dict[str, Any]]:
         with self._open() as con:
-            rows = con.execute("SELECT lane, round, chars_in, chars_out, ok FROM calls WHERE case_id = ? ORDER BY created_at", [case_id]).fetchall()
-        return [{"lane": r[0], "round": r[1], "chars_in": r[2], "chars_out": r[3], "ok": r[4]} for r in rows]
+            rows = con.execute("SELECT lane, round, chars_in, chars_out, ok, model, prompt_tokens, completion_tokens FROM calls WHERE case_id = ? ORDER BY created_at", [case_id]).fetchall()
+        return [{"lane": r[0], "round": r[1], "chars_in": r[2], "chars_out": r[3], "ok": r[4], "model": r[5] or "", "prompt_tokens": r[6], "completion_tokens": r[7]} for r in rows]
 
     def save_report(self, case_id: str, body: dict[str, Any]) -> None:
         with self._open() as con:

@@ -30,9 +30,10 @@ class CallBudget:
     def client(self, llm: Client, lane: str, round_no: int, cap: int | None = None) -> _Metered:
         return _Metered(self, llm, lane, round_no, cap)
 
-    def _record(self, lane: str, round_no: int, chars_in: int, chars_out: int, ok: bool) -> None:
+    def _record(self, lane: str, round_no: int, chars_in: int, chars_out: int, ok: bool, model: str = "", usage: dict[str, int] | None = None) -> None:
         if self._store is not None:
-            self._store.add_call(self._case_id, lane, round_no, chars_in, chars_out, ok)
+            usage = usage or {}
+            self._store.add_call(self._case_id, lane, round_no, chars_in, chars_out, ok, model, usage.get("prompt_tokens"), usage.get("completion_tokens"))
 
 
 class _Metered:
@@ -53,5 +54,7 @@ class _Metered:
         except Exception:
             self._budget._record(self.lane, self._round, len(system) + len(user), 0, False)  # noqa: SLF001
             raise
-        self._budget._record(self.lane, self._round, len(system) + len(user), len(reply), True)  # noqa: SLF001
+        # what the provider said the call used and which model answered, when the client says (the router's clients do: `athena.llm.budget.Meter` records the same figures); a cache hit says nothing and costs nothing
+        usage = {k: int(v) for k, v in (getattr(self._llm, "last_usage", None) or {}).items() if isinstance(v, (int, float))}
+        self._budget._record(self.lane, self._round, len(system) + len(user), len(reply), True, str(getattr(self._llm, "last_source", "") or ""), usage)  # noqa: SLF001
         return str(reply)
