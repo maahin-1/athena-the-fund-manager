@@ -271,6 +271,26 @@ Testing on the seven drafts found two things: six false differences on Everbrand
 
 **Inox's `(414.97) 110.07 21 9.08`.** Four figures for three year columns, where `21 9.08` is the one number 219.08 broken by a space; the row used to be left out. It is joined only when there is exactly one figure too many, exactly one pair after the first figure of a one or two digit integer followed by `d.dd` (no more than three digits before the point), and every other figure in the run is an amount with two decimals, so a note number in front is never absorbed and a row with two candidate pairs stays unread. Inox's cash roll-forward now runs and holds; 0 differences on all seven drafts.
 
+### 6o. One job, one report document, and the Analyse button (Nov 7, 2026)
+
+Until now the checks could be run only from a command line. The IPO tab's Analyse button runs them on a draft offer document and shows the result. One job, one document in each direction:
+
+**The job** is `python -m athena.forensic.job --url URL --company NAME --kind DRHP`. The address must be an https PDF on the regulator's site (checked in Rust and again in Python before anything is downloaded: no other host, no credentials, no port, no spaces). The draft is read once and kept (an address already held is not downloaded again), the checks lane runs through the supervisor with **no model call**, and ONE JSON document is written to standard output, always the same shape, `athena.forensic.report/1`:
+
+- `ok`, `mode` (`checks`), `generated_at`; on failure `{schema, ok: false, error}` (a short message; a crash is logged to standard error and answered as a fixed message);
+- `document`: company, kind, pages, the sections found with their pages, the core sections not found, pages without text;
+- `concern`: the range the scoring computes from the flags (low, high, how many established, how many with one source); `flags`: each difference with its text, why it stands, its possible innocent explanations;
+- `checks`: held, differ and not-run counts per group (statements, holdings, litigation, capitalisation, creditors, discussion, offer), **every difference with its figures and PDF pages**, why the checks that did not run did not (counted by reason), the notes, and the list of what is not built;
+- `not_examined` (the lanes that did not run, with why), `limits`, `narrative`, `caveat`, `cost` (no model calls).
+
+**The server** (`terminal/src/forensic_job.rs`, on the pattern of the fundamentals fetch): `POST /api/forensic {url, company, kind}` starts the job (202; 400 for a bad address or name; 409 when another document is running) and `GET /api/forensic` is polled for `idle`, `running` (seconds so far), `done` (with the whole report) or `failed` (a fixed message, or the job's own short error). One job at a time, a twenty-minute limit, nothing from a child's error output reaching the page, the same Origin and Host guard as every other route.
+
+**The page** (`terminal/web/src/forensic.ts`, `forensiclogic.ts`): an Analyse button beside the document link of every filed draft that has one. The panel follows the job and shows the concern as a range, what was read, a table of what was compared and how it came out, each difference with its figures and pages and the innocent explanations, what could not be run and why, what was not examined, and the limits. When nothing differs it says that this is not a clearance. The reader refuses a document of another schema and turns a malformed number into zero; every piece of text reaches the page as text. A test in each language pins the same set of keys.
+
+Run on one draft through the job (Deon, from the document store, no download): 93 checks held, 0 differ, 14 not run, the six lanes that are not available reported as not examined, no model call. Tests: 7 for the job in Python, 6 for the module in Rust plus one HTTP test of the route, 7 for the reader and panel and the button in the web suite.
+
+**Said plainly.** Only the checks lane runs in this job. The text and statements lanes need a model and the company's other data and are not started by the button; the report says so under *not examined*. Reading a large draft the first time takes minutes. The release binary of the terminal has to be rebuilt (with the server stopped) for the button to reach `/api/forensic`; the web files are rebuilt with `npm run build`.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.

@@ -44,6 +44,8 @@ pub struct AppState {
     pub chart_explain: Arc<crate::chart_explain::ChartExplain>,
     pub sentiment: Arc<crate::sentiment::SentimentJobs>,
     pub ipo: Arc<crate::ipo::IpoJobs>,
+    /// The Analyse button of the IPO tab: the forensic checks on one draft offer document.
+    pub forensic: Arc<crate::forensic_job::ForensicJobs>,
     pub indices: crate::indices::IndexStore,
     pub search: Arc<crate::search::SearchCache>,
     pub fund_fetch: Arc<crate::fund_fetch::FundFetch>,
@@ -459,6 +461,32 @@ async fn api_ipo(State(state): State<AppState>) -> Response {
         Err(IpoError::Busy) => (StatusCode::TOO_MANY_REQUESTS, "the IPO page is already being built; try again in a moment").into_response(),
         Err(IpoError::Failed(why)) => (StatusCode::BAD_GATEWAY, why).into_response(),
     }
+}
+
+#[derive(serde::Deserialize)]
+struct ForensicBody {
+    url: String,
+    company: String,
+    #[serde(default = "default_kind")]
+    kind: String,
+}
+
+fn default_kind() -> String {
+    "DRHP".into()
+}
+
+/// Start the forensic checks on one draft offer document (the address of its PDF on SEBI's site). It takes minutes, so the page polls `GET /api/forensic`.
+async fn forensic_start(State(state): State<AppState>, Json(body): Json<ForensicBody>) -> Response {
+    use crate::forensic_job::StartError;
+    match state.forensic.start(&body.url, &body.company, &body.kind) {
+        Ok(()) => (StatusCode::ACCEPTED, Json(state.forensic.status())).into_response(),
+        Err(StartError::BadRequest) => (StatusCode::BAD_REQUEST, "the address must be a PDF on https://www.sebi.gov.in and the names plain words").into_response(),
+        Err(StartError::Busy(other)) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "another document is being analysed", "url": other}))).into_response(),
+    }
+}
+
+async fn forensic_status(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(state.forensic.status())
 }
 
 /// A plain-language reading of the chart on the page, from a facts sheet worked out in code (see `athena.charting.explain`). A POST: it can cost a model call.
@@ -879,6 +907,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/chart/explain", axum::routing::post(api_chart_explain))
         .route("/api/sentiment/:symbol", get(api_sentiment))
         .route("/api/ipo", get(api_ipo))
+        .route("/api/forensic", get(forensic_status).post(forensic_start))
         .route("/api/notebook", get(notebook_get).put(notebook_put))
         .route("/api/fund/:symbol/export", get(api_fund_export))
         .route("/api/verdict-job", get(verdict_status))
@@ -943,7 +972,7 @@ mod tests {
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
         let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), chart_explain: Arc::new(crate::chart_explain::ChartExplain::new(vec!["no-such-program-xyz".into()])), sentiment: Arc::new(crate::sentiment::SentimentJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), ipo: Arc::new(crate::ipo::IpoJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), chart_explain: Arc::new(crate::chart_explain::ChartExplain::new(vec!["no-such-program-xyz".into()])), sentiment: Arc::new(crate::sentiment::SentimentJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), ipo: Arc::new(crate::ipo::IpoJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), forensic: crate::forensic_job::ForensicJobs::new(Arc::new(|_u, _c, _k| tokio::process::Command::new("no-such-program-xyz"))), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -1375,6 +1404,31 @@ mod tests {
         assert_eq!(client.get(format!("{base}/sentiment/TCS")).send().await.unwrap().status(), 502); // the stand-in program for the page does not exist
         assert_eq!(client.get(format!("{base}/ipo")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         assert_eq!(client.get(format!("{base}/ipo")).send().await.unwrap().status(), 502);
+        // the Analyse button: the address is checked before anything runs, a hostile page is refused, and a job whose program does not exist ends as a fixed failure
+        let analyse = |origin: Option<&str>, body: &str| {
+            let mut r = client.post(format!("{base}/forensic")).header("content-type", "application/json").body(body.to_string());
+            if let Some(o) = origin {
+                r = r.header("Origin", o);
+            }
+            r.send()
+        };
+        let good = r#"{"url": "https://www.sebi.gov.in/sebi_data/attachdocs/oct-2026/1_draft.pdf", "company": "Deon Energy Limited"}"#;
+        assert_eq!(client.get(format!("{base}/forensic")).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
+        assert_eq!(client.get(format!("{base}/forensic")).send().await.unwrap().json::<serde_json::Value>().await.unwrap()["state"], "idle");
+        assert_eq!(analyse(Some("http://evil.test"), good).await.unwrap().status(), 403);
+        assert_eq!(analyse(None, r#"{"url": "https://evil.test/a.pdf", "company": "Deon"}"#).await.unwrap().status(), 400);
+        assert_eq!(analyse(None, r#"{"url": "https://www.sebi.gov.in/a.pdf", "company": "a;b"}"#).await.unwrap().status(), 400);
+        assert_eq!(analyse(None, "{}").await.unwrap().status(), 422); // a body without the fields is not a request
+        assert_eq!(analyse(None, good).await.unwrap().status(), 202);
+        let mut last = serde_json::Value::Null;
+        for _ in 0..100 {
+            last = client.get(format!("{base}/forensic")).send().await.unwrap().json().await.unwrap();
+            if last["state"] != "running" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!((last["state"].as_str(), last["error"].as_str()), (Some("failed"), Some("the analysis could not be started")));
         assert_eq!(post(Some("http://evil.test"), "{}").await.unwrap().status(), 403);
         assert_eq!(post(None, "[1]").await.unwrap().status(), 400);
         assert_eq!(post(None, "{}").await.unwrap().status(), 502); // the stand-in program for the explainer does not exist

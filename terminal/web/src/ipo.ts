@@ -1,4 +1,5 @@
 import { el } from './panels/base';
+import { ForensicPanel } from './forensic';
 import { bandText, gainClass, gainText, ipoProblem, readIpo, sizeText, sourceClass, timesText, type FilingRow, type IpoDoc, type IssueRow, type ListedRow } from './ipologic';
 
 export interface IpoHost {
@@ -28,14 +29,25 @@ export class IpoView {
   private readonly body = el('div', 'ipo-body');
   private doc: IpoDoc | null = null;
   private token = 0;
+  private readonly forensic: ForensicPanel;
 
-  constructor(private host: IpoHost, private fetcher: typeof fetch = (...a) => fetch(...a)) {
+  constructor(private host: IpoHost, private fetcher: typeof fetch = (...a) => fetch(...a), forensic?: ForensicPanel) {
+    this.forensic = forensic ?? new ForensicPanel(fetcher);
     this.element.hidden = true;
     this.refresh.type = 'button';
     this.refresh.title = 'Read the page again (the data itself is collected every two hours while the software is open)';
     this.refresh.addEventListener('click', () => void this.load());
     this.bar.append(el('b', 'rtitle', 'IPOs'), this.refresh);
-    this.element.append(this.bar, this.status, this.body);
+    this.element.append(this.bar, this.status, this.forensic.element, this.body);
+  }
+
+  /** The button beside a draft's document link: run the document checks on it. */
+  private analyseButton(f: FilingRow): HTMLElement {
+    const b = el('button', 'linkbtn', 'Analyse');
+    b.type = 'button';
+    b.title = 'Check the numbers of this draft against each other (reads the whole PDF; takes a few minutes). Differences to look at, not advice.';
+    b.addEventListener('click', () => void this.forensic.analyse(f.pdf, f.company, f.kind));
+    return b;
   }
 
   show(): void {
@@ -77,6 +89,7 @@ export class IpoView {
     for (const f of filings) {
       const group = el('span', 'ipo-doc');
       group.append(link(`${f.kind} ${f.filed}`, f.page, f.title), text('span', 'note', ' '), f.pdf ? link('[document]', f.pdf, `${f.kind}: the PDF on SEBI's site`) : text('span', 'note', ''));
+      if (f.pdf) group.append(text('span', 'note', ' '), this.analyseButton(f));
       cell.append(group, text('span', 'note', '  '));
     }
     return cell;
@@ -141,6 +154,7 @@ export class IpoView {
       const tr = el('tr');
       const links = el('td');
       links.append(link('SEBI page', f.page, f.title), text('span', 'note', '  '), f.pdf ? link('[document]', f.pdf) : text('span', 'note', 'no document found yet'));
+      if (f.pdf) links.append(text('span', 'note', '  '), this.analyseButton(f));
       tr.append(el('td', '', f.filed), el('td', '', f.company), el('td', '', f.kind), links);
       table.append(tr);
     }

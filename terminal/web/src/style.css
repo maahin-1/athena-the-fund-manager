@@ -704,6 +704,9 @@ abbr.fact { text-decoration: underline dotted; cursor: help; }
 .ipo-name { white-space: nowrap; }
 .ipo-docs, .ipo-sub { font-size: 12px; }
 .ipo-sub2 { padding-left: 14px; }
+.forensic { border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; margin: 8px 0; background: var(--bg-panel); max-height: 55vh; overflow: auto; }
+.forensic-diff, .forensic-flag { border-left: 3px solid var(--border); padding: 3px 8px; margin: 6px 0; }
+.forensic td.dn { font-weight: 700; }
 .linkbtn { background: none; border: none; color: inherit; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline dotted; }
 .sent-recent { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
 .sent-symbol { width: 140px; }
