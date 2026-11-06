@@ -305,6 +305,17 @@ Run on one draft through the job (Deon, from the document store, no download): 9
 
 The text lane's `doc.open` now returns each page's printed number and takes `printed_page` to open the page a citation names; the report of the Analyse button gives the printed page beside each PDF page of a difference.
 
+### 6r. What changed between two versions of a document (Nov 7, 2026)
+
+`python -m athena.forensic.compare --earlier DOC_ID --later DOC_ID` (schema `athena.forensic.compare/1`) lists, by code and with no model, what differs between a draft and the red herring prospectus or addendum that followed it. A change is not an error (a later version sets blanks, adds a year and answers the regulator), so nothing is judged; the list is where to read.
+
+- **Offer figures** (size of the offer, fresh issue, offer for sale, shares before the offer, each object): `same`, `changed`, `set` (a `[●]` that the later version fills in is not a change), `added`, `removed`.
+- **Restated statements**: every line of the balance sheet, income statement and cash flow that both versions print for the same year, on the same basis and in the same unit, with those that moved beyond the rounding of the printed figures (restated); years only one version prints are named as added or dropped; a pair stated in different units is not compared, and says so.
+- **Wording** of the risk factors and litigation sections: the long sentences only one version has, and the pairs that are the same sentence with different numbers (`accounted for 61.00% ...` against `48.50%`), which are the ones worth reading first.
+- **Checks**: the document checks that differ in the later version and did not in the earlier, and those that differed and now hold, matched by what they compare and not by page (the pages move between versions).
+
+**Said plainly.** No second version of any draft is held, so this was tested on constructed pairs (seven tests: nothing to report on a document against itself, a restated figure and a rounding, a year added and dropped and a different unit, the offer figures in each status, a number changed in a risk sentence, a check that newly differs whatever page it is on, a missing document) and on Deon against itself (141 statement values, none changed) and against a copy altered by hand. It has not been run on a real draft-and-prospectus pair, where the sentence matching (the same claim reworded is a removal and an addition, not a change of numbers) will be less tidy than in the tests. It is not wired into the terminal.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.
