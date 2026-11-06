@@ -107,6 +107,13 @@ class TestSections:
         secs = find_sections(body("SECTION II – RISK FACTORS", "OUR BUSINESS"))
         assert "Objects of the offer" in missing(secs) and "Risk factors" not in missing(secs)
 
+    def test_a_section_prefix_with_a_colon_and_a_restated_consolidated_heading_are_found(self) -> None:
+        # Baanganga: `SECTION VI: FINANCIAL INFORMATION` over `RESTATED CONSOLIDATED FINANCIAL INFORMATION`; the financial statements were swallowed by the dividend policy section before
+        pages = body("DIVIDEND POLICY", "SECTION VI: FINANCIAL INFORMATION\nRESTATED CONSOLIDATED FINANCIAL INFORMATION", "more statements")
+        secs = {s.key: s for s in find_sections(pages)}
+        assert secs["financials"].start == 2 and secs["dividend"].end == 1
+        assert [s.key for s in find_sections(body("RESTATED STANDALONE AND CONSOLIDATED FINANCIAL INFORMATION"))] == ["financials"]
+
     def test_a_heading_inside_a_sentence_is_not_a_heading(self) -> None:
         pages = ["Cover page of the draft document with enough text to be a page", "The risk factors and our business are described later; objects of the offer too.", "Closing page text goes on and on"]
         assert [s.key for s in find_sections(pages)] == []

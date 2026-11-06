@@ -102,7 +102,7 @@ def read_table(page: int, text: str) -> Table | None:
     rows: list[Row] = []
     pending: list[str] = []
     for line in lines:
-        tokens = _without_empty_columns(_rejoin_split_numbers(line.split()), n)
+        tokens = _join_one_split(_without_empty_columns(_rejoin_split_numbers(line.split()), n), n)
         trailing = 0
         for token in reversed(tokens):
             if parse_number(token) is None:
@@ -158,6 +158,28 @@ def _rejoin_split_numbers(tokens: list[str]) -> list[str]:
             out.append(tokens[i])
             i += 1
     return out
+
+
+SPLIT_INT = re.compile(r"^\d{1,2}$")
+SPLIT_REST = re.compile(r"^\d{1,2}\.\d{2}\)?$")
+
+
+def _join_one_split(tokens: list[str], n: int) -> list[str]:
+    """A row with exactly one figure too many for its `n` year columns, where one pair after the first figure is a one or two digit integer and then a figure of the form `d.dd` (`110.07 21 9.08`, the number 219.08 broken
+    by a space): the pair is one number when it is the only such pair and the result has no more than three digits before the point. Anywhere else a lone small integer is a note number and is left alone."""
+    run = 0
+    while run < len(tokens) and parse_number(tokens[-1 - run]) is not None:
+        run += 1
+    if run != n + 1:
+        return tokens
+    start = len(tokens) - run
+    candidates = [i for i in range(start + 1, len(tokens) - 1) if SPLIT_INT.match(tokens[i]) and SPLIT_REST.match(tokens[i + 1]) and len(tokens[i]) + len(tokens[i + 1].split(".")[0].lstrip("(")) <= 3]
+    if len(candidates) != 1:
+        return tokens
+    i = candidates[0]
+    if not all(_figure_like(t) for j, t in enumerate(tokens[start:], start) if j not in (i, i + 1)):  # amounts print with two decimals, so a bare integer elsewhere in the run is a note number and the row is not understood
+        return tokens
+    return [*tokens[:i], tokens[i] + tokens[i + 1], *tokens[i + 2 :]]
 
 
 def _figure_like(token: str) -> bool:

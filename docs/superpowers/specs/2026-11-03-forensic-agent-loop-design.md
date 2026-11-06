@@ -265,6 +265,12 @@ Testing on the seven drafts found two things: six false differences on Everbrand
 
 **Said plainly.** A sentence in another form (`was ₹ X million, a rise of Y`, or one that gives the change in rupees only) is not read. The discussion is checked against the restated statements, so a figure wrong in both is not seen. A quoted figure that is the standalone one when the statement found is consolidated would be reported as a difference if no statement found agrees; no case of this arose in the seven drafts.
 
+### 6n. Two reading gaps closed: Baanganga's financial sections and Inox's broken figures (Nov 7, 2026)
+
+**The finder missed Baanganga's financial statements.** The draft heads its section `SECTION VI: FINANCIAL INFORMATION` (a colon where the others use a dash) over `RESTATED CONSOLIDATED FINANCIAL INFORMATION`, so the financial statements (pages 289 to 348) were counted as part of the dividend policy section and the checks looked at every page. The section prefix now accepts a colon and the financials heading accepts `RESTATED CONSOLIDATED` and `RESTATED STANDALONE` (and both). The same change finds Inox's financial section (pages 403 to 521), not found before. Stored documents keep the sections they were read with; the seven in the scratch store were re-sectioned to measure it. Baanganga's checks now come from its real statements: 59 run (36 not run) against 93 run (71 not run) when every page was searched, where the extra runs were on note pages and summaries; none differed either way. Inox runs 122 checks (89 before).
+
+**Inox's `(414.97) 110.07 21 9.08`.** Four figures for three year columns, where `21 9.08` is the one number 219.08 broken by a space; the row used to be left out. It is joined only when there is exactly one figure too many, exactly one pair after the first figure of a one or two digit integer followed by `d.dd` (no more than three digits before the point), and every other figure in the run is an amount with two decimals, so a note number in front is never absorbed and a row with two candidate pairs stays unread. Inox's cash roll-forward now runs and holds; 0 differences on all seven drafts.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.

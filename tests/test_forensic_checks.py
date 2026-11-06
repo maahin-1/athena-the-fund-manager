@@ -252,8 +252,24 @@ def test_numbers_with_a_space_before_the_comma_or_point_or_inside_a_bracket_are_
     shifted = read_table(3, head + "Net cash from financing activities (4,281.86) 1,029.34 5,395.90\nNet increase in cash and cash equivalents (414.97) 110.07 21 9.08\nOther equity 21 474.40 255.71 34.16")
     assert shifted is not None
     labels = {r.label: r.values for r in shifted.rows}
-    assert "net increase in cash and cash equivalents (414.97)" not in labels and not any("net increase" in k for k in labels)  # four figures against three columns: the row is left out, not read with the wrong three
+    assert labels["net increase in cash and cash equivalents"] == (-414.97, 110.07, 219.08)  # `21 9.08` is the one number 219.08: the only pair that can be, with amounts around it
     assert labels["other equity 21"] == (474.40, 255.71, 34.16) and labels["net cash from financing activities"] == (-4281.86, 1029.34, 5395.9)  # a note number in front of the figures is not a figure
+
+
+def test_a_number_broken_by_a_space_is_joined_only_when_nothing_else_in_the_row_could_be_a_note_number() -> None:
+    from athena.forensic.checks.rows import _join_one_split
+
+    head = "Particulars For the Year Ended March 31, 2026 For the Year Ended March 31, 2025 For the Year Ended March 31, 2024\n"
+    rows = {r.label: r.values for r in read_table(4, head + "Closing cash 1,000.00 21 9.08 330.10\nOpening cash 3.00 4.00 5.00").rows}
+    assert rows["closing cash"] == (1000.0, 219.08, 330.1)  # joined: the only pair, amounts around it
+    assert rows["opening cash"] == (3.0, 4.0, 5.0)
+    assert _join_one_split("x (414.97) 110.07 21 9.08".split(), 3) == ["x", "(414.97)", "110.07", "219.08"]
+    assert _join_one_split("x 21 9.08 5.00 4.00".split(), 3) == ["x", "21", "9.08", "5.00", "4.00"]  # the pair is at the front, where a note number sits
+    assert _join_one_split("x 11 1.10 22 2.20".split(), 3) == ["x", "11", "1.10", "22", "2.20"]  # a bare integer at the front is a note number, and nothing is guessed
+    assert _join_one_split("x 1.10 21 9.08 33 3.30".split(), 3) == ["x", "1.10", "21", "9.08", "33", "3.30"]  # two candidate pairs, and the wrong number of tokens
+    assert _join_one_split("x 1.10 21 9.08".split(), 3) == ["x", "1.10", "21", "9.08"]  # no surplus: three columns and the run is only three long
+    assert _join_one_split("x 1.10 2.20 21 9.08".split(), 3) == ["x", "1.10", "2.20", "219.08"]  # the pair may be the last figure too
+    assert _join_one_split("x 1.10 2.20 3.30 21 9.08".split(), 3) == ["x", "1.10", "2.20", "3.30", "21", "9.08"]  # five tokens for three columns is more than one broken number
 
 
 def test_cash_labels_are_found_whether_they_say_equivalent_or_equivalents_and_as_at_or_at() -> None:

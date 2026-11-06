@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 TOP_LINES = 6  # a heading is within the first few lines of its page (the page number and a "SECTION" line may come first)
 LEADERS_IN_CONTENTS = 5  # a contents page has a dotted line to a page number for every entry
-_PREFIX = re.compile(r"^SECTION\s+[IVXL]+\s*[–—-]\s*", re.IGNORECASE)
+_PREFIX = re.compile(r"^SECTION\s+[IVXL]+\s*[–—:-]\s*", re.IGNORECASE)  # `SECTION VI – FINANCIAL INFORMATION` or `SECTION VI: FINANCIAL INFORMATION`
 _LEADER = re.compile(r"\.{5,}")
 _NOISE = re.compile(r"^[\dIVXLC .]+$")
 
@@ -39,7 +39,7 @@ SPEC: tuple[tuple[str, str, str], ...] = (
     ("management", "Our management", r"OUR MANAGEMENT$"),
     ("promoters", "Promoters and promoter group", r"OUR PROMOTERS AND PROMOTER GROUP$"),
     ("dividend", "Dividend policy", r"DIVIDEND POLICY$"),
-    ("financials", "Restated financial information", r"FINANCIAL INFORMATION$|RESTATED FINANCIAL INFORMATION|INDEPENDENT AUDITOR.S EXAMINATION REPORT"),
+    ("financials", "Restated financial information", r"FINANCIAL INFORMATION$|RESTATED (?:CONSOLIDATED |STANDALONE )?(?:AND (?:CONSOLIDATED |STANDALONE ))?FINANCIAL INFORMATION|INDEPENDENT AUDITOR.S EXAMINATION REPORT"),
     ("other_financial", "Other financial information", r"OTHER FINANCIAL INFORMATION$"),
     ("mdna", "Management's discussion and analysis", r"MANAGEMENT.S DISCUSSION AND ANALYSIS"),
     ("capitalisation", "Capitalisation statement", r"CAPITALI[SZ]ATION STATEMENT$"),
