@@ -36,21 +36,22 @@ class Client(Protocol):
     def complete(self, system: str, user: str) -> str: ...
 
 
-def _render(topic: str, hits: Sequence[Hit]) -> str:
-    lines = [f"Topic: {topic.replace('_', ' ')} ({TOPICS[topic]})", ""]
+def _render(topic: str, hits: Sequence[Hit], topics: Mapping[str, str] = TOPICS) -> str:
+    lines = [f"Topic: {topic.replace('_', ' ')} ({topics[topic]})", ""]
     for h in hits:
         p = h.passage
         lines.append(f"[{p.doc_id}#{p.chunk}] {p.title}, published {p.published.isoformat()}: {p.text}")
     return "\n".join(lines)
 
 
-def review_topic(topic: str, index: Index, as_of: date, llm: Client) -> dict[str, Any]:
-    """The finding for one topic: `{"topic", "finding": False}` when there is none, or a finding whose quote was verified; or `{"topic", "dropped": reason}` when the reply could not be trusted."""
-    hits = index.search(TOPICS[topic], as_of, PASSAGES_PER_TOPIC)
+def review_topic(topic: str, index: Index, as_of: date, llm: Client, topics: Mapping[str, str] = TOPICS, system: str = SYSTEM) -> dict[str, Any]:
+    """The finding for one topic: `{"topic", "finding": False}` when there is none, or a finding whose quote was verified; or `{"topic", "dropped": reason}` when the reply could not be trusted.
+    `topics` and `system` let another reader (the earnings calls) use the same retrieval, the same reply shape and the same quote check with its own topics and instruction."""
+    hits = index.search(topics[topic], as_of, PASSAGES_PER_TOPIC)
     if not hits:
         return {"topic": topic, "finding": False, "searched": 0}
     try:
-        reply = parse_model_json(llm.complete(SYSTEM, _render(topic, hits)))
+        reply = parse_model_json(llm.complete(system, _render(topic, hits, topics)))
     except ValueError as exc:
         return {"topic": topic, "dropped": f"the reply could not be read ({exc})", "searched": len(hits)}
     if not reply.get("finding"):
@@ -68,7 +69,7 @@ def review_topic(topic: str, index: Index, as_of: date, llm: Client) -> dict[str
 
 def review(index: Index, as_of: date, llm: Client, topics: Sequence[str] | None = None) -> dict[str, Any]:
     """Every topic's result, the findings kept (strongest severity first), and how many replies were dropped for a quote that did not check."""
-    results = [review_topic(t, index, as_of, llm) for t in (topics or list(TOPICS))]
+    results = [review_topic(t, index, as_of, llm) for t in (topics or list(TOPICS))]  # (the earnings calls call review_topic with their own topics)
     order = {"high": 0, "medium": 1, "low": 2}
     kept = sorted((r for r in results if r.get("finding")), key=lambda r: order[r["severity"]])
     return {"as_of": as_of.isoformat(), "findings": kept, "dropped": [r for r in results if "dropped" in r], "topics": len(results)}
