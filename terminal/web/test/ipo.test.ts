@@ -71,7 +71,8 @@ describe('the IPO view', () => {
     expect(text).toContain('Coming (1)');
     expect(text).toContain('SME');
     expect(text).toContain('1200 (Rs 1,12,800)'); // Indian digit grouping
-    expect(text).toContain('no draft found'); // nothing matched to the coming issue
+    expect(text).toContain('SME issue: its offer document is filed with the exchange, not SEBI, and is not read here'); // an SME issue has no SEBI draft, and the page says why instead of "no draft found"
+    expect(text.match(/no draft found/g)).toHaveLength(1); // only the listed main-board issue with no matched draft; the SME issue now says why
     expect(text).toContain('Listed in the last 60 days (1)');
     expect(text).toContain('+15.4%');
     expect(text).toContain('-7.6%');

@@ -83,9 +83,12 @@ export class IpoView {
     }
   }
 
-  private filingLinks(filings: readonly FilingRow[]): HTMLElement {
+  private filingLinks(filings: readonly FilingRow[], kind = 'mainboard'): HTMLElement {
     const cell = el('td', 'ipo-docs');
-    if (!filings.length) cell.append(text('span', 'note', 'no draft found'));
+    if (!filings.length) {
+      // an SME issue has no SEBI draft: the exchange holds its offer document, and that is not read here (spec 6w)
+      cell.append(text('span', 'note', kind === 'sme' ? 'SME issue: its offer document is filed with the exchange, not SEBI, and is not read here' : 'no draft found'));
+    }
     for (const f of filings) {
       const group = el('span', 'ipo-doc');
       group.append(link(`${f.kind} ${f.filed}`, f.page, f.title), text('span', 'note', ' '), f.pdf ? link('[document]', f.pdf, `${f.kind}: the PDF on SEBI's site`) : text('span', 'note', ''));
@@ -118,7 +121,7 @@ export class IpoView {
         } else cell.append(text('span', 'note', 'not yet'));
         tr.append(cell);
       }
-      tr.append(this.filingLinks(r.filings));
+      tr.append(this.filingLinks(r.filings, r.kind));
       table.append(tr);
     }
     return table;
@@ -139,7 +142,7 @@ export class IpoView {
       name.append(open, text('span', 'note', ` ${r.name}`));
       const gain = (p: number | null) => el('td', gainClass(p), gainText(p));
       tr.append(name, el('td', '', r.kind === 'sme' ? 'SME' : 'Main board'), el('td', '', r.listing), el('td', '', r.issuePrice === null ? '-' : String(r.issuePrice)), el('td', '', r.listingOpen === null ? '-' : String(r.listingOpen)),
-        gain(r.listingPct), gain(r.firstClosePct), el('td', '', r.lastClose === null ? '-' : String(r.lastClose)), gain(r.lastPct), this.filingLinks(r.filings));
+        gain(r.listingPct), gain(r.firstClosePct), el('td', '', r.lastClose === null ? '-' : String(r.lastClose)), gain(r.lastPct), this.filingLinks(r.filings, r.kind));
       table.append(tr);
     }
     return table;
