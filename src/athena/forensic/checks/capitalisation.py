@@ -220,6 +220,60 @@ def balance_checks(lines: Sequence[Line], found: Sequence[Located], pages: Seque
     return out
 
 
+INDEBTEDNESS = "indebtedness"
+DEBT_DATE = re.compile(r"as\s+(?:at|on|of)\s+([A-Za-z]+)\s+(\d{1,2})\s*,?\s*(20\d\d)", re.IGNORECASE)
+DEBT_TOTAL = re.compile(r"^total(?:\s+(?:borrowings?|indebtedness|outstanding(?:\s+borrowings?)?))?(?:\s*\([^()]{0,30}\))?$", re.IGNORECASE)  # `Total`, `Total borrowings (A+B)`; not `Total secured borrowings`
+
+
+def _debt_total(pages: Sequence[tuple[int, str, str]]) -> Line | None:
+    """The one total row of the indebtedness section's table, with its last figure (the amount outstanding; a column of sanctioned amounts comes first). None when there is not exactly one such row."""
+    rows: list[Line] = []
+    for page, section, text in sorted(p for p in pages if p[1] == INDEBTEDNESS):
+        for raw in text.splitlines():
+            tokens = MARKS.sub("", raw).split()
+            if len(tokens) < 2 or (parsed := parse_number(tokens[-1])) is None or parse_number(tokens[-2]) is None and tokens[-2] != "-":
+                continue
+            label = " ".join(t for t in tokens[:-1] if parse_number(t) is None and t != "-").strip()
+            if DEBT_TOTAL.match(label) and tokens[0].lower() == "total":
+                rows.append(Line(label, parsed[0], tokens[-1], parsed[1], page, label))
+    return rows[0] if len(rows) == 1 else None
+
+
+def indebtedness_checks(lines: Sequence[Line], pages: Sequence[tuple[int, str, str]]) -> list[Check]:
+    """The total outstanding in the indebtedness section against the total borrowings of the capitalisation table. The two are the same number only when the section is as at the table's date (a March 31 year end), which
+    most drafts do not give (a later date); this check can only confirm. Where the two are not comparable, or the figures differ, it is reported as not run with the reason: the section may cover only some of the group, or
+    count lease liabilities, accrued interest or unamortised costs differently, so a difference is for a person to read, not a proven one."""
+    section = " ".join(t for _, s, t in sorted(p for p in pages if p[1] == INDEBTEDNESS))
+    cap = next((x for x in lines if re.match(r"total\s+borrowings", MARKS.sub("", x.own).strip(), re.IGNORECASE)), None)
+    if not section.strip() or cap is None:
+        return []
+    c = Check("indebtedness_total_in_capitalisation", DOC_VS_DOC, "total borrowings in the indebtedness section and in the capitalisation table", None)
+    when = DEBT_DATE.search(SPLIT_YEAR.sub(r"\1\2", section))
+    cap_text = SPLIT_YEAR.sub(r"\1\2", " ".join(t for _, s, t in pages if s == SECTION))
+    cap_when = STATED_DATE.search(cap_text)
+    if when is None or cap_when is None:
+        c.reason = "a date was not found in " + ("the indebtedness section" if when is None else "the capitalisation table")
+        return [c]
+    c.year = int(when.group(3))
+    if (when.group(1).lower(), when.group(2), when.group(3)) != (cap_when.group(1).lower(), cap_when.group(2), cap_when.group(3)):
+        c.reason = f"the indebtedness section is as at {when.group(1)} {when.group(2)}, {when.group(3)} and the capitalisation table as at {cap_when.group(1)} {cap_when.group(2)}, {cap_when.group(3)}: not the same date, so the two are not comparable"
+        return [c]
+    total = _debt_total(pages)
+    if total is None:
+        c.reason = "the section does not give exactly one total row to read"
+        return [c]
+    unit, cap_unit = _unit(section), _unit(cap_text)
+    if unit and cap_unit and unit != cap_unit:
+        c.reason = f"the indebtedness section is in {unit} and the capitalisation table in {cap_unit}"
+        return [c]
+    c.title = f"total borrowings as at {when.group(1)} {when.group(2)}, {when.group(3)} in the indebtedness section (page {total.page}) and in the capitalisation table (page {cap.page})"
+    c.left, c.right = [total.term("total outstanding (indebtedness)")], [cap.term("total borrowings (capitalisation)")]
+    decide(c)
+    if c.status == "differs":
+        c.status, c.reason = "not_run", f"{c.reason}; the section may cover only some of the group, or count lease liabilities, accrued interest or unamortised costs differently, so the difference is not judged"
+    return [c]
+
+
 def capitalisation_checks(pages: Sequence[tuple[int, str, str]], found: Sequence[Located]) -> list[Check]:
     lines = read_lines(pages)
-    return formula_checks(lines) + balance_checks(lines, found, pages) if lines else []
+    return formula_checks(lines) + balance_checks(lines, found, pages) + indebtedness_checks(lines, pages) if lines else []

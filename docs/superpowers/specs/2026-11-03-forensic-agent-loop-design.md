@@ -316,6 +316,10 @@ The text lane's `doc.open` now returns each page's printed number and takes `pri
 
 **Said plainly.** No second version of any draft is held, so this was tested on constructed pairs (seven tests: nothing to report on a document against itself, a restated figure and a rounding, a year added and dropped and a different unit, the offer figures in each status, a number changed in a risk sentence, a check that newly differs whatever page it is on, a missing document) and on Deon against itself (141 statement values, none changed) and against a copy altered by hand. It has not been run on a real draft-and-prospectus pair, where the sentence matching (the same claim reworded is a removal and an addition, not a change of numbers) will be less tidy than in the tests. It is not wired into the terminal.
 
+### 6s. The indebtedness section against the capitalisation table (Nov 9, 2026)
+
+When the indebtedness section is as at the same date as the capitalisation table (a March 31 year end), the one total row of its table (the last figure, the amount outstanding, not the sanctioned column) must be the table's total borrowings. It can only confirm: the section may cover only part of the group or count lease liabilities, accrued interest or unamortised costs differently, so a figure that differs is `not_run` with both numbers in the reason. A section at another date, in another unit, without exactly one total row, or without a date, is `not_run` with the reason. On the seven drafts: Everbrands holds (1,497.07 against 1,497.07); the other six are `not_run` because their section is as at a later date (June to August 2026). It adds no new class of finding, only the sixth confirmation of the capitalisation table.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.

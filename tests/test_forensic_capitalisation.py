@@ -159,3 +159,44 @@ def test_the_checks_are_part_of_the_document_checks_and_the_indebtedness_item_sa
     result = run_checks(pages(capitalisation()), None)
     assert any(c["id"].startswith("capitalisation_") for c in result["checks"])
     assert any("indebtedness" in item and "later date" in item for item in NOT_BUILT)
+    assert not any("dated at the balance sheet date" in item for item in NOT_BUILT)  # that case is now checked
+
+
+def indebtedness(total="60.00", date="March 31, 2026", sanctioned="70.00") -> str:
+    return f"""FINANCIAL INDEBTEDNESS
+As on {date}, the outstanding borrowings of our Company amounted to ₹ {total} million, and a brief summary is set forth below:
+(in ₹ million)
+Category of borrowing Sanctioned amount Outstanding amount as at {date}*
+Secured
+Term loan from bank  {sanctioned} {total}^
+Working capital facilities 1.00 Nil
+Unsecured Nil Nil
+Total {sanctioned} {total}^
+*As certified by a firm of Chartered Accountants.
+"""
+
+
+def with_debt(cap: str, debt: str):
+    full = [*pages(cap), (12, "indebtedness", debt)]
+    found, _ = locate(full, ())
+    return {c.id: c for c in capitalisation_checks(full, found)}
+
+
+def test_the_indebtedness_total_at_the_capitalisation_date_is_confirmed_against_total_borrowings():
+    got = with_debt(capitalisation(), indebtedness())["indebtedness_total_in_capitalisation"]
+    assert got.status == "ok" and got.left[0].printed == "60.00" and got.right[0].printed == "60.00"  # the sanctioned column and the mark on the figure are not read as the amount
+
+
+def test_an_indebtedness_total_that_differs_is_not_judged_and_a_later_date_is_not_compared():
+    differs = with_debt(capitalisation(), indebtedness(total="64.00"))["indebtedness_total_in_capitalisation"]
+    assert differs.status == "not_run" and "not judged" in differs.reason and "left 64.00 against right 60.00" in differs.reason
+    later = with_debt(capitalisation(), indebtedness(date="July 31, 2026"))["indebtedness_total_in_capitalisation"]
+    assert later.status == "not_run" and "not the same date" in later.reason
+
+
+def test_an_indebtedness_section_with_no_single_total_row_or_another_unit_is_not_run_and_a_table_without_the_section_has_no_such_check():
+    secured_only = indebtedness().replace("Total 70.00 60.00^", "Total secured borrowings (A) 70.00 60.00")
+    assert with_debt(capitalisation(), secured_only)["indebtedness_total_in_capitalisation"].reason == "the section does not give exactly one total row to read"
+    lakhs = indebtedness().replace("(in ₹ million)", "(in ₹ lakhs)")
+    assert "lakh" in with_debt(capitalisation(), lakhs)["indebtedness_total_in_capitalisation"].reason
+    assert "indebtedness_total_in_capitalisation" not in by_id(capitalisation())
