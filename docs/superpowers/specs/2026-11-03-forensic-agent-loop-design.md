@@ -338,6 +338,21 @@ Three more lanes of section 3, each a set of plain-code tools plus a lane specif
 - **E7, the local classifier bake-off: not built.** It needs the owner's approval for a 1 to 2 GB model runtime and about 300 labelled items (or the acceptance of next-day moves as noisy labels), both decisions in section 11 of the plan that have not been made.
 - **E8, the predictive study: not built, and cannot yet be run.** It asks whether items before a date explain returns after it, and the stored items began on 2026-10-29; about three months are needed, so the earliest honest run is the end of January 2027. Until then nothing on the Sentiment page feeds a verdict (plan principle 8).
 
+### 6v. The continuous version of the cross-sectional test (Nov 9, 2026)
+
+`python -m athena.forensic.statements.regression FILE [FILE ...]` regresses the excess return over the Nifty 500 on the number of elevated measures, holding fixed the fifth of size, the third of volatility and how many of the 14 measures could be computed, with a bootstrap interval (2,000 draws). It reads the saved result of a backtest run, so it adds no data. The reading rule was written in the module's docstring **before the results were read**: expect a negative slope; the winsorised return (B, 1st and 99th percentile, because one stock rose more than thirteen times in the first window) is primary and the rank of the return (C) is the check; a date is *supported* only when both intervals lie wholly below zero; the claim is *replicated* only if both dates are.
+
+**Result, both dates: not shown.** Slope per additional elevated measure, as a fraction of the stock's value (0.01 is one percentage point):
+
+| Entry | Companies | B winsorised, 95% interval | C rank, 95% interval | Reading |
+|---|---|---|---|---|
+| 2025-07-01 to 2026-11-01 | 1,930 | -0.0083 (-0.0308 to +0.0163) | -0.0122 (-0.0264 to +0.0026) | not shown |
+| 2025-01-01 to 2026-05-01 | 1,798 | +0.0001 (-0.0206 to +0.0231) | -0.0056 (-0.0210 to +0.0104) | not shown |
+
+The same on the 1,013 and 869 companies with 8 or more measures computed: not shown at either date. The raw return (A, not read) is also on both sides of zero. The smallest slope the sample could reliably see (80% power) is about **0.034 and 0.032 per elevated measure**, so the data rule out a fall in the excess return of more than about three percentage points per elevated measure, and say nothing about anything smaller. The median excess return by number of elevated measures is flat to slightly lower at the first date (-13.7%, -15.5%, -15.5%, -19.0% for 0, 1, 2, 3 or more) and flat at the second (-25.3%, -24.9%, -25.9%, -25.0%).
+
+**What this adds.** It agrees with the binary tests (6c to 6h): at two dates nothing is shown, and a small effect is not excluded. It does not settle that the measures are useless or useful. The two windows overlap by fifteen months and the companies are the same, so they are one test seen twice. The forward log (grading refused before 2027-11-06) remains the only clean test left. No weight or band was changed.
+
 ## 7. Build order (each step testable on its own)
 
 1. **Skeleton**: store, ledger, notebooks, tool registry, agent loop with a scripted fake model, supervisor, flag promotion, concern-level rule, cost accounting. All tests with fake models.
