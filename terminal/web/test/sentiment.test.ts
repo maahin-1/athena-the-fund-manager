@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseCommand } from '../src/command';
 import { SentimentView } from '../src/sentiment';
-import { RECENT_KEY, citation, insiderReachNote, rememberRecent, outcomeClass, outcomeLabel, readSentiment, rupees, safeLink, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews } from '../src/sentimentlogic';
+import { RECENT_KEY, attentionLines, citation, insiderReachNote, readAttention, rememberRecent, outcomeClass, outcomeLabel, readSentiment, rupees, safeLink, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews } from '../src/sentimentlogic';
 
 const doc = (over: Record<string, unknown> = {}) => ({
   symbol: 'TCS', company: 'Tata Consultancy Services Limited', as_of: '2026-10-23', window_days: 30,
@@ -241,6 +241,49 @@ describe('flows and insiders', () => {
     expect(text).toContain('Rs 32.94 lakh');
     expect(text).toContain('Board Meeting Intimation');
     expect(view.element.querySelectorAll('.sent-news tr').length).toBe(3); // the news table is unchanged
+  });
+});
+
+describe('attention', () => {
+  const attention = {
+    schema: 'athena.attention/1', symbol: 'TCS', as_of: '2026-10-23',
+    vix: { status: 'ok', day: '2026-10-23', level: 17.47, percentile_1y: 80.6, percentile_all: 70.8, history_from: '2014-05-14', change_20d_points: 2.19, stale_days: 0 },
+    wikipedia: { status: 'ok', article: 'Tata Consultancy Services', description: 'Indian IT company', link: 'https://en.wikipedia.org/wiki/Tata_Consultancy_Services', last_7_days_daily_average: 1896.7, median_daily_views_before: 1384, ratio: 1.37, peak_day: '2026-10-08', peak_views: 8099, days_above_3x_median: ['2026-10-08'], to: '2026-10-23' },
+    off: [{ id: 'gdelt', name: 'GDELT', reason: 'answers 429' }],
+    caveat: 'Attention is not sentiment: more page views say people looked, not what they thought. Nothing here feeds a verdict.',
+  };
+
+  it('is read defensively, with an unsafe link dropped, and is absent from a server that sends none', () => {
+    expect(readSentiment(doc())!.attention).toBeNull();
+    const got = readSentiment(doc({ attention: { ...attention, wikipedia: { ...attention.wikipedia, link: 'javascript:x' } } }))!.attention!;
+    expect(got.vix).toMatchObject({ ok: true, level: 17.47, percentile1y: 80.6, change20d: 2.19 });
+    expect(got.wiki).toMatchObject({ ok: true, article: 'Tata Consultancy Services', link: '', recent: 1896.7, ratio: 1.37, spikes: ['2026-10-08'] });
+    expect(got.off).toEqual([{ name: 'GDELT', reason: 'answers 429' }]);
+    expect(readAttention({ vix: {} })).toBeNull();
+  });
+
+  it('says in plain words what the numbers are, and why a part is missing when it is off', () => {
+    const lines = attentionLines(readAttention(attention)!);
+    expect(lines[0]).toContain('India VIX 17.47 on 2026-10-23');
+    expect(lines[0]).toContain('up 2.19 points in 20 trading days');
+    expect(lines[0]).toContain('not this company');
+    expect(lines[1]).toContain('1,897 a day over the last 7 days against a median of 1,384');
+    expect(lines[1]).toContain('(1.37 times)');
+    const off = attentionLines(readAttention({ ...attention, vix: { status: 'off', reason: 'too few days' }, wikipedia: { status: 'off', reason: 'no article' } })!);
+    expect(off).toEqual(['India VIX is not shown: too few days', 'Page views are not shown: no article']);
+  });
+
+  it('is drawn in the page after the filings, with the sources tried and the caveat', async () => {
+    const fetcher = (async () => new Response(JSON.stringify(doc({ attention })), { status: 200 })) as unknown as typeof fetch;
+    const view = new SentimentView({ onSymbol: () => {} }, fetcher);
+    view.show('TCS');
+    await new Promise((r) => setTimeout(r));
+    const text = view.element.textContent ?? '';
+    expect(text).toContain('Attention (India VIX');
+    expect(text).toContain('India VIX 17.47');
+    expect(text).toContain('Tried and not read: GDELT (answers 429)');
+    expect(text).toContain('Attention is not sentiment');
+    expect(view.element.querySelector('a[href="https://en.wikipedia.org/wiki/Tata_Consultancy_Services"]')).not.toBeNull();
   });
 });
 

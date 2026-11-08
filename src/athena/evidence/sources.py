@@ -73,6 +73,24 @@ STRUCTURED_SOURCES: tuple[StructuredSource, ...] = (
     StructuredSource("nse_fiidii", "NSE FII/DII flows", "flow", "A", "market"),
 )
 
+@dataclass(frozen=True)
+class Tried:
+    """A source that was tried (or considered) for the attention and try-and-see phases and is not read, with the date and the reason."""
+
+    id: str
+    name: str
+    tried: str
+    reason: str
+
+
+# E4 and E5 of the evidence plan: each tried once with one polite request and the honest user agent (robots.txt read first); none was pursued past a refusal.
+TRIED_AND_OFF: tuple[Tried, ...] = (
+    Tried("gdelt", "GDELT", "2026-10-29 and 2026-11-09", "answers 429 ('limit requests to one every 5 seconds') on a first request and again after an 8-second pause; the limit is shared and cannot be met from here, so it is not read"),
+    Tried("bse_announcements", "BSE announcements", "2026-11-09", "its announcements address answers with its web application page, not data, to a plain request; reading it would need a browser's headers, which is not tried"),
+    Tried("yahoo_news", "Yahoo Finance news", "2026-11-09", "its feed answers but carries no items for NSE tickers (0 for RELIANCE.NS; 17 for a US control); and its terms limit use to personal reading"),
+    Tried("google_trends", "Google Trends", "2026-11-09", "no official interface; the library route is unofficial and rate-limited, so it is off by choice"),
+    Tried("financial_express", "Financial Express feed", "2026-11-09", "the feed address answers with a web page again (200, text/html)"),
+)
 BY_ID = {s.id: s for s in FEED_SOURCES}
 assert len(BY_ID) == len(FEED_SOURCES) and not set(BY_ID) & {s.id for s in STRUCTURED_SOURCES}, "source ids must be unique"
 

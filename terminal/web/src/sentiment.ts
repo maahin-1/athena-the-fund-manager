@@ -1,6 +1,6 @@
 import { el } from './panels/base';
 import { attachSuggest } from './suggest';
-import { RECENT_KEY, citation, insiderReachNote, outcomeClass, outcomeLabel, readSentiment, rememberRecent, rupees, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews, type ClaimView, type SentimentDoc } from './sentimentlogic';
+import { RECENT_KEY, attentionLines, citation, insiderReachNote, outcomeClass, outcomeLabel, readSentiment, rememberRecent, rupees, sentimentProblem, statusClass, toneClass, trustLabel, visibleNews, type ClaimView, type SentimentDoc } from './sentimentlogic';
 
 export interface SentimentHost {
   /** The symbol the user chose here, for the other pages to follow. */
@@ -242,6 +242,24 @@ export class SentimentView {
     return out;
   }
 
+  /** Attention: market-wide fear and Wikipedia page views, and the sources tried and not read, with why. Display only, and not sentiment. */
+  private attentionBox(d: SentimentDoc): HTMLElement[] {
+    const a = d.attention;
+    if (!a) return [];
+    const out: HTMLElement[] = [text('div', 'sent-section', 'Attention (India VIX from the warehouse, Wikipedia page views; tier C)')];
+    for (const line of attentionLines(a)) out.push(text('div', 'note', line));
+    if (a.wiki.ok && a.wiki.link) {
+      const link = el('a', '', `Open the article: ${a.wiki.article}`);
+      link.href = a.wiki.link;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      out.push(link);
+    }
+    if (a.off.length) out.push(text('div', 'note', `Tried and not read: ${a.off.map((o) => `${o.name} (${o.reason})`).join('; ')}.`));
+    out.push(text('div', 'note', a.caveat));
+    return out;
+  }
+
   private row(cells: string[]): HTMLElement {
     const tr = el('tr');
     for (const c of cells) tr.append(el('td', '', c));
@@ -317,6 +335,7 @@ export class SentimentView {
 
     out.push(...this.claimsBox(d));
     out.push(...this.filingsBox(d));
+    out.push(...this.attentionBox(d));
 
     out.push(text('div', 'sent-section', 'Reddit'));
     for (const n of d.social.notes) out.push(text('div', 'note', n));

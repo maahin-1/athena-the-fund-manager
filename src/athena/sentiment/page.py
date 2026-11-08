@@ -202,8 +202,9 @@ def social_rows(posts: Sequence[SocialPost], today: date) -> list[dict[str, Any]
     ]
 
 
-def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditSearch, tone: Any | None = None, evidence: EvidenceStore | None = None) -> dict[str, Any]:
-    """The document. `hub` has `fetch(symbol, company, since, until)`, `tone` is a callable from the news packet to the analyst's output (or None)."""
+def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditSearch, tone: Any | None = None, evidence: EvidenceStore | None = None, attention: Any | None = None) -> dict[str, Any]:
+    """The document. `hub` has `fetch(symbol, company, since, until)`, `tone` is a callable from the news packet to the analyst's output (or None), `attention` a callable that gives the attention
+    document (India VIX and page views, `athena.evidence.attention`) or None; a failure of it is a note on the page, never the end of it."""
     result = hub.fetch(symbol, company, today - timedelta(days=WINDOW_DAYS), today)
     rows = news_rows(result.items, company, today)
     market: list[dict[str, Any]] = []
@@ -243,10 +244,16 @@ def build_page(symbol: str, company: str, today: date, hub: Any, reddit: RedditS
     if tone is not None:
         packet = build_news_packet(symbol, company, result.items, [], today, result.notes)
         reading = tone(packet)
+    attended: dict[str, Any] | None = None
+    if attention is not None:
+        try:
+            attended = attention()
+        except Exception as exc:  # noqa: BLE001 - attention is an addition
+            notes.append(f"attention unavailable: {type(exc).__name__}")
     return {
         "symbol": symbol, "company": company, "as_of": today.isoformat(), "window_days": WINDOW_DAYS,
         "news": {"items": rows, "notes": notes, "counts": {"all": len(rows), "used": sum(r["used"] for r in rows), "routine": sum(r["routine"] for r in rows), "press": sum(r["source"] != "nse" for r in rows)}},
-        "market": market, "sources": sources, "filings": boxes, "claims": claims, "social": social, "tone": reading, "caveat": NOT_TESTED,
+        "market": market, "sources": sources, "filings": boxes, "claims": claims, "attention": attended, "social": social, "tone": reading, "caveat": NOT_TESTED,
     }
 
 
@@ -300,7 +307,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     from athena.evidence.store import DEFAULT_PATH as EVIDENCE_PATH
 
     evidence = EvidenceStore(EVIDENCE_PATH, wait_seconds=5.0, read_only=True) if EVIDENCE_PATH.is_file() else None
-    doc = build_page(symbol, _company(Path(args.warehouse), symbol), date.today(), hub, reddit, tone, evidence)
+    company = _company(Path(args.warehouse), symbol)
+
+    def attention() -> dict[str, Any]:
+        from athena.evidence.attention import VIX_NAME, attention as read_attention
+        from athena.warehouse.warehouse import Warehouse
+
+        w = Warehouse(Path(args.warehouse), read_only=True, wait_seconds=5)
+        held = {n.lower(): n for n in w.index_names()}
+        return read_attention(symbol, company, date.today(), w.index_close(held[VIX_NAME.lower()]) if VIX_NAME.lower() in held else {})
+
+    doc = build_page(symbol, company, date.today(), hub, reddit, tone, evidence, attention)
     sys.stdout.write(json.dumps(doc, ensure_ascii=True, allow_nan=False, default=str))
     return 0
 

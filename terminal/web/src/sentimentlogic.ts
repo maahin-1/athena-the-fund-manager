@@ -154,6 +154,14 @@ export interface Tone {
   coverage: string;
 }
 
+/** The Attention box: market-wide fear (India VIX) and how much people looked the company up (Wikipedia page views). Attention is not sentiment and feeds nothing. */
+export interface Attention {
+  vix: { ok: boolean; reason: string; day: string; level: number; percentile1y: number; percentileAll: number; historyFrom: string; change20d: number | null };
+  wiki: { ok: boolean; reason: string; article: string; description: string; link: string; recent: number; median: number; ratio: number | null; peakDay: string; peakViews: number; spikes: string[]; to: string };
+  off: { name: string; reason: string }[];
+  caveat: string;
+}
+
 export interface SentimentDoc {
   symbol: string;
   company: string;
@@ -164,6 +172,7 @@ export interface SentimentDoc {
   sources: SourceRow[];
   filings: Filings;
   claims: Claims;
+  attention: Attention | null;
   social: { enabled: boolean; notes: string[]; items: PostRow[]; bySubreddit: Record<string, number> };
   tone: Tone | null;
   caveat: string;
@@ -189,6 +198,41 @@ const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Numbe
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 /** A link the page may open: only http and https. */
 export const safeLink = (v: unknown): string => (typeof v === 'string' && /^https?:\/\//i.test(v) ? v : '');
+
+/** The attention document, or null when the page carries none. A part that is off keeps its reason; a link is shown only when it is http or https. */
+export function readAttention(raw: unknown): Attention | null {
+  if (!isObject(raw) || !isObject(raw.vix) || !isObject(raw.wikipedia)) return null;
+  const v = raw.vix;
+  const w = raw.wikipedia;
+  return {
+    vix: { ok: v.status === 'ok', reason: str(v.reason), day: str(v.day), level: num(v.level), percentile1y: num(v.percentile_1y), percentileAll: num(v.percentile_all), historyFrom: str(v.history_from), change20d: numOrNull(v.change_20d_points) },
+    wiki: {
+      ok: w.status === 'ok', reason: str(w.reason), article: str(w.article), description: str(w.description), link: safeLink(w.link), recent: num(w.last_7_days_daily_average), median: num(w.median_daily_views_before),
+      ratio: numOrNull(w.ratio), peakDay: str(w.peak_day), peakViews: num(w.peak_views), spikes: strings(w.days_above_3x_median), to: str(w.to),
+    },
+    off: (Array.isArray(raw.off) ? raw.off.filter(isObject) : []).map((o) => ({ name: str(o.name), reason: str(o.reason) })),
+    caveat: str(raw.caveat),
+  };
+}
+
+const grouped = (n: number): string => Math.round(n).toLocaleString('en-IN');
+
+/** The attention box in plain sentences: what the numbers are, over what window, and what they are not. */
+export function attentionLines(a: Attention): string[] {
+  const out: string[] = [];
+  const v = a.vix;
+  if (v.ok) {
+    const move = v.change20d === null ? '' : `, ${v.change20d >= 0 ? 'up' : 'down'} ${Math.abs(v.change20d).toFixed(2)} points in 20 trading days`;
+    out.push(`India VIX ${v.level.toFixed(2)} on ${v.day}: at or above ${v.percentile1y.toFixed(0)}% of days in the last year and ${v.percentileAll.toFixed(0)}% of all days since ${v.historyFrom}${move}. It measures fear across the whole market, not this company.`);
+  } else out.push(`India VIX is not shown: ${v.reason}`);
+  const w = a.wiki;
+  if (w.ok) {
+    const times = w.ratio === null ? '' : ` (${w.ratio.toFixed(2)} times)`;
+    const spikes = w.spikes.length ? ` Days above three times the usual: ${w.spikes.join(', ')}.` : '';
+    out.push(`Wikipedia page views for "${w.article}"${w.description ? ` (${w.description})` : ''}: ${grouped(w.recent)} a day over the last 7 days against a median of ${grouped(w.median)} over the 90 days before${times}; the most in one day was ${grouped(w.peakViews)} on ${w.peakDay}.${spikes}`);
+  } else out.push(`Page views are not shown: ${w.reason}`);
+  return out;
+}
 
 export function readSentiment(raw: unknown): SentimentDoc | null {
   if (!isObject(raw) || typeof raw.symbol !== 'string' || !isObject(raw.news) || !isObject(raw.social)) return null;
@@ -244,7 +288,7 @@ export function readSentiment(raw: unknown): SentimentDoc | null {
   return {
     symbol: raw.symbol, company: str(raw.company), asOf: str(raw.as_of), windowDays: num(raw.window_days) || 30,
     news: { items, notes: strings(raw.news.notes), counts: { all: num(counts.all), used: num(counts.used), routine: num(counts.routine), press: num(counts.press) } },
-    market, sources, filings, claims,
+    market, sources, filings, claims, attention: readAttention(raw.attention),
     social: { enabled: raw.social.enabled === true, notes: strings(raw.social.notes), items: posts, bySubreddit: by },
     tone: tone && tone.signal ? tone : null,
     caveat: str(raw.caveat),
