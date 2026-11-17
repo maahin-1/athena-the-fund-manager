@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-17",
+  "disposition": "revision2 verification/governance corrections required; T6 closed; T8 paused",
+  "project_head": "37f1fc19846a178083d9ced7a7a25aeffe65b1f9",
+  "reviewer_tests": {
+    "passed": 12,
+    "failed": 3,
+    "total": 15,
+    "exit_code": 1,
+    "existing_manifest_tests": 9,
+    "reviewer_controls": 3,
+    "new_negative_regressions": 3,
+    "yaml_parser": "JSON adapter over valid JSON-compatible YAML; actual checker functions exercised; no YAML parser coverage claimed"
+  },
+  "reproduced": [
+    "baseline deletion accepted",
+    "nested untrusted event expression accepted",
+    "wrong pin hidden by approved pin elsewhere"
+  ],
+  "source_inspected": [
+    "final gate missing source roots and reusing Work after failure",
+    "maintenance manifest baseline mismatch",
+    "Rust gate permits absent child observations",
+    "hosted checkout materializes inherited excluded entry",
+    "solo approval model applies globally; merge-first bootstrap not approved"
+  ],
+  "delta_archive": {
+    "files": 237,
+    "sha256": "dbeefad3ee215d4f8c0daeb44b256f2944d0a34530d5a8ef1d97d9c4202b3a7f"
+  },
+  "evidence_archive": {
+    "files": 1659,
+    "sha256": "fb12694ef3924d5ba3306787661a732343e5a36483aa156b8ba23d3d8d755dd2"
+  },
+  "project_commits_created": 0,
+  "application_code_changed": false,
+  "packages_installed": false
+}

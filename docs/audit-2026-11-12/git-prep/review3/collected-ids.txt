@@ -1,0 +1,8 @@
+docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_valid_workflow_control
+docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_reject_inherited_remote_override
+docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_reject_inherited_ref_override
+docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_sparse_exclusion_preserves_filename[blocked]
+docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_sparse_exclusion_preserves_filename[blocked ]
+docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_comparator_never_opens_protected_source_alias
+
+6 tests collected in 0.02s

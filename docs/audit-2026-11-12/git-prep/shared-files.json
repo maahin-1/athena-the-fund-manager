@@ -1,0 +1,473 @@
+{
+ "docs/brokers/README.md": {
+  "commit": "C10",
+  "batches": [
+   "Batch 2 WP03",
+   "Batch 2 review corrections"
+  ]
+ },
+ "src/athena/agents/base.py": {
+  "commit": "C06",
+  "batches": [
+   "Batch 4 WP05",
+   "Batch 4 WP06"
+  ]
+ },
+ "src/athena/brokers/cli.py": {
+  "commit": "C10",
+  "batches": [
+   "Batch 2 WP03",
+   "Batch 2 review corrections"
+  ]
+ },
+ "src/athena/brokers/desk.py": {
+  "commit": "C10",
+  "batches": [
+   "Batch 2 WP03",
+   "Batch 2 review corrections"
+  ]
+ },
+ "src/athena/council/debate.py": {
+  "commit": "C06",
+  "batches": [
+   "WP01 A4",
+   "Batch 4 WP05",
+   "Batch 4 WP06"
+  ]
+ },
+ "src/athena/council/evidence.py": {
+  "commit": "C06",
+  "batches": [
+   "WP01 A4",
+   "Batch 4 WP05"
+  ]
+ },
+ "src/athena/council/judge.py": {
+  "commit": "C06",
+  "batches": [
+   "WP01 A4",
+   "Batch 4 WP05",
+   "Batch 4 WP06"
+  ]
+ },
+ "src/athena/evaluation/cohort.py": {
+  "commit": "C03",
+  "batches": [
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 3 review relabel"
+  ]
+ },
+ "src/athena/evaluation/pit_score.py": {
+  "commit": "C05",
+  "batches": [
+   "WP01 Q6",
+   "Batch 2 WP02"
+  ]
+ },
+ "src/athena/evaluation/policy.py": {
+  "commit": "C03",
+  "batches": [
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 3 review relabel"
+  ]
+ },
+ "src/athena/forensic/agent.py": {
+  "commit": "C09",
+  "batches": [
+   "Batch 4 WP05",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/forensic/scoring.py": {
+  "commit": "C09",
+  "batches": [
+   "Batch 4 WP05",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/forensic/store.py": {
+  "commit": "C09",
+  "batches": [
+   "Batch 2 WP02",
+   "Batch 4 WP05",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/forensic/supervisor.py": {
+  "commit": "C09",
+  "batches": [
+   "Batch 2 WP02",
+   "Batch 4 WP05"
+  ]
+ },
+ "src/athena/forensic/tools.py": {
+  "commit": "C09",
+  "batches": [
+   "Batch 4 WP05",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/forensic/verify.py": {
+  "commit": "C09",
+  "batches": [
+   "Batch 4 WP05",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/llm/client.py": {
+  "commit": "C07",
+  "batches": [
+   "Batch 4 WP06",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/llm/envelope.py": {
+  "commit": "C06",
+  "batches": [
+   "Batch 4 WP06",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/llm/router.py": {
+  "commit": "C07",
+  "batches": [
+   "Batch 4 WP06",
+   "Batch 4 review corrections"
+  ]
+ },
+ "src/athena/ops/supervisor.py": {
+  "commit": "C04",
+  "batches": [
+   "WP01 T4 and its follow-ups",
+   "Batch 5 WP07 T5"
+  ]
+ },
+ "src/athena/timing.py": {
+  "commit": "C05",
+  "batches": [
+   "Batch 2 WP02",
+   "Batch 2 review corrections"
+  ]
+ },
+ "src/athena/valuation/calibrate.py": {
+  "commit": "C03",
+  "batches": [
+   "Batch 3 WP04 (steps 1-3)",
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 3 review relabel"
+  ]
+ },
+ "src/athena/valuation/study.py": {
+  "commit": "C03",
+  "batches": [
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 3 review relabel"
+  ]
+ },
+ "src/athena/verdicts/decisions.py": {
+  "commit": "C05",
+  "batches": [
+   "Batch 2 WP02",
+   "Batch 2 review corrections"
+  ]
+ },
+ "src/athena/verdicts/runner.py": {
+  "commit": "C08",
+  "batches": [
+   "Batch 2 WP02",
+   "Batch 4 WP06"
+  ]
+ },
+ "src/athena/warehouse/chart_bars.py": {
+  "commit": "C02",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections"
+  ]
+ },
+ "src/athena/warehouse/generations.py": {
+  "commit": "C02",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections"
+  ]
+ },
+ "src/athena/warehouse/warehouse.py": {
+  "commit": "C02",
+  "batches": [
+   "Batch 2 WP02",
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections"
+  ]
+ },
+ "terminal/src/analyse_worker.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 second review (five gaps)",
+   "Batch 5 WP07 T6"
+  ]
+ },
+ "terminal/src/angel/stream.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T3 review corrections",
+   "Batch 5 WP07 T3 follow-up (T3-C1, T3-C2, T5-F assertion)"
+  ]
+ },
+ "terminal/src/bars.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 third review (five paths)",
+   "Batch 5 WP07 T6 second review (five gaps)"
+  ]
+ },
+ "terminal/src/bounded.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 fourth review (four paths)",
+   "Batch 5 WP07 T6 third review (five paths)",
+   "Batch 5 WP07 T6 second review (five gaps)",
+   "Batch 5 WP07 T6"
+  ]
+ },
+ "terminal/src/bounded_tests.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 fourth review (four paths)",
+   "Batch 5 WP07 T6 third review (five paths)",
+   "Batch 5 WP07 T6 second review (five gaps)",
+   "Batch 5 WP07 T6"
+  ]
+ },
+ "terminal/src/deriv_quotes.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections"
+  ]
+ },
+ "terminal/src/flow_board.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 third review (five paths)",
+   "Batch 5 WP07 T6 second review (five gaps)"
+  ]
+ },
+ "terminal/src/fundamentals.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 follow-up corrections",
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 third review (five paths)",
+   "Batch 5 WP07 T6 second review (five gaps)"
+  ]
+ },
+ "terminal/src/helper.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 third review (five paths)",
+   "Batch 5 WP07 T6 second review (five gaps)",
+   "Batch 5 WP07 T6"
+  ]
+ },
+ "terminal/src/main.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 second review (five gaps)",
+   "Batch 5 WP07 T6"
+  ]
+ },
+ "terminal/src/search.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T5 follow-up corrections"
+  ]
+ },
+ "terminal/src/server.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections",
+   "Batch 5 WP07 T6 review corrections",
+   "Batch 5 WP07 T6 third review (five paths)",
+   "Batch 5 WP07 T6 second review (five gaps)",
+   "Batch 5 WP07 T6"
+  ]
+ },
+ "terminal/src/snapshot.rs": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T5 follow-up corrections"
+  ]
+ },
+ "terminal/web/src/feed.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections"
+  ]
+ },
+ "terminal/web/src/options/assemble.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections",
+   "Batch 5 WP07 T3 follow-up (T3-C1, T3-C2, T5-F assertion)"
+  ]
+ },
+ "terminal/web/src/options/chain.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections"
+  ]
+ },
+ "terminal/web/src/options/livefeed.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections"
+  ]
+ },
+ "terminal/web/src/options/quality.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections",
+   "Batch 5 WP07 T3 follow-up (T3-C1, T3-C2, T5-F assertion)"
+  ]
+ },
+ "terminal/web/src/provenance.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T5 follow-up corrections"
+  ]
+ },
+ "terminal/web/src/style.css": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T3"
+  ]
+ },
+ "terminal/web/test/datasource-fixtures.test.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T5 follow-up corrections"
+  ]
+ },
+ "terminal/web/test/fixtures/data-source.cases.json": {
+  "commit": "C11",
+  "batches": [
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T5 follow-up corrections"
+  ]
+ },
+ "terminal/web/test/optionquality.test.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections",
+   "Batch 5 WP07 T3 follow-up (T3-C1, T3-C2, T5-F assertion)"
+  ]
+ },
+ "terminal/web/test/optionsession.test.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3 review corrections",
+   "Batch 5 WP07 T3 follow-up (T3-C1, T3-C2, T5-F assertion)"
+  ]
+ },
+ "terminal/web/test/optionslive.test.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3",
+   "Batch 5 WP07 T3 review corrections"
+  ]
+ },
+ "terminal/web/test/optiontimes.test.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T3 review corrections",
+   "Batch 5 WP07 T3 follow-up (T3-C1, T3-C2, T5-F assertion)"
+  ]
+ },
+ "terminal/web/test/provenance.test.ts": {
+  "commit": "C13",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections",
+   "Batch 5 WP07 T5 follow-up corrections",
+   "Batch 5 WP07 T3 follow-up (T3-C1, T3-C2, T5-F assertion)"
+  ]
+ },
+ "tests/test_brokers_kill_race.py": {
+  "commit": "C10",
+  "batches": [
+   "Batch 2 tests (new)",
+   "Batch 2 review corrections"
+  ]
+ },
+ "tests/test_cohort_walkforward.py": {
+  "commit": "C03",
+  "batches": [
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 3 review relabel"
+  ]
+ },
+ "tests/test_llm_envelope.py": {
+  "commit": "C08",
+  "batches": [
+   "Batch 4 WP06",
+   "Batch 4 review corrections"
+  ]
+ },
+ "tests/test_snapshot_generations.py": {
+  "commit": "C02",
+  "batches": [
+   "Batch 5 WP07 T5",
+   "Batch 5 WP07 T5 review corrections"
+  ]
+ },
+ "tests/test_study_policy.py": {
+  "commit": "C03",
+  "batches": [
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 3 review relabel"
+  ]
+ },
+ "tests/test_val_dated_inputs.py": {
+  "commit": "C03",
+  "batches": [
+   "Batch 3 WP04 (steps 4-5)",
+   "Batch 3 review relabel"
+  ]
+ },
+ "tests/test_verdict_settlement.py": {
+  "commit": "C05",
+  "batches": [
+   "Batch 2 tests (new)",
+   "Batch 2 review corrections"
+  ]
+ }
+}

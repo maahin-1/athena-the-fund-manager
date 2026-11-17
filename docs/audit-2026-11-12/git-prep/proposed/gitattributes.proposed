@@ -1,0 +1,35 @@
+# Line endings, stated explicitly (audit integration, 17 November 2026). Proposed as the FIRST commit of the integration branch, so every later commit is read under it.
+# (This copy is named gitattributes.proposed so that it has no effect where it sits; the commit adds it as .gitattributes at the repository root.)
+#
+# Scope: ONLY the names below. A path that matches no rule keeps following each contributor's core.autocrlf, exactly as before; nothing is normalised everywhere.
+# Checked on the baseline 37f1fc1: every committed text blob is already LF (951 LF, 60 without any line ending, none with CR), so these rules rewrite no existing blob.
+# Protected environment files are not named here and no rule here matches them by design (nothing below is a catch-all).
+
+# Source, configuration and documents: LF in the repository and in every checkout.
+*.py text eol=lf
+*.rs text eol=lf
+*.ts text eol=lf
+*.mjs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+/LICENSE text eol=lf
+/NOTICE text eol=lf
+/.gitignore text eol=lf
+/.gitattributes text eol=lf
+
+# PowerShell scripts: CRLF in checkouts (Windows PowerShell 5.1 is the tested interpreter; the repository stores LF).
+*.ps1 text eol=crlf
+
+# Byte-exact: hashes recorded in the audit records are over these exact bytes, so nothing converts them, and `git diff --check` does not judge them: trailing whitespace in a patch's context lines or in a recorded log is content, not a defect (`-whitespace`).
+*.patch -text -whitespace
+/docs/audit-2026-11-12/baselines/** -text !eol -whitespace
+/docs/audit-2026-11-12/agent-probes/** -text !eol -whitespace
+/docs/audit-2026-11-12/git-prep/runs/** -text !eol -whitespace
+/docs/audit-2026-11-12/maintenance-proposal/runs/** -text !eol -whitespace

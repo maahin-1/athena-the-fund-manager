@@ -1,0 +1,52 @@
+.F.F.F.........                                                          [100%]
+================================== FAILURES ===================================
+______________ test_unplanned_baseline_deletion_must_be_rejected ______________
+
+tmp_path = WindowsPath('D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/git-prep/review2/synthetic-cases/test_unplanned_baseline_deleti0')
+
+    def test_unplanned_baseline_deletion_must_be_rejected(tmp_path):
+        rc, report = make_comparison(tmp_path, True)
+>       assert rc == 1, f"Unplanned baseline deletion was accepted: {report}"
+E       AssertionError: Unplanned baseline deletion was accepted: {'expected_files': 1, 'accepted_by_class': {'exact': 1}, 'accepted': 1, 'mismatched': [], 'missing': [], 'source_no_longer_matches_manifest': [], 'candidate_tracked_files': 1, 'unexpected_tracked': [], 'baseline_files_changed_without_being_expected': [], 'protected_names_skipped_not_opened': 0, 'ok': True}
+E       assert 0 == 1
+
+docs\audit-2026-11-12\git-prep\review2\test_review_regressions.py:60: AssertionError
+---------------------------- Captured stdout call -----------------------------
+{"expected_files": 1, "accepted_by_class": {"exact": 1}, "accepted": 1, "mismatched": 0, "missing": 0, "source_no_longer_matches_manifest": 0, "candidate_tracked_files": 1, "unexpected_tracked": 0, "baseline_files_changed_without_being_expected": 0, "protected_names_skipped_not_opened": 0, "ok": true}
+________________ test_nested_event_expression_must_be_rejected ________________
+
+tmp_path = WindowsPath('D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/git-prep/review2/synthetic-cases/test_nested_event_expression_m0')
+workflow_checker = <module 'review_workflow_checker' from 'D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\maintenance-proposal\\files\\scripts\\ci\\check_workflows.py'>
+
+    def test_nested_event_expression_must_be_rejected(tmp_path, workflow_checker):
+        path = tmp_path / "workflow.yml"
+        path.write_text(json.dumps(workflow(run='echo "${{ format(\'{0}\', github.event.pull_request.title) }}"')))
+        problems = workflow_checker.check_file(path)
+>       assert problems, "Nested untrusted event interpolation passed the checker"
+E       AssertionError: Nested untrusted event interpolation passed the checker
+E       assert []
+
+docs\audit-2026-11-12\git-prep\review2\test_review_regressions.py:93: AssertionError
+_________ test_each_pin_must_match_even_when_approved_pin_also_exists _________
+
+tmp_path = WindowsPath('D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/git-prep/review2/synthetic-cases/test_each_pin_must_match_even_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000029F695B2690>
+workflow_checker = <module 'review_workflow_checker' from 'D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\maintenance-proposal\\files\\scripts\\ci\\check_workflows.py'>
+
+    def test_each_pin_must_match_even_when_approved_pin_also_exists(tmp_path, monkeypatch, workflow_checker):
+        prop, repo, pins = proposal_fixture(tmp_path)
+        (prop / ".github/workflows/ci.yml").write_text(json.dumps(workflow(include_bad=True)))
+        mod = load("review_check_proposal_bad", PROPOSAL / "checks/check_proposal.py")
+        rc = check_proposal(mod, monkeypatch, prop, repo, pins)
+>       assert rc == 1, "Wrong checkout SHA was hidden by an approved checkout elsewhere in the same document"
+E       AssertionError: Wrong checkout SHA was hidden by an approved checkout elsewhere in the same document
+E       assert 0 == 1
+
+docs\audit-2026-11-12\git-prep\review2\test_review_regressions.py:135: AssertionError
+---------------------------- Captured stdout call -----------------------------
+proposal static checks: ok
+=========================== short test summary info ===========================
+FAILED docs/audit-2026-11-12/git-prep/review2/test_review_regressions.py::test_unplanned_baseline_deletion_must_be_rejected
+FAILED docs/audit-2026-11-12/git-prep/review2/test_review_regressions.py::test_nested_event_expression_must_be_rejected
+FAILED docs/audit-2026-11-12/git-prep/review2/test_review_regressions.py::test_each_pin_must_match_even_when_approved_pin_also_exists
+3 failed, 12 passed in 3.12s
