@@ -16,8 +16,8 @@ from athena.contracts import AthenaError
 from athena.forensic.budget import BudgetExhausted, Client
 from athena.forensic.model import ANSWER, FLAG, KINDS, OBSERVATION, OPEN, QUESTION, REJECTED, Case, Entry, LaneSpec
 from athena.forensic.store import ForensicStore
-from athena.forensic.tools import Registry, ToolContext, ToolError, shown
-from athena.forensic.verify import contradiction_paths, verify_entry
+from athena.forensic.tools import MAX_SHOWN_CHARS, Registry, ToolContext, ToolError, full_text, shown
+from athena.forensic.verify import checked_parts, contradiction_paths, verify_entry
 from athena.guard.scope import advice_in
 
 STALL_STEPS = 3  # steps in a row that produce nothing end a run
@@ -33,6 +33,13 @@ FIELD_GUIDE = (
     '- QUESTION: {"to": "<lane>", "text": "a specific request another lane can answer from its own data"}\n'
     '- ANSWER: {"answers": "L5", "text": "...", "evidence": ["E4"], "quote"?: "...", "cannot_determine"?: true}  (an answer that finds nothing says cannot_determine; that is not evidence of wrongdoing)\n'
 )
+
+
+REOPEN_TOOL = "evidence.read"  # every lane may reopen what a result cut: it reads this case's own stored evidence and writes nothing
+
+
+def lane_tools(lane: LaneSpec) -> tuple[str, ...]:
+    return lane.tools if REOPEN_TOOL in lane.tools else (*lane.tools, REOPEN_TOOL)
 
 
 def system_prompt(lane: LaneSpec, registry: Registry) -> str:
@@ -51,7 +58,8 @@ def system_prompt(lane: LaneSpec, registry: Registry) -> str:
         '- {"action": "note", "text": "something worth remembering for the next round"}\n'
         '- {"action": "finish", "summary": "what you looked at and what you did not get to"}\n'
         f"{FIELD_GUIDE}"
-        f"Tools you may call:\n{registry.describe(lane.tools)}\n"
+        f"Tools you may call:\n{registry.describe(lane_tools(lane))}\n"
+        "A result is shown cut when it is long; what was cut you have not read, so reopen it with evidence.read before you rely on it, and say in your summary what you did not get to. "
         "Look at what your notebook says you already checked and do not repeat it. Answer questions put to you before opening new lines. Finish when you have nothing new."
     )
 
@@ -98,6 +106,53 @@ def user_prompt(case: Case, lane: LaneSpec, brief: str, store: ForensicStore, in
 
 
 @dataclass
+class _Queued:
+    """A tool result that has been put in the lane's history and has not yet gone to the model: `line` is the history line that carries it, and (`start`, `end`) of `total` characters of the stored result is
+    what that line shows. It is credited as shown only once a prompt that contains `line` has reached the model."""
+
+    line: str
+    ev_id: str
+    start: int
+    end: int
+    total: int
+    via: str
+    flagged: bool = False  # already recorded as possibly shown (a call that failed after it may have been sent)
+
+
+class _Dispatch:
+    """The lane's model as the agent sees it, noting whether a prompt reached it. A reply proves the prompt was delivered. A refusal by the case budget happens before anything is sent. Any other failure
+    leaves it unknown whether the request went out, so it is recorded as possibly shown, never as shown."""
+
+    def __init__(self, client: Client):
+        self._client = client
+        self.delivered = False
+        self.uncertain = False
+
+    def complete(self, system: str, user: str) -> str:
+        try:
+            reply = self._client.complete(system, user)
+        except BudgetExhausted:
+            raise
+        except BaseException:
+            self.uncertain = True
+            raise
+        self.delivered = True
+        return reply
+
+
+def _settle(store: ForensicStore, case: Case, lane: str, queued: list[_Queued], prompt: str, sent: _Dispatch) -> None:
+    """Credit what the model was actually given. A queued result counts as shown only if the line that carries it is in a prompt that was delivered; if the call failed in a way that leaves delivery unknown
+    it is recorded as possibly shown, and stays queued for a later prompt to settle; if the prompt was refused before dispatch, or the result never reached a prompt at all, it stays unread."""
+    for item in [q for q in queued if q.line in prompt]:
+        if sent.delivered:
+            store.add_exposure(case.case_id, lane, item.ev_id, item.start, item.end, item.total, item.via)
+            queued.remove(item)
+        elif sent.uncertain and not item.flagged:
+            store.add_exposure(case.case_id, lane, item.ev_id, item.start, item.end, item.total, "possibly")
+            item.flagged = True
+
+
+@dataclass
 class AgentResult:
     lane: str
     status: str  # finished | step_cap | budget | failed
@@ -110,6 +165,7 @@ class AgentResult:
 
 def submit(store: ForensicStore, case: Case, lane: str, round_no: int, kind: str, body: dict[str, Any]) -> tuple[str, str | None]:
     """Verify a proposed entry and keep it: (entry id, None) when kept, (entry id, reason) when rejected (kept with that status so it is counted)."""
+    body = {k: v for k, v in body.items() if k != "checked"}  # what was checked is written by code below, never taken from the model
     reason = verify_entry(kind, body, lambda ev: store.evidence(case.case_id, ev))
     if reason is None and kind in (ANSWER,):
         question = store.entry(case.case_id, str(body.get("answers")))
@@ -125,6 +181,8 @@ def submit(store: ForensicStore, case: Case, lane: str, round_no: int, kind: str
             reason = f"you already wrote this flag as {same.id}"
     if reason is not None:
         return store.add_entry(case.case_id, kind, lane, round_no, body, status=REJECTED, reason=reason), reason
+    if kind in (OBSERVATION, ANSWER, FLAG):
+        body = {**body, "checked": checked_parts(kind, body, lambda ev: store.evidence(case.case_id, ev))}
     entry_id = store.add_entry(case.case_id, kind, lane, round_no, body, status=OPEN)
     if kind == ANSWER:
         store.set_status(case.case_id, str(body["answers"]), "answered", f"answered by {entry_id}")
@@ -180,20 +238,25 @@ def run_agent(
     ctx = ToolContext(case, store, lane.name)
     result = AgentResult(lane.name, "step_cap")
     history: list[str] = []
+    queued: list[_Queued] = []  # results the lane has not yet been given: whatever is left here when the run ends was never shown to a model
     wasted = 0  # steps in a row that produced nothing: a rejected entry, a refused or failed tool
     steps = step_cap or lane.step_cap
     for step in range(1, steps + 1):
         if wasted >= STALL_STEPS:
             result.status, result.note = "stalled", f"{wasted} steps in a row produced nothing; the run was ended"
             return result
+        prompt = user_prompt(case, lane, brief, store, inbox, history, pace_line(step, steps, result.written + result.rejected))
+        sent = _Dispatch(client)
         try:
-            action, problem = _parse(client, system, user_prompt(case, lane, brief, store, inbox, history, pace_line(step, steps, result.written + result.rejected)))
+            action, problem = _parse(sent, system, prompt)
         except BudgetExhausted as exc:
             result.status, result.note = "budget", str(exc)
             return result
         except AthenaError as exc:  # every model failed
             result.status, result.note = "failed", str(exc)[:200]
             return result
+        finally:
+            _settle(store, case, lane.name, queued, prompt, sent)
         result.steps = step
         if action is None:
             result.status, result.note = "failed", f"the reply could not be read twice ({problem})"
@@ -210,14 +273,28 @@ def run_agent(
             wasted = 0
         elif kind == "tool":
             name = str(action.get("tool", ""))
-            if name not in lane.tools:
+            if name not in lane_tools(lane):
                 history.append(f"step {step}: tool {name!r} is not one of yours")
                 wasted += 1
                 continue
             args = action.get("args") if isinstance(action.get("args"), dict) else {}
             try:
                 data, ev_id = registry.call(name, args, ctx)
-                history.append(f"step {step}: {name}({json.dumps(args, ensure_ascii=False)}) -> {ev_id or 'ledger'}: {untrusted(f'tool {name}', shown(data, ev_id))}")
+                span: tuple[str, int, int, int, str] | None = None  # (evidence id, start, end, total, how) of the stored result the history line will show
+                if name == REOPEN_TOOL:  # a reopened slice is shown as its own text, whole (it is already bounded)
+                    seen = f"{data['id']} characters {data['offset']} to {data['offset'] + len(data['text'])} of {data['total_chars']}" + (f" (more from offset {data['next_offset']})" if data["more"] else " (the end)") + f":\n{data['text']}"
+                    if not data["path"]:  # a slice of one field is not a slice of the stored payload, so it counts as reading none of the rest
+                        span = (str(data["id"]), int(data["offset"]), int(data["offset"]) + len(data["text"]), int(data["total_chars"]), "evidence.read")
+                else:
+                    seen = shown(data, ev_id)
+                    if ev_id:  # what the history line shows of the stored result: the whole of it, or the first MAX_SHOWN_CHARS characters
+                        total = len(full_text(data))
+                        span = (ev_id, 0, min(total, MAX_SHOWN_CHARS), total, "tool")
+                line = f"step {step}: {name}({json.dumps(args, ensure_ascii=False)}) -> {ev_id or 'ledger'}: {untrusted(f'tool {name}', seen)}"
+                history.append(line)
+                if span is not None:  # queued, not shown: the result is registered with nothing read, and credited only when a prompt carrying `line` reaches the model (see `_settle`)
+                    store.add_exposure(case.case_id, lane.name, span[0], span[1], span[1], span[3], "queued")
+                    queued.append(_Queued(line, *span))
                 wasted = 0
             except ToolError as exc:
                 history.append(f"step {step}: {name} failed: {exc}")

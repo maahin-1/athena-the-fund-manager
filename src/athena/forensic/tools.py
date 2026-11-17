@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from athena.contracts import AthenaError
+from athena.forensic import lineage
 from athena.forensic.model import Case
 from athena.forensic.store import ForensicStore
 
@@ -66,16 +67,61 @@ class Registry:
             raise ToolError(f"{name}: bad arguments or no result ({type(exc).__name__}: {exc})") from exc
         if not tool.evidence:
             return result, None
-        ev_id = ctx.store.find_evidence(ctx.case.case_id, name, args) or ctx.store.add_evidence(ctx.case.case_id, ctx.lane, name, args, result)
-        return result, ev_id
+        found = ctx.store.find_evidence(ctx.case.case_id, name, args)
+        if found:
+            return result, found
+        sources = [s.to_dict() for s in lineage.sources_of(ctx.case.target, name, args, result)]
+        return result, ctx.store.add_evidence(ctx.case.case_id, ctx.lane, name, args, result, lineage=sources)
+
+
+def full_text(result: Any) -> str:
+    """The whole result as the store keeps it, as text: the string whose characters `shown` cuts and `evidence.read` reopens."""
+    return json.dumps(result, ensure_ascii=False, default=str)
 
 
 def shown(result: Any, ev_id: str | None) -> str:
-    """The result as an agent sees it: JSON, cut to a size a prompt can carry, with the evidence id that holds the whole."""
-    text = json.dumps(result, ensure_ascii=False, default=str)
+    """The result as an agent sees it: JSON, cut to a size a prompt can carry, with the evidence id that holds the whole and how to reopen the rest. What was cut was not seen."""
+    text = full_text(result)
     if len(text) <= MAX_SHOWN_CHARS:
         return text
-    return text[:MAX_SHOWN_CHARS] + f' ... (cut, {len(text)} characters in all' + (f"; {ev_id} holds all of it)" if ev_id else ")")
+    reopen = f"; {ev_id} holds all of it: reopen the rest with evidence.read, e.g. {{\"id\": \"{ev_id}\", \"offset\": {MAX_SHOWN_CHARS}}}" if ev_id else ""
+    return text[:MAX_SHOWN_CHARS] + f" ... (cut, {len(text)} characters in all{reopen}; the cut part has not been shown to you)"
+
+
+READ_LIMIT = 2000  # characters of a stored result one `evidence.read` returns: a slice, never more than a prompt can carry whatever is asked
+
+
+def _node(data: Any, path: str) -> Any:
+    node = data
+    for part in path.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        elif isinstance(node, list) and part.lstrip("-").isdigit() and -len(node) <= int(part) < len(node):
+            node = node[int(part)]
+        else:
+            raise ToolError(f"no field {path!r} in that result (stopped at {part!r})")
+    return node
+
+
+def _evidence_read(ctx: ToolContext, args: dict[str, Any]) -> Any:
+    """A bounded slice of a stored result: the whole payload's text from `offset`, or the text of the field at `path`. Reading it is not showing it: the tool records nothing about what a lane has seen, because a
+    slice returned here may never reach a model. The agent loop credits a slice as shown only once a prompt that carries it has been delivered (`athena.forensic.agent`)."""
+    ev_id = str(args["id"])
+    row = ctx.store.evidence(ctx.case.case_id, ev_id)
+    if row is None:
+        raise ToolError(f"no evidence {ev_id!r} in this case")
+    offset, limit = int(args.get("offset", 0)), min(int(args.get("limit", READ_LIMIT)), READ_LIMIT)
+    if offset < 0 or limit < 1:
+        raise ToolError("offset must be 0 or more and limit at least 1")
+    path = str(args["path"]) if args.get("path") else None
+    if path:
+        node = _node(row["result"], path)
+        text = node if isinstance(node, str) else full_text(node)
+    else:
+        text = full_text(row["result"])
+    piece = text[offset : offset + limit]
+    end = offset + len(piece)
+    return {"id": ev_id, "path": path, "offset": offset, "total_chars": len(text), "text": piece, "more": end < len(text), "next_offset": end if end < len(text) else None}
 
 
 def _ledger_read(ctx: ToolContext, args: dict[str, Any]) -> Any:
@@ -91,6 +137,8 @@ def base_tools() -> list[Tool]:
     return [
         Tool("ledger.read", "the shared findings so far (id, kind, author, status, text)", 'kind?: "FLAG"|"OBSERVATION"|"QUESTION"|"ANSWER", author?, status?', _ledger_read, evidence=False),
         Tool("notes.read", "your own notebook for this case", "", _notes_read, evidence=False),
+        Tool("evidence.read", "a slice of a stored result that was cut when shown (up to 2000 characters), from an offset or from one field; what you have not been shown, you have not examined",
+             'id: an evidence id like E3, offset?: characters to skip (the next_offset of the last slice), path?: a dotted field like pages.2.text', _evidence_read, evidence=False),
     ]
 
 

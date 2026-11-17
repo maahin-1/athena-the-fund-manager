@@ -160,7 +160,7 @@ def run_job(url: str, company: str = "", kind: str = "DRHP", *, docs_path: Path 
         "schema": SCHEMA, "ok": True, "mode": "checks", "generated_at": when.astimezone(timezone.utc).isoformat(timespec="seconds"),
         "document": document_view(docs, doc_id),
         "concern": report["concern"],
-        "flags": [flag_view(f, "established") for f in report["established"]] + [flag_view(f, "single_source") for f in report["single_source"]],
+        "flags": [flag_view(f, "established") for f in report["established"]] + [flag_view(f, "corroborated") for f in report["corroborated"]] + [flag_view(f, "single_source") for f in report["single_source"]],
         "checks": checks_view(result, printed_numbers([(p, text) for p, _, text in docs.pages(doc_id)])),
         "not_examined": [{"lane": n["lane"], "why": str(n["why"])[:200]} for n in report["not_examined"]],
         "limits": list(LIMITS), "narrative": report["narrative"], "caveat": CAVEAT, "cost": report["cost"],

@@ -13,6 +13,7 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from athena.evaluation.grounding import numbers_in_text
 from athena.forensic.model import ANSWER, FLAG, FLAG_TYPES, KINDS, NOTE, OBSERVATION, QUESTION
 
 Lookup = Callable[[str], "dict[str, Any] | None"]  # evidence id -> the stored row (lane, tool, args, result)
@@ -62,6 +63,16 @@ def _all_numbers(data: Any) -> list[float]:
         for v in data:
             out.extend(_all_numbers(v))
     return out
+
+
+def holds_number(value: float, result: Any) -> bool:
+    """Whether one stored result contains `value`: the check `verify_entry` makes over all cited rows, made for one row so that a figure can be bound to the row that holds it."""
+    return number_in(value, _all_numbers(result))
+
+
+def holds_piece(piece: str, result: Any) -> bool:
+    """Whether one stored result contains a quote piece (already `squash`ed), as `verify_entry` checks over all cited rows."""
+    return piece in squash(_words(result))
 
 
 def number_in(value: float, numbers: list[float]) -> bool:
@@ -158,6 +169,43 @@ def contradiction_paths(spec: Any) -> set[tuple[str, str]]:
     return out
 
 
+# parts of a sentence whose digits are a position or a date, not a figure of the evidence: a page or section number, an ISO date, a year
+_NOT_FIGURES = re.compile(r"\b(?:pages?|pp?\.|sections?|notes?|items?|tables?|figures?|annexures?)\s*\d+(?:\s*[-–]\s*\d+)?|\b\d{4}-\d{2}-\d{2}\b|\b(?:19|20)\d{2}\b", re.IGNORECASE)
+
+
+def text_figures(text: str, numbers: list[float]) -> tuple[list[str], int]:
+    """(figures written in `text` that are not in `numbers`, how many figures were checked). A figure is a number a sentence states about the evidence; page and section numbers, dates and years are not.
+    Plain integers up to ten (counts such as "two lanes") are left alone, as in `athena.evaluation.grounding`. A percent may be the evidence's fraction times a hundred."""
+    missing: list[str] = []
+    checked = 0
+    for token in numbers_in_text(_NOT_FIGURES.sub(" ", text)):
+        bare = token.replace(",", "").rstrip("%")
+        digits = bare.lstrip("+-")
+        if digits.isdigit() and int(digits) <= 10:
+            continue
+        checked += 1
+        value = abs(float(bare))
+        if not (number_in(value, numbers) or (token.endswith("%") and number_in(value / 100.0, numbers))):
+            missing.append(token)
+    return missing, checked
+
+
+def checked_parts(kind: str, body: Mapping[str, Any], lookup: Lookup) -> dict[str, Any]:
+    """What code checked in an entry it has already accepted, for the report: whether a quote and numbers were found in the cited evidence, how many figures of the text were found in it, and that the
+    sentence itself is the model's, unreviewed. An accepted entry is never labelled verified: a quote that is really in a result does not show the result supports what the sentence asserts."""
+    figures = 0
+    if kind in (OBSERVATION, ANSWER, FLAG):
+        rows = [r for r in (lookup(str(e)) for e in _cited(body)) if r is not None]
+        figures = text_figures(str(body.get("text", "")), [n for row in rows for n in _all_numbers(row["result"])])[1]
+    return {"quote": bool(str(body.get("quote", "")).strip()), "values": bool(body.get("values")), "text_figures": figures, "assertion": "model_unreviewed"}
+
+
+def _cited(body: Mapping[str, Any]) -> list[str]:
+    """Every evidence id an entry rests on: those it lists and those its stated contradiction compares."""
+    listed = body.get("evidence") if isinstance(body.get("evidence"), list) else []
+    return sorted({*(str(e) for e in listed), *(ev for ev, _ in contradiction_paths(body.get("contradiction")))})
+
+
 def verify_entry(kind: str, body: Mapping[str, Any], lookup: Lookup) -> str | None:
     """None when the entry may be kept, else the reason it may not."""
     if kind not in KINDS:
@@ -192,6 +240,12 @@ def verify_entry(kind: str, body: Mapping[str, Any], lookup: Lookup) -> str | No
                 return f"value {name!r} is not a number"
             if not number_in(v, numbers):
                 return f"value {name}={value} is not in any cited evidence"
+    if kind in (OBSERVATION, ANSWER, FLAG) and _cited(body):
+        # the sentence may state only figures that are in the evidence it rests on: a conclusion with figures from nowhere is rejected, and one with none still stands only as the model's own words
+        rows_cited = [r for r in (lookup(ref) for ref in _cited(body)) if r is not None]
+        absent, _ = text_figures(text, [n for row in rows_cited for n in _all_numbers(row["result"])])
+        if absent:
+            return f"the figure(s) {', '.join(absent)} written in the text are not in the evidence it cites; write only figures that are in the cited evidence"
     if kind == OBSERVATION and not refs:
         return "an observation must cite evidence"
     if kind == ANSWER and not body.get("answers"):
