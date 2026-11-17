@@ -52,6 +52,88 @@ def test_a_lock_held_by_a_running_process_refuses_a_second_job_and_a_dead_holder
     assert not (lock_dir / "nse.lock").exists() and not list(lock_dir.glob("*.lock"))  # released on exit
 
 
+def test_handed_over_locks_stay_in_the_childs_name_and_free_up_only_when_it_is_gone(tmp_path):
+    lock_dir = tmp_path / "l"
+    with Job("sup", locks=("writer:x.duckdb",), status_dir=tmp_path / "s", lock_dir=lock_dir) as job:
+        outcome = job.hand_over(os.getppid())  # a running process stands in for a child whose exit was not confirmed
+    assert outcome.ok and outcome.transferred == ("writer:x.duckdb",) and not outcome.failed and not outcome.quarantined
+    held = json.loads((lock_dir / "writer_x.duckdb.lock").read_text())
+    assert held["pid"] == os.getppid() and "unconfirmed" in held["job"] and held["supervisor_pid"] == os.getpid() and held["state"] == "unresolved"  # not released on exit
+    with pytest.raises(JobLocked):
+        with Job("other", locks=("writer:x.duckdb",), status_dir=tmp_path / "s", lock_dir=lock_dir):
+            pass
+    (lock_dir / "writer_x.duckdb.lock").write_text(json.dumps({**held, "pid": 2_000_000_000, "child_pid": 2_000_000_000}))  # the child has now gone
+    with Job("other", locks=("writer:x.duckdb",), status_dir=tmp_path / "s", lock_dir=lock_dir):
+        pass
+    with Job("nopid", locks=("nse",), status_dir=tmp_path / "s", lock_dir=lock_dir) as job:
+        outcome = job.hand_over(0)  # no usable pid: quarantined, not simply left in this process's name
+    assert not outcome.ok and outcome.quarantined == ("nse",)
+    assert json.loads((lock_dir / "nse.lock").read_text())["state"] == "unresolved"
+    with pytest.raises(JobLocked):  # the same process may not take it back, which a lock merely naming this process would allow
+        with Job("again", locks=("nse",), status_dir=tmp_path / "s", lock_dir=lock_dir):
+            pass
+
+
+def _unresolved(lock_dir, **fields):
+    lock_dir.mkdir(exist_ok=True)
+    record = {"pid": 2_000_000_000, "job": "old (child, exit unconfirmed)", "since": "x", "state": "unresolved", "child_pid": 0, "supervisor_pid": 2_000_000_000, **fields}
+    (lock_dir / "writer_x.duckdb.lock").write_text(json.dumps(record))
+
+
+def test_an_unresolved_lock_is_not_stale_because_its_supervisor_has_ended_only_the_child_decides(tmp_path):
+    from athena.ops import jobs
+
+    lock_dir = tmp_path / "l"
+    take = lambda: Job("new", locks=("writer:x.duckdb",), status_dir=tmp_path / "s", lock_dir=lock_dir).__enter__()  # noqa: E731
+    _unresolved(lock_dir, child_pid=os.getppid())  # supervisor gone, child still running
+    with pytest.raises(JobLocked) as refused:
+        take()
+    assert refused.value.holder_pid == os.getppid()
+    _unresolved(lock_dir, child_pid=0)  # child pid unknown: never assumed dead
+    with pytest.raises(JobLocked):
+        take()
+    _unresolved(lock_dir, child_pid=2_000_000_001)  # a known child pid that is gone: the lock is taken over
+    job = take()
+    assert json.loads((lock_dir / "writer_x.duckdb.lock").read_text())["job"] == "new"
+    job.__exit__(None, None, None)
+    _unresolved(lock_dir, child_pid=0)
+    assert jobs.clear_unresolved("writer:x.duckdb", lock_dir) is True and jobs.clear_unresolved("writer:x.duckdb", lock_dir) is False  # the operator's explicit release, once
+    take().__exit__(None, None, None)
+
+
+def test_a_lock_that_cannot_be_rewritten_is_reported_failed_and_still_refused_in_this_process(tmp_path, monkeypatch):
+    from athena.ops import jobs
+
+    lock_dir = tmp_path / "l"
+
+    def refuse(path, data):
+        raise OSError(28, "No space left on device")
+
+    jobs._QUARANTINE.clear()
+    with Job("sup", locks=("nse", "writer:x.duckdb"), status_dir=tmp_path / "s", lock_dir=lock_dir) as job:
+        monkeypatch.setattr(jobs, "_write", refuse)
+        outcome = job.hand_over(os.getppid())
+        monkeypatch.undo()
+    assert not outcome.ok and {name for name, _ in outcome.failed} == {"nse", "writer:x.duckdb"} and "No space left" in outcome.describe()
+    assert json.loads((lock_dir / "nse.lock").read_text())["pid"] == os.getpid()  # the file still names this process...
+    with pytest.raises(JobLocked):  # ...which must not make it reclaimable
+        with Job("next", locks=("nse",), status_dir=tmp_path / "s", lock_dir=lock_dir):
+            pass
+    jobs._QUARANTINE.clear()
+
+
+def test_reinstating_a_lock_after_a_restart_never_overwrites_a_running_jobs_lock(tmp_path):
+    from athena.ops import jobs
+
+    lock_dir = tmp_path / "l"
+    lock_dir.mkdir()
+    (lock_dir / "nse.lock").write_text(json.dumps({"pid": os.getppid(), "job": "holdings"}))  # another running job legitimately holds it
+    outcome = jobs.reinstate(["nse", "writer:x.duckdb"], os.getppid(), "w", lock_dir)
+    assert [name for name, _ in outcome.failed] == ["nse"] and outcome.transferred == ("writer:x.duckdb",)
+    assert json.loads((lock_dir / "nse.lock").read_text())["job"] == "holdings"
+    jobs._QUARANTINE.clear()
+
+
 def test_pid_alive_is_true_for_this_process_and_false_for_a_missing_one():
     assert pid_alive(os.getpid()) and not pid_alive(2_000_000_000) and not pid_alive(0)
 
