@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-17",
+  "disposition": "T6 closed as fixed_offline_verified with documented qualifications; T8 paused",
+  "saved_reviewer_probes": {
+    "passed": 12,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "existing_fake_suite": {
+    "passed": 95,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "collected_test_ids": 109,
+  "excluded_real_python_tests": 2,
+  "full_414_suite_rerun": false,
+  "source_sha256": "20C00F7E54A688756EE0BE0CC2B53B464FB44CFD41E841BCB18E7ADD2DF547FD",
+  "application_code_changed": false,
+  "separate_issue": "reported flaky oversized HTTP request test; source inspected, not independently reproduced",
+  "next": "allowlisted recoverable backup, inventory and Git checkpoint plan; no commits or pushes"
+}
