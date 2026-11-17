@@ -1,0 +1,25 @@
+{
+  "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+  "kind": "cargo",
+  "timeout": 900,
+  "env": {"CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t", "CARGO_NET_OFFLINE": "true"},
+  "command": ["cargo", "test", "--offline", "--locked", "--", "deriv_quotes::", "server::tests::the_derivative_quotes_route"],
+  "mutations": [
+    {"id": "rs-out-of-order-applied", "note": "T3: a packet whose exchange time is older than the held quote's is applied", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "if matches!((quote.exchange_ms, held.exchange_ms), (Some(new), Some(old)) if new < old) {", "new": "if false {"},
+    {"id": "rs-repeat-refreshes-receipt", "note": "T3: an identical packet counts as a change and makes the quote newer", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "if held.same_market(&quote) {", "new": "if false {"},
+    {"id": "rs-book-seen-on-every-change", "note": "T3: a trade at an unchanged book refreshes the book's time", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "quote.book_seen_ms = if (held.bid, held.ask) != (quote.bid, quote.ask) { Some(now_ms) } else { held.book_seen_ms };", "new": "quote.book_seen_ms = Some(now_ms);"},
+    {"id": "rs-delay-on-any-change", "note": "T3: a book change is measured as a delayed trade", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "(Some(new), Some(old)) if new > old => Some(now_ms - new),", "new": "(Some(new), Some(_)) => Some(now_ms - new),"},
+    {"id": "rs-out-of-order-not-counted", "note": "T3: the discard is not counted", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "kept.out_of_order += 1;", "new": "let _ = &kept;"},
+    {"id": "rs-out-of-order-count-reset", "note": "T3: the count of discards is lost at the next update", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "quote.out_of_order = held.out_of_order;", "new": "quote.out_of_order = 0;"},
+    {"id": "rs-first-sight-no-book-time", "note": "T3: the first packet leaves the book time unset", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "            None => {\n                quote.received_ms = Some(now_ms);\n                quote.book_seen_ms = Some(now_ms);", "new": "            None => {\n                quote.received_ms = Some(now_ms);\n                quote.book_seen_ms = None;"},
+    {"id": "rs-route-no-server-clock", "note": "T3: the quotes route does not say the server's own time", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+     "old": "\"quotes\": state.deriv_quotes.get(&keys), \"now\": unix_ms() }", "new": "\"quotes\": state.deriv_quotes.get(&keys) }"}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+ "label": "mutation-rust-t3",
+ "total": 8,
+ "counts": {
+  "caught": 7,
+  "SURVIVED": 0,
+  "invalid": 0,
+  "pattern_error": 1,
+  "timeout": 0
+ },
+ "files_restored": true
+}
