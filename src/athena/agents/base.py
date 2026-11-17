@@ -9,14 +9,27 @@ from typing import Any, Protocol
 
 from athena.contracts import AthenaError, Coverage
 from athena.coverage import derive_coverage
+from athena.evaluation import claims as typed
 from athena.evaluation.grounding import check_grounded
 from athena.evaluation.schema import validate_specialist_output
+from athena.llm import envelope
 
 MODEL_KEYS = ("signal", "confidence", "reasoning")
+CLAIM_MODEL_KEYS = (*MODEL_KEYS, "claims")
 OUTPUT_INSTRUCTIONS = (
     'Reply with one JSON object and nothing else: {"signal": "bullish"|"bearish"|"neutral", '
     '"confidence": 0-100, "reasoning": "2-4 sentences citing specific figures from the data"}. '
     "Cite only figures that appear in the data. Every figure carries a unit: a \"fraction\" is a decimal share (0.25 means 25 percent, so a return on equity of 0.487 is a very high 48.7 percent), \"percentage points\" are already in percent, and a \"ratio\" is a plain multiple."
+)
+
+
+# The typed contract (opt-in, `Specialist(claims=True)`): figures arrive as claims bound to a fact of the data, code renders them, and the model's reasoning is an interpretation with no figures.
+CLAIM_INSTRUCTIONS = (
+    'Reply with one JSON object and nothing else: {"signal": "bullish"|"bearish"|"neutral", "confidence": 0-100, "reasoning": "2-4 sentences of interpretation with no figures in them", '
+    '"claims": [{"fact": "the metric name", "entity": "the instrument as the data names it", "metric": "the metric name", "period": "the metric\'s window, copied exactly (null if it has none)", '
+    '"value": the number as the data gives it (or a fraction times 100 with unit "percent"), "unit": "the metric\'s unit, or percent for a fraction shown as a percent (null if it has none)"}]}. '
+    "Write no figures in the reasoning: every figure you rely on is a claim, and code writes the sentence for it from the data, so a sign, period, unit or entity that does not match the data is rejected. "
+    "A bullish or bearish view needs at least one claim. Do not promise an outcome. A \"fraction\" is a decimal share (0.25 means 25 percent), \"percentage points\" are already in percent, and a \"ratio\" is a plain multiple."
 )
 
 
@@ -70,11 +83,14 @@ class Specialist:
     without calling the model, JSON parsing, contract validation, number grounding, retry with
     feedback, response caching, and fail-loud / fail-quiet handling."""
 
-    def __init__(self, spec: SpecialistSpec, llm: LLMClient, fail_quiet: bool = False, max_attempts: int = 2):
+    def __init__(self, spec: SpecialistSpec, llm: LLMClient, fail_quiet: bool = False, max_attempts: int = 2, claims: bool = False):
+        """`claims=True` selects the typed contract (figures as claims bound to the packet's facts, rendered by code, `athena.evaluation.claims`). The default contract is the earlier one and its output
+        says what it checked: numeric consistency, which binds no figure to a metric, period, entity or sign. Which one a deployment uses is a choice made with evidence that models meet the typed contract."""
         self.spec = spec
         self.llm = llm
         self.fail_quiet = fail_quiet
         self.max_attempts = max_attempts
+        self.claims = claims
         self._cache: dict[str, dict[str, Any]] = {}
         self.model_calls = 0
 
@@ -88,7 +104,7 @@ class Specialist:
             return abstention(missing, f"No view formed: required inputs are missing ({', '.join(critical_gaps)}).")
         shown = self._visible(packet)
 
-        system = f"{self.spec.persona}\n\n{OUTPUT_INSTRUCTIONS}"
+        system = f"{self.spec.persona}\n\n{CLAIM_INSTRUCTIONS if self.claims else OUTPUT_INSTRUCTIONS}"
         user = self._render(shown, coverage, missing)
         key = hashlib.sha256(f"{system}\n---\n{user}".encode()).hexdigest()
         if key in self._cache:
@@ -102,6 +118,7 @@ class Specialist:
             output, errors = self._check(reply, shown, coverage, missing)
             if errors:
                 getattr(self.llm, "forget_last", lambda: None)()  # do not let a rejected reply stay cached
+                envelope.note_validation(f"specialist:{self.spec.name}", errors)  # part of the run record, whether or not the repair that follows succeeds
             if not errors:
                 self._cache[key] = output
                 return json.loads(json.dumps(output))
@@ -146,9 +163,13 @@ class Specialist:
             parsed = parse_model_json(reply)
         except ValueError as exc:
             return {}, [str(exc)]
-        extra = sorted(parsed.keys() - set(MODEL_KEYS))
+        allowed = CLAIM_MODEL_KEYS if self.claims else MODEL_KEYS
+        extra = sorted(parsed.keys() - set(allowed))
         if extra:
             return {}, [f"reply has keys the contract does not allow: {extra}"]
+        if self.claims and "claims" not in parsed:
+            return {}, ["the reply must include claims (a list, empty only for a neutral view)"]
+        raw_claims = parsed.pop("claims", None)
         output = {**parsed, "data_coverage": coverage.value, "missing": list(missing)}
         cap = self.spec.max_confidence
         if cap is not None and isinstance(output.get("confidence"), (int, float)) and not isinstance(output.get("confidence"), bool) and output["confidence"] > cap:
@@ -156,7 +177,18 @@ class Specialist:
         errors = validate_specialist_output(output)
         if errors:
             return {}, errors
+        if self.claims:
+            verified, problems = typed.verify_claims(raw_claims, typed.facts_from_packet(packet))
+            problems += typed.interpretation_errors(output["reasoning"])
+            if not problems and output["signal"] != "neutral" and not verified:
+                problems.append("a bullish or bearish view needs at least one claim: say which figure of the data it rests on")
+            if problems:
+                return {}, problems
+            output["claims"] = [c.to_dict() for c in verified]
+            output["verification"] = {"scheme": typed.SCHEME, "claims_verified": len(verified), "interpretation": "model_unreviewed"}
+            return output, []
         grounding = check_grounded(output["reasoning"], packet)
         if not grounding.ok:
             return {}, [f"figures not found in the data: {list(grounding.ungrounded)}"]
+        output["verification"] = {"scheme": typed.LEGACY_SCHEME, "figures_checked": grounding.checked, "binds_claims": False}
         return output, []

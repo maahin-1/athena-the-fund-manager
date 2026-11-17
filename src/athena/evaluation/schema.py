@@ -8,6 +8,8 @@ SIGNALS = ("bullish", "bearish", "neutral")
 VERDICTS = ("Buy", "Overweight", "Hold", "Underweight", "Sell")
 RESOLUTION_PATHS = ("debate", "blend")
 _SPECIALIST_KEYS = {"signal", "confidence", "reasoning", "data_coverage", "missing"}
+# keys a newer output may add and an older one never had: the typed claims code verified and rendered, and the label saying what was checked (`athena.evaluation.claims`)
+_SPECIALIST_OPTIONAL = {"claims", "verification"}
 _VERDICT_KEYS = {
     "verdict", "conviction", "key_risks", "resolution_path", "debate_transcript_ref", "panel_agreement", "contested",
     "pre_overlay_verdict", "held_back_by", "risk_findings",
@@ -35,9 +37,13 @@ def validate_specialist_output(output: Any) -> list[str]:
     missing_keys = sorted(_SPECIALIST_KEYS - output.keys())
     if missing_keys:
         errors.append(f"missing keys: {missing_keys}")
-    unknown_keys = sorted(output.keys() - _SPECIALIST_KEYS)
+    unknown_keys = sorted(output.keys() - _SPECIALIST_KEYS - _SPECIALIST_OPTIONAL)
     if unknown_keys:
         errors.append(f"unknown keys: {unknown_keys}")
+    if "claims" in output and not (isinstance(output["claims"], list) and all(isinstance(item, dict) for item in output["claims"])):
+        errors.append("claims must be a list of objects")
+    if "verification" in output and not (isinstance(output["verification"], dict) and isinstance(output["verification"].get("scheme"), str)):
+        errors.append("verification must be an object with a scheme")
     if "signal" in output and output["signal"] not in SIGNALS:
         errors.append(f"signal must be one of {list(SIGNALS)}, got {output['signal']!r}")
     if "confidence" in output and not _is_int_in_range(output["confidence"], 0, 100):

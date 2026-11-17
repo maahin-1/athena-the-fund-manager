@@ -31,7 +31,7 @@ It is built for one independent investor who wants an institutional-style resear
 ## What Athena does
 
 ### AI stock analysis with specialist agents
-- **Six specialist analysts:** valuation, moat and quality, earnings intelligence, quant and technical, news sentiment, and derivatives flow. Each reads a *packet* of figures computed in code and must cite the figures it uses. A grounding check rejects any number in its reasoning that is not in its data.
+- **Six specialist analysts:** valuation, moat and quality, earnings intelligence, quant and technical, news sentiment, and derivatives flow. Each reads a *packet* of figures computed in code and must cite the figures it uses. A numeric consistency check rejects any number in its reasoning that is not somewhere in its data; it does not bind a figure to a metric, period, entity or sign, and its output says so (`verification.binds_claims: false`). An opt-in typed contract (`Specialist(claims=True)`) has the model state each figure as a claim naming the fact, entity, metric, period, signed value and unit, which code checks and renders; the model's own words carry no figures and stay labelled as unreviewed interpretation.
 - **Coverage-aware:** an analyst abstains when its data is too thin. It never guesses.
 - **Council:** when the analysts conflict, a bull and a bear argue over a shared evidence sheet with stable fact IDs. A judge may then move the blended rating by at most one step, and may only lower its conviction.
 - **Typed decisions:** every verdict becomes BUY, SELL, HOLD or REVIEW by written rules. It is later settled against the Nifty 50 at 5, 20 and 60 trading days, after trading costs.
@@ -222,7 +222,7 @@ NSE-listed stocks and ETFs, plus index and stock futures and options (NFO) for t
 Any OpenAI-compatible provider. By default it uses NVIDIA NIM and OpenRouter models, with OpenAI as an option, routed by tier: cheap, mid, strong and judge. A monthly call ceiling and a reply cache keep costs bounded.
 
 ### How is Athena different from other AI trading agent projects?
-The models never compute figures; code does, and a grounding check rejects any number that is not in the data. Every analysis respects the as-of date, so backtests see no future data. Each verdict is turned into a typed decision and settled after costs against the Nifty 50. And it ships a full live terminal, not just a notebook.
+The models never compute figures; code does, and a numeric consistency check rejects any number that is not in the data (a number that is in the data but attached to the wrong metric is caught only under the typed-claims contract). Every analysis respects the as-of date, so backtests see no future data. Each verdict is turned into a typed decision and settled after costs against the Nifty 50. And it ships a full live terminal, not just a notebook.
 
 ### Can I use it for US or other stocks?
 Not yet. The loaders, calendars and filings are specific to NSE. The agent and council layers are market-agnostic, but other markets would need their own data loaders.

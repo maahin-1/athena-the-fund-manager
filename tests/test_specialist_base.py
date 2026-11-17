@@ -33,7 +33,8 @@ def test_parse_model_json_handles_fences_and_surrounding_text():
 
 def test_valid_reply_becomes_a_full_contract_output():
     out = Specialist(SPEC, Scripted(GOOD)).analyze(PACKET)
-    assert out == {"signal": "bullish", "confidence": 70, "reasoning": "Metric a is 42.5 and b is 7.25.", "data_coverage": "full", "missing": []}
+    assert out == {"signal": "bullish", "confidence": 70, "reasoning": "Metric a is 42.5 and b is 7.25.", "data_coverage": "full", "missing": [],
+                   "verification": {"scheme": "numeric_consistency/1", "figures_checked": 2, "binds_claims": False}}  # additive: says what the check was, not that the figures are bound to anything
 
 
 def test_system_prompt_carries_persona_and_contract_and_user_prompt_carries_data():
