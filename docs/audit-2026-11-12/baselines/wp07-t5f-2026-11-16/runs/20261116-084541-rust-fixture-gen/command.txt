@@ -1,0 +1,2 @@
+cwd=C:\Users\LEGION\ath-wp07\w\terminal CARGO_TARGET_DIR=C:\Users\LEGION\ath-wp07\t CARGO_NET_OFFLINE=true
+cargo test --offline --locked the_registry_payloads_match_the_ui_fixtures

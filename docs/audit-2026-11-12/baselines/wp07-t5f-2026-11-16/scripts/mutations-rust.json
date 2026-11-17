@@ -1,0 +1,33 @@
+{
+  "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+  "kind": "cargo",
+  "timeout": 900,
+  "env": {"CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t", "CARGO_NET_OFFLINE": "true"},
+  "command": ["cargo", "test", "--offline", "--locked", "--", "snapshot::", "server::", "search::"],
+  "mutations": [
+    {"id": "rs-lock-recognised-by-bare-substring", "note": "T5-R5: any message mentioning 'lock' (a path included) is a writer", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+     "old": "    if LOCK_PHRASES.iter().any(|k| m.contains(k)) {", "new": "    if message.to_ascii_lowercase().contains(\"lock\") || m.is_empty() {"},
+    {"id": "rs-adjusted-answer-not-registered", "note": "T5-R3: the default adjusted answer is not registered at the serving boundary", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+     "old": "                    crate::snapshot::record_served(\"bars\", Some(&format!(\"{symbol}:adjusted\")), provenance.clone());", "new": "                    let _ = &provenance;"},
+    {"id": "rs-cache-hit-not-renewed", "note": "T5-R3: a cache hit does not renew the served provenance", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+     "old": "                    crate::snapshot::record_served(\"bars\", Some(&format!(\"{symbol}:adjusted\")), provenance.clone());", "new": "                    if !cache.hit { crate::snapshot::record_served(\"bars\", Some(&format!(\"{symbol}:adjusted\")), provenance.clone()); }"},
+    {"id": "rs-cache-state-always-miss", "note": "T5-R3: the answer does not say it was cached", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+     "old": "CacheState { hit: true, age_secs: at.elapsed().as_secs() }", "new": "CacheState { hit: false, age_secs: at.elapsed().as_secs() }"},
+    {"id": "rs-registry-key-drops-the-subject", "note": "T5-R3: two symbols through one reader overwrite one entry", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+     "old": "    subject.map_or_else(|| reader.to_string(), |s| format!(\"{reader}:{s}\"))", "new": "    let _ = subject;\n    reader.to_string()"},
+    {"id": "rs-registry-eviction-may-drop-the-newest", "note": "T5-R3: the bound evicts what was just written", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+     "old": "let oldest = g.iter().filter(|(k, _)| **k != key).min_by_key(", "new": "let oldest = g.iter().min_by_key("},
+    {"id": "rs-recent-always-true", "note": "T5-R3: an entry nothing has served for longer than the window still counts as recent", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+     "old": "o.insert(\"recent\".into(), json!(recent(e)));", "new": "o.insert(\"recent\".into(), json!(true));"},
+    {"id": "rs-age-always-zero", "note": "T5-R3/R4: the age is not reported", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+     "old": "o.insert(\"age_seconds\".into(), json!(now.saturating_sub(e.at)));", "new": "o.insert(\"age_seconds\".into(), json!(0));"},
+    {"id": "rs-publication-status-missing-from-the-endpoint", "note": "T5-R4: the shell cannot see a failed copy while the real file answers", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+     "old": "    v[\"snapshot_publication\"] = publication_status(path);", "new": "    let _ = path;"},
+    {"id": "rs-search-cache-hit-not-registered", "note": "T5-R3: a cache hit does not register what it serves", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/search.rs",
+     "old": "                crate::snapshot::record_served(&self.consumer, None, provenance.clone());\n                return Some(index.clone());", "new": "                return Some(index.clone());"},
+    {"id": "rs-refresh-failure-overwrites-what-is-served", "note": "T5-R3: a failed refresh is registered as the provenance of the retained index", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/search.rs",
+     "old": "                        crate::snapshot::record_served(&self.consumer, None, provenance.clone());\n                        Some(index.clone())", "new": "                        crate::snapshot::record_served(&self.consumer, None, failure.clone());\n                        Some(index.clone())"},
+    {"id": "rs-refresh-failure-never-cleared", "note": "T5-R3: a recovered refresh is still reported as failing", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/search.rs",
+     "old": "                crate::snapshot::clear_refresh_failure(&self.consumer);", "new": "                let _ = &self.consumer;"}
+  ]
+}
