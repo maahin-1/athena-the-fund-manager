@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use serde_json::{json, Value};
 
 /// How many renames back an old symbol is followed (the price join and the statements follow the same number).
 const MAX_HOPS: usize = 5;
@@ -177,29 +178,55 @@ impl SearchIndex {
 /// The index kept in memory, rebuilt from the warehouse when it is ten minutes old. A busy warehouse (a build holds its lock) leaves the old one.
 pub struct SearchCache {
     warehouse: std::path::PathBuf,
-    inner: Mutex<Option<(Instant, Arc<SearchIndex>)>>,
+    /// The name under which what this cache serves is registered for `/api/data-source`.
+    consumer: String,
+    rebuild_after: Duration,
+    /// When it was built, the index, and the provenance of the data it was built from.
+    inner: Mutex<Option<(Instant, Arc<SearchIndex>, Value)>>,
 }
 
 impl SearchCache {
     pub fn new(warehouse: std::path::PathBuf) -> Self {
-        SearchCache { warehouse, inner: Mutex::new(None) }
+        Self::named(warehouse, "search", REBUILD_AFTER)
+    }
+
+    pub fn named(warehouse: std::path::PathBuf, consumer: &str, rebuild_after: Duration) -> Self {
+        SearchCache { warehouse, consumer: consumer.to_string(), rebuild_after, inner: Mutex::new(None) }
     }
 
     /// The current index, with `live_indices` (names from the exchange's snapshot) added when it is rebuilt. `None` when there is none and none can be built.
+    ///
+    /// What is registered is what is **served**: every call records the provenance of the index it returns (a cache hit included), so the badge describes the data a person is searching, not the last
+    /// attempt to rebuild it. A rebuild that fails while an index is held is recorded apart, as a refresh failure; the held index keeps being served and keeps its own provenance.
     pub fn get(&self, live_indices: &[String]) -> Option<Arc<SearchIndex>> {
         let mut g = self.inner.lock().unwrap();
-        if let Some((at, index)) = g.as_ref() {
-            if at.elapsed() < REBUILD_AFTER {
+        if let Some((at, index, provenance)) = g.as_ref() {
+            if at.elapsed() < self.rebuild_after {
+                crate::snapshot::record_served(&self.consumer, None, provenance.clone());
                 return Some(index.clone());
             }
         }
         match load(&self.warehouse, live_indices) {
-            Some(index) => {
+            Ok((index, provenance)) => {
                 let index = Arc::new(index);
-                *g = Some((Instant::now(), index.clone()));
+                crate::snapshot::clear_refresh_failure(&self.consumer);
+                crate::snapshot::record_served(&self.consumer, None, provenance.clone());
+                *g = Some((Instant::now(), index.clone(), provenance));
                 Some(index)
             }
-            None => g.as_ref().map(|(_, i)| i.clone()),
+            Err(failure) => {
+                crate::snapshot::record_refresh_failure(&self.consumer, failure.clone());
+                match g.as_ref() {
+                    Some((_, index, provenance)) => {
+                        crate::snapshot::record_served(&self.consumer, None, provenance.clone());
+                        Some(index.clone())
+                    }
+                    None => {
+                        crate::snapshot::record_served(&self.consumer, None, failure); // nothing is held and nothing could be built: what was served is no data, and why
+                        None
+                    }
+                }
+            }
         }
     }
 }
@@ -223,14 +250,18 @@ fn old_symbols(earlier: &HashMap<&str, Vec<&str>>, symbol: &str) -> Vec<String> 
     out
 }
 
-fn load(path: &Path, live_indices: &[String]) -> Option<SearchIndex> {
-    let conn = crate::snapshot::open_read_only(path).ok()?;
+/// Build the index from the warehouse: the index and the provenance of the data it was built from, or the failure (as the registry reports it) when the warehouse could not be read or did not hold the
+/// instrument list. Opens without registering: the caller registers what it serves.
+fn load(path: &Path, live_indices: &[String]) -> Result<(SearchIndex, Value), Value> {
+    let opened = crate::snapshot::open_unrecorded(path).map_err(|f| f.to_value())?;
+    let (conn, provenance) = (opened.conn, opened.provenance.to_value());
+    let unreadable = crate::snapshot::unreadable_content;
     let mut stmt = conn
         .prepare("SELECT u.symbol, u.kind, COALESCE(u.name, ''), COALESCE(u.isin, ''), COALESCE(s.traded_value_cr, 0) FROM universe u LEFT JOIN screen s ON s.symbol = u.symbol")
-        .ok()?;
+        .map_err(|_| unreadable("the instrument list could not be prepared"))?;
     let rows: Vec<(String, String, String, String, f64)> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, f64>(4)?)))
-        .ok()?
+        .map_err(|_| unreadable("the instrument list could not be read"))?
         .filter_map(Result::ok)
         .collect();
     let mut indices: Vec<String> = conn
@@ -245,7 +276,7 @@ fn load(path: &Path, live_indices: &[String]) -> Option<SearchIndex> {
         .ok()
         .and_then(|mut s| s.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).ok().map(|it| it.filter_map(Result::ok).collect()))
         .unwrap_or_default();
-    Some(SearchIndex::new(rows, indices, &renames))
+    Ok((SearchIndex::new(rows, indices, &renames), provenance))
 }
 
 #[cfg(test)]
@@ -359,5 +390,91 @@ mod tests {
         assert_eq!(distance("abc", "abd", 1), Some(1));
         assert_eq!(distance("abc", "xyz", 1), None);
         assert_eq!(distance("abc", "abcdef", 1), None);
+    }
+
+    // ---- T5-R3: what is registered is the index that is served, not the last attempt to build one (synthetic warehouses in temporary directories; each test names its reader) ----
+    use crate::snapshot::testkit::{publish, ruin_main, temp_dir};
+
+    fn warehouse_with_universe(path: &Path) {
+        let c = duckdb::Connection::open(path).unwrap();
+        c.execute_batch(
+            "DROP TABLE IF EXISTS universe; DROP TABLE IF EXISTS screen; CREATE TABLE universe (symbol VARCHAR, kind VARCHAR, name VARCHAR, isin VARCHAR); CREATE TABLE screen (symbol VARCHAR, traded_value_cr DOUBLE);
+             INSERT INTO universe VALUES ('ZSRCH', 'stock', 'Synthetic Search Limited', 'INE000000001'); INSERT INTO screen VALUES ('ZSRCH', 10.0); CHECKPOINT;",
+        )
+        .unwrap();
+    }
+
+    fn registered(consumer: &str) -> (Value, Value) {
+        let s = crate::snapshot::data_sources();
+        (s["readers"][consumer].clone(), s["refresh_failures"][consumer].clone())
+    }
+
+    #[test]
+    fn a_failed_rebuild_keeps_serving_the_held_index_and_registers_what_is_served_not_the_failure() {
+        let dir = temp_dir("search-retained");
+        let main = dir.join("w.duckdb");
+        warehouse_with_universe(&main);
+        let cache = SearchCache::named(main.clone(), "srch-retained", Duration::ZERO); // every call tries to rebuild
+        assert_eq!(cache.get(&[]).unwrap().search("zsrch", 5, &[])[0].symbol, "ZSRCH");
+        let (first, _) = registered("srch-retained");
+        assert_eq!(first["source"], "main");
+        ruin_main(&main); // the rebuild cannot read the file, and no snapshot exists
+        let again = cache.get(&[]).expect("the held index is still served");
+        assert_eq!(again.search("zsrch", 5, &[])[0].symbol, "ZSRCH");
+        let (served, refresh) = registered("srch-retained");
+        assert_eq!((served["source"].clone(), served["generation_id"].clone()), (first["source"].clone(), first["generation_id"].clone()), "what was served is the index built from the real file");
+        assert!(served.get("failure").is_none(), "the refresh failure is not the provenance of the data served: {served}");
+        assert_eq!((refresh["failure"]["main_reason"].clone(), refresh["failure"]["snapshot_reason"].clone()), (json!("main_unreadable"), json!("absent")));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_later_successful_rebuild_clears_the_refresh_failure() {
+        let dir = temp_dir("search-recovers");
+        let main = dir.join("w.duckdb");
+        warehouse_with_universe(&main);
+        let cache = SearchCache::named(main.clone(), "srch-recovers", Duration::ZERO);
+        cache.get(&[]).unwrap();
+        ruin_main(&main);
+        cache.get(&[]).unwrap();
+        assert!(registered("srch-recovers").1.is_object());
+        std::fs::remove_file(&main).unwrap(); // the real file is replaced by a readable one (the rebuild can only succeed against a database)
+        warehouse_with_universe(&main);
+        cache.get(&[]).unwrap();
+        assert!(registered("srch-recovers").1.is_null(), "recovered: nothing is failing any more");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_cache_hit_registers_the_held_indexs_provenance_again() {
+        let dir = temp_dir("search-hit");
+        let main = dir.join("w.duckdb");
+        warehouse_with_universe(&main);
+        publish(&main, 3);
+        ruin_main(&main); // built from the snapshot generation
+        let cache = SearchCache::named(main.clone(), "srch-hit", Duration::from_secs(3600));
+        cache.get(&[]).unwrap();
+        let (built, _) = registered("srch-hit");
+        assert_eq!((built["source"].clone(), built["fallback_reason"].clone()), (json!("snapshot"), json!("main_unreadable")));
+        std::thread::sleep(Duration::from_millis(1100));
+        cache.get(&[]).unwrap(); // a cache hit: no rebuild, and still described
+        let (hit, _) = registered("srch-hit");
+        assert_eq!(hit["generation_id"], built["generation_id"], "the generation it was built from");
+        assert!(hit["at"].as_u64().unwrap() > built["at"].as_u64().unwrap(), "serving it again renews the entry");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn nothing_held_and_nothing_buildable_is_no_data_with_the_reasons() {
+        let dir = temp_dir("search-none");
+        let main = dir.join("w.duckdb");
+        warehouse_with_universe(&main);
+        ruin_main(&main);
+        let cache = SearchCache::named(main.clone(), "srch-none", Duration::ZERO);
+        assert!(cache.get(&[]).is_none());
+        let (served, refresh) = registered("srch-none");
+        assert_eq!(served["failure"]["snapshot_reason"], "absent");
+        assert_eq!(refresh["failure"]["main_reason"], "main_unreadable");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

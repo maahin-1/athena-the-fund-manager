@@ -8,7 +8,14 @@ pub struct Tick {
     /// The stream's exchange type (1 NSE cash, 2 NFO, 3 BSE cash, 4 BFO, 5 MCX, …): a token is unique only within its exchange.
     pub exchange_type: u8,
     pub token: String,
+    /// The packet's own exchange timestamp as sent (bytes 35–43): the time of the event the packet reports, not of the last trade.
     pub exchange_ms: i64,
+    /// (T3-R1) The last-traded timestamp as sent (bytes 123–131): a different field. Its unit is not stated by the stream; see `last_trade_ms`.
+    pub last_trade_raw: i64,
+    /// The last-traded time in milliseconds when `last_trade_raw` is a plausible epoch time in either seconds or milliseconds; none when it is absent (zero) or malformed.
+    pub last_trade_ms: Option<i64>,
+    /// (T3-R2) The stream's sequence number (bytes 27–35): zero or negative when the packet has none.
+    pub sequence: i64,
     pub last: i64,
     pub average: i64,
     pub volume: i64,
@@ -31,6 +38,26 @@ pub struct Tick {
 #[derive(Debug, PartialEq)]
 pub enum DecodeError {
     Unsupported,
+}
+
+/// 2000-01-01 and 2100-01-01 in seconds: an epoch time outside them is not a market time in either unit. The ranges of seconds and of milliseconds do not overlap, so a magnitude says which it is.
+const EPOCH_2000_S: i64 = 946_684_800;
+const EPOCH_2100_S: i64 = 4_102_444_800;
+
+/// A time in milliseconds from a raw epoch value that is either seconds or milliseconds (the stream's last-traded field states no unit), by its magnitude; none when it fits neither range
+/// (absent, negative, tiny or enormous). The unit is a declared reading of the value, checked only against the repository's own earlier reading of the same field (`src/athena/live/angel.py`),
+/// not against a live stream.
+pub fn epoch_ms(raw: i64) -> Option<i64> {
+    if (EPOCH_2000_S..EPOCH_2100_S).contains(&raw) {
+        Some(raw * 1000)
+    } else {
+        exchange_epoch_ms(raw)
+    }
+}
+
+/// A time that is in milliseconds (the packet's exchange timestamp); none when it is not an epoch time of 2000 to 2099.
+pub fn exchange_epoch_ms(raw: i64) -> Option<i64> {
+    (EPOCH_2000_S * 1000..EPOCH_2100_S * 1000).contains(&raw).then_some(raw)
 }
 
 fn i64_at(p: &[u8], at: usize) -> i64 {
@@ -69,6 +96,9 @@ pub fn decode(packet: &[u8]) -> Result<Tick, DecodeError> {
         exchange_type: packet[1],
         token,
         exchange_ms: i64_at(packet, 35),
+        last_trade_raw: i64_at(packet, 123),
+        last_trade_ms: epoch_ms(i64_at(packet, 123)),
+        sequence: i64_at(packet, 27),
         last: i64_at(packet, 43),
         average: i64_at(packet, 59),
         volume: i64_at(packet, 67),
@@ -91,6 +121,20 @@ pub fn decode(packet: &[u8]) -> Result<Tick, DecodeError> {
 #[cfg(test)]
 pub fn test_packet(token: &str, ms: i64, last: i64, prev: i64, depth: &[(u16, i64, i64)]) -> Vec<u8> {
     test_packet_on(1, token, ms, last, prev, depth, 0, 0.0)
+}
+
+/// The packet with its last-traded timestamp field (bytes 123–131) set to `raw` (seconds or milliseconds, as a test needs).
+#[cfg(test)]
+pub fn with_trade_time(mut p: Vec<u8>, raw: i64) -> Vec<u8> {
+    p[123..131].copy_from_slice(&raw.to_le_bytes());
+    p
+}
+
+/// The packet with its sequence number (bytes 27–35) set.
+#[cfg(test)]
+pub fn with_sequence(mut p: Vec<u8>, seq: i64) -> Vec<u8> {
+    p[27..35].copy_from_slice(&seq.to_le_bytes());
+    p
 }
 
 /// The same on a given exchange type and with open interest and its change in percent.
@@ -155,6 +199,31 @@ mod tests {
         assert_eq!((t.last, t.prev_close, t.exchange_ms), (12_550, 11_000, 1_760_000_000_000));
         assert_eq!((t.upper, t.lower, t.high_52, t.low_52), (88290, 72240, 91000, 60000));
         assert_eq!((t.bids.clone(), t.asks.clone()), (vec![(12_545, 75)], vec![(12_555, 150)]));
+    }
+
+    // ---- T3-R1/R2: the packet's own time, the last trade's time and the sequence are three fields ----
+    #[test]
+    fn the_packet_time_the_last_trade_time_and_the_sequence_are_read_from_their_own_places() {
+        let p = with_sequence(with_trade_time(test_packet("3045", 1_760_000_060_000, 81240, 80270, &[(1, 10, 81235)]), 1_760_000_000), 42);
+        let t = decode(&p).unwrap();
+        assert_eq!(t.exchange_ms, 1_760_000_060_000, "the packet's own time");
+        assert_eq!(t.last_trade_raw, 1_760_000_000, "the raw last-traded field");
+        assert_eq!(t.last_trade_ms, Some(1_760_000_000_000), "the stream gave seconds: the trade is a minute older than the packet");
+        assert_eq!(t.sequence, 42);
+        assert_eq!((t.last, t.prev_close, t.open_interest, t.bids.clone()), (81240, 80270, 0, vec![(81235, 10)]), "the neighbouring fields are undisturbed");
+    }
+
+    #[test]
+    fn a_last_trade_time_in_either_unit_is_read_and_an_absent_or_malformed_one_is_none_with_the_raw_value_kept() {
+        let at = |raw: i64| decode(&with_trade_time(test_packet("3045", 1_760_000_060_000, 81240, 80270, &[]), raw)).unwrap();
+        assert_eq!(at(1_760_000_000_000).last_trade_ms, Some(1_760_000_000_000), "milliseconds");
+        assert_eq!(at(1_760_000_000).last_trade_ms, Some(1_760_000_000_000), "seconds");
+        for bad in [0i64, -5, 7, 946_684_799, 4_102_444_800, 946_684_799_999, 4_102_444_800_000, i64::MAX] {
+            let t = at(bad);
+            assert_eq!((t.last_trade_ms, t.last_trade_raw), (None, bad), "{bad} is not a plausible epoch time in seconds or milliseconds");
+        }
+        assert_eq!(at(946_684_800).last_trade_ms, Some(946_684_800_000), "the first plausible second");
+        assert_eq!(at(4_102_444_799).last_trade_ms, Some(4_102_444_799_000), "the last plausible second");
     }
 
     #[test]

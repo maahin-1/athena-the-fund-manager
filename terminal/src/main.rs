@@ -1,4 +1,5 @@
 mod analyse_worker;
+mod bounded;
 mod analysis;
 mod angel;
 mod bars;
@@ -255,20 +256,24 @@ async fn main() {
         }
     }
     // warm Python helpers for the Fundamentals page, the valuation and the adjusted daily bars, started now so the first page opened does not wait
-    let helpers = Arc::new(helper::Helpers::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
+    // a child that could not be confirmed gone is written to a file here, so the next run knows (see bounded.rs)
+    let work_dir = args.layouts_dir.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".athena/terminal"));
+    let journal = |pool: &str| Some(work_dir.join(format!("work-held-{pool}.json")));
+    let helpers = Arc::new(helper::Helpers::standard(args.fund_python.as_deref().unwrap_or(&args.python), journal("helpers")));
     {
         let h = helpers.clone();
         tokio::spawn(async move { h.warm().await });
     }
+    let (adjusted, adjusted_admission) = bars::AdjustedDaily::python(args.python.clone(), args.warehouse.clone(), Some(helpers.clone()), journal("adjusted_bars"));
     let bars = Arc::new(bars::Bars {
-        adjusted: bars::AdjustedDaily::python(args.python.clone(), args.warehouse.clone(), Some(helpers.clone())),
+        adjusted,
         warehouse: args.warehouse,
         intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())),
     });
     let lists = Arc::new(layouts::LayoutStore::new(args.layouts_dir.parent().map(|p| p.join("lists")).unwrap_or_else(|| PathBuf::from(".athena/terminal/lists"))));
     let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
     let verdicts = verdict_job::VerdictJobs::standard(&args.python);
-    let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
+    let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python, journal("analyse")));
     {
         let a = analyse.clone();
         tokio::spawn(async move { a.warm().await });
@@ -277,15 +282,17 @@ async fn main() {
     let fundamentals = Arc::new(
         fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone())
             .with_helpers(helpers.clone())
+            .with_journal(work_dir.join("work-held-fundamentals.json"))
             .with_fetches(fund_fetch.finished.clone()),
     );
     // the board takes seconds to build: it has a helper of its own, so a Fundamentals page or a valuation never waits behind it
-    let board_helper = Arc::new(helper::Helpers::new(vec![args.fund_python.as_deref().unwrap_or(&args.python).to_string(), "-m".into(), "athena.terminal_helper".into()], 1));
+    let board_helper = Arc::new(helper::Helpers::named("board_helper", vec![args.fund_python.as_deref().unwrap_or(&args.python).to_string(), "-m".into(), "athena.terminal_helper".into()], 1, journal("board_helper")));
+    let board_helper_view = board_helper.pool_view();
     {
         let h = board_helper.clone();
         tokio::spawn(async move { h.warm().await });
     }
-    let flow_board = Arc::new(flow_board::FlowBoard::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.derivs_store.clone()).with_helpers(board_helper));
+    let flow_board = Arc::new(flow_board::FlowBoard::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.derivs_store.clone()).with_helpers(board_helper).with_journal(work_dir.join("work-held-flow_board.json")));
     let chart_explain = Arc::new(chart_explain::ChartExplain::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
     let ipo = Arc::new(ipo::IpoJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone()));
     let forensic = forensic_job::ForensicJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".athena")));
@@ -294,7 +301,15 @@ async fn main() {
     let pyind = pyind::PyInd::new(args.fund_python.as_deref().unwrap_or(&args.python), &args.indicator_runner, &args.indicators_dir);
     let derivs = derivs::DerivsStore::new();
     tokio::spawn(derivs::run_loader(derivs.clone(), reqwest::Client::new(), args.derivs_master.clone(), args.derivs_offline, shutdown.clone()));
-    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, fundamentals, flow_board, chart_explain, sentiment, ipo, forensic, indices: index_store, lists, search, fund_fetch, pyind, derivs, deriv_quotes, live_derivs: !args.fake_feed };
+    let work = Arc::new(bounded::WorkRegistry::new());
+    work.register(analyse.pool_view());
+    work.register(helpers.pool_view());
+    work.register(board_helper_view);
+    work.register(fundamentals.admission_view());
+    work.register(flow_board.admission_view());
+    work.register(adjusted_admission.view());
+    let work_for_shutdown = work.clone();
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, work, fundamentals, flow_board, chart_explain, sentiment, ipo, forensic, indices: index_store, lists, search, fund_fetch, pyind, derivs, deriv_quotes, live_derivs: !args.fake_feed };
     println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
     let stop = shutdown.clone();
     let result = axum::serve(listener, router(state))
@@ -306,4 +321,7 @@ async fn main() {
     if result.is_err() {
         println!("error: the server stopped");
     }
+    // the pools are ended explicitly: each child is asked to end, then forced, and what could not be confirmed gone is said (and stays in the journal where there is one)
+    let report = work_for_shutdown.shutdown_all().await;
+    println!("work pools ended: {} children ended, {} not confirmed gone", report.ended, report.unconfirmed);
 }

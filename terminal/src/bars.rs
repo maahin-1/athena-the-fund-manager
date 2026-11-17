@@ -36,7 +36,11 @@ pub fn is_index_name(symbol: &str) -> bool {
 
 /// Newest `limit` daily bars, oldest first. A stock reads `bars`; an index name reads `index_bars` (matched ignoring case).
 pub fn daily_bars(path: &Path, symbol: &str, limit: usize) -> Result<Vec<Bar>, BarsError> {
-    let conn = crate::snapshot::open_read_only(path).map_err(|_| BarsError::Busy)?;
+    let conn = crate::snapshot::open(path, "bars").map_err(|_| BarsError::Busy)?.conn;
+    bars_on(&conn, symbol, limit)
+}
+
+fn bars_on(conn: &Connection, symbol: &str, limit: usize) -> Result<Vec<Bar>, BarsError> {
     let sql = if is_index_name(symbol) {
         "SELECT CAST(epoch(CAST(day AS TIMESTAMP)) AS BIGINT), open, high, low, close, 0.0 FROM index_bars WHERE lower(index_name) = lower(?) ORDER BY day DESC LIMIT ?"
     } else {
@@ -194,6 +198,9 @@ pub struct Adjusted {
     /// The earlier symbols whose bars the history begins with (the helper joins them; see `athena.warehouse.renames`).
     #[serde(default)]
     pub joined: Vec<Joined>,
+    /// Which data the helper read: the real file, or a validated snapshot generation and why (the helper opens the warehouse itself). Absent in a reply from an older helper.
+    #[serde(default)]
+    pub provenance: Option<Value>,
 }
 
 pub type AdjustFetcher = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Option<Adjusted>> + Send>> + Send + Sync>;
@@ -201,6 +208,47 @@ pub type AdjustFetcher = Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Optio
 /// How long an adjusted history is kept. The warehouse changes once a night, and an adjustment needs a Python start (about a second).
 pub const ADJUSTED_FOR: Duration = Duration::from_secs(30 * 60);
 const ADJUST_LIMIT: Duration = Duration::from_secs(25);
+/// How many adjusted-history fetches run at once (a helper or the command run directly), and how many may wait for a place.
+const ADJUST_AT_ONCE: usize = 2;
+const ADJUST_WAITING: usize = 8;
+
+/// The adjusted-history command, run directly. It has an owner of its own: past the fetch's deadline it is ended and confirmed gone before its place is free. The deadline is the one the fetch began with, handed down
+/// as it is (not as a duration worked out earlier, which a slow start would stretch).
+pub(crate) async fn run_chart_bars(owner: &crate::bounded::Admission, permit: crate::bounded::Permit, cmd: tokio::process::Command, budget: &crate::bounded::Budget) -> Option<Adjusted> {
+    let out = owner.run_command(permit, cmd, "chart_bars", budget).await.ok()?;
+    if !out.success {
+        return None;
+    }
+    serde_json::from_slice::<Adjusted>(&out.stdout).ok().filter(|a| !a.bars.is_empty())
+}
+
+/// One adjusted-history fetch: admission, the helper and the command run directly (`direct`, given the same budget) all draw on one deadline.
+pub(crate) async fn fetch_adjusted<F, Fut>(helpers: Option<&Arc<crate::helper::Helpers>>, admission: &crate::bounded::Admission, args: Vec<String>, limit: Duration, direct: F) -> Option<Adjusted>
+where
+    F: FnOnce(crate::bounded::Permit, crate::bounded::Budget) -> Fut,
+    Fut: Future<Output = Option<Adjusted>>,
+{
+    use crate::helper::Next;
+    let budget = crate::bounded::Budget::new(limit);
+    let permit = admission.admit("chart_bars", &budget).await.ok()?;
+    if let Some(h) = helpers {
+        match h.run_within(crate::helper::HelperOp::ChartBars, &args, &budget).await.next(crate::helper::HelperOp::ChartBars.idempotent()) {
+            Next::Output(out) => {
+                if let Some(a) = serde_json::from_slice::<Adjusted>(&out).ok().filter(|a| !a.bars.is_empty()) {
+                    return Some(a);
+                }
+                // an answer that is not a history: the helper is finished with the work, so the command may be run once
+            }
+            Next::RunCommand => {}
+            // refused, expired, cancelled or not confirmed gone: the work may still be going or was never accepted, and running it again beside it is not the answer
+            Next::Stop(_) => return None,
+        }
+    }
+    if budget.expired() {
+        return None;
+    }
+    direct(permit, budget).await
+}
 
 /// Adjusted daily bars per stock, computed by the project's own Python (`athena.warehouse.chart_bars`, the same adjustment the
 /// Streamlit charts use) and kept for `ADJUSTED_FOR`. A failure is not cached, so the next request tries again.
@@ -215,45 +263,56 @@ impl AdjustedDaily {
         AdjustedDaily { cache: Arc::new(Mutex::new(HashMap::new())), fetch }
     }
 
-    /// Asks a warm helper first (0.3 s), else starts the module for the request (one to two seconds).
-    pub fn python(python: String, warehouse: PathBuf, helpers: Option<Arc<crate::helper::Helpers>>) -> Self {
-        Self::new(Arc::new(move |symbol: String| {
-            let (python, warehouse, helpers) = (python.clone(), warehouse.clone(), helpers.clone());
-            Box::pin(async move {
-                if let Some(h) = &helpers {
-                    let args = vec![symbol.clone(), "--limit".to_string(), "5000".to_string(), "--warehouse".to_string(), warehouse.to_string_lossy().into_owned()];
-                    if let Some(out) = h.run("chart_bars", &args, ADJUST_LIMIT).await {
-                        if let Some(a) = serde_json::from_slice::<Adjusted>(&out).ok().filter(|a| !a.bars.is_empty()) {
-                            return Some(a);
-                        }
-                    }
-                }
-                let mut cmd = tokio::process::Command::new(python);
-                cmd.args(["-m", "athena.warehouse.chart_bars", &symbol, "--limit", "5000", "--warehouse"])
-                    .arg(&warehouse)
-                    .stdin(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .kill_on_drop(true);
-                let out = tokio::time::timeout(ADJUST_LIMIT, cmd.output()).await.ok()?.ok()?;
-                if !out.status.success() {
-                    return None;
-                }
-                serde_json::from_slice::<Adjusted>(&out.stdout).ok().filter(|a| !a.bars.is_empty())
-            })
-        }))
+    /// Asks a warm helper first (0.3 s), else starts the module for the request (one to two seconds). Returns the admission every path of a fetch goes through, so the status route can list it.
+    pub fn python(python: String, warehouse: PathBuf, helpers: Option<Arc<crate::helper::Helpers>>, journal: Option<PathBuf>) -> (Self, Arc<crate::bounded::Admission>) {
+        Self::python_with(python, warehouse, helpers, ADJUST_LIMIT, journal)
     }
 
+    /// As `python`, with the deadline of one request, and the admission every path of it goes through (returned so the status route can list it).
+    pub fn python_with(python: String, warehouse: PathBuf, helpers: Option<Arc<crate::helper::Helpers>>, limit: Duration, journal: Option<PathBuf>) -> (Self, Arc<crate::bounded::Admission>) {
+        let admission = Arc::new(match journal {
+            Some(path) => crate::bounded::Admission::with_journal("adjusted_bars", ADJUST_AT_ONCE, ADJUST_WAITING, path),
+            None => crate::bounded::Admission::new("adjusted_bars", ADJUST_AT_ONCE, ADJUST_WAITING),
+        });
+        let adm = admission.clone();
+        let daily = Self::new(Arc::new(move |symbol: String| {
+            let (python, warehouse, helpers, adm) = (python.clone(), warehouse.clone(), helpers.clone(), adm.clone());
+            Box::pin(async move {
+                let args = vec![symbol.clone(), "--limit".to_string(), "5000".to_string(), "--warehouse".to_string(), warehouse.to_string_lossy().into_owned()];
+                let owner = adm.clone();
+                fetch_adjusted(helpers.as_ref(), &adm, args, limit, move |permit, budget| async move {
+                    let mut cmd = tokio::process::Command::new(python);
+                    cmd.args(["-m", "athena.warehouse.chart_bars", &symbol, "--limit", "5000", "--warehouse"]).arg(&warehouse);
+                    run_chart_bars(&owner, permit, cmd, &budget).await
+                })
+                .await
+            })
+        }));
+        (daily, admission)
+    }
     pub async fn get(&self, symbol: &str) -> Option<Arc<Adjusted>> {
+        self.get_served(symbol).await.map(|(a, _)| a)
+    }
+
+    /// As `get`, with whether the answer came from the cache and how old it is: the data is described by the provenance it was *computed* with, and a caller that serves it says that it was cached.
+    pub async fn get_served(&self, symbol: &str) -> Option<(Arc<Adjusted>, CacheState)> {
         let key = symbol.to_ascii_uppercase();
         if let Some((at, hit)) = self.cache.lock().unwrap().get(&key) {
             if at.elapsed() < ADJUSTED_FOR {
-                return Some(hit.clone());
+                return Some((hit.clone(), CacheState { hit: true, age_secs: at.elapsed().as_secs() }));
             }
         }
         let fresh = Arc::new((self.fetch)(key.clone()).await?);
         self.cache.lock().unwrap().insert(key, (Instant::now(), fresh.clone()));
-        Some(fresh)
+        Some((fresh, CacheState { hit: false, age_secs: 0 }))
     }
+}
+
+/// Whether an adjusted history was served from the cache, and how many seconds ago it was computed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheState {
+    pub hit: bool,
+    pub age_secs: u64,
 }
 
 pub struct Bars {
@@ -311,11 +370,27 @@ fn rename_chain(conn: &Connection, symbol: &str) -> Vec<(Joined, i64)> {
 /// Newest `limit` daily bars as the exchange printed them, oldest first, with the bars of the symbol's earlier symbols in front when the
 /// symbol's own do not fill `limit` (a company that changed its symbol keeps one history). A stock reads `bars`; an index reads `index_bars`.
 pub fn daily_bars_joined(path: &Path, symbol: &str, limit: usize) -> Result<(Vec<Bar>, Vec<Joined>), BarsError> {
-    let mut bars = daily_bars(path, symbol, limit)?;
+    daily_bars_with_provenance(path, symbol, limit).map(|(bars, joined, _)| (bars, joined)).map_err(|e| e.error)
+}
+
+/// The warehouse could not be opened or read for a daily-bars request. `failure` is the provenance of the failure (why the real file failed and why no snapshot generation replaced it).
+pub struct BarsFailure {
+    pub error: BarsError,
+    pub failure: Option<Value>,
+}
+
+/// As `daily_bars_joined`, from **one** open of the warehouse (so every bar and every rename of a response come from the same data), with the provenance of that open: the real file, or a validated
+/// snapshot generation and why.
+pub fn daily_bars_with_provenance(path: &Path, symbol: &str, limit: usize) -> Result<(Vec<Bar>, Vec<Joined>, crate::snapshot::Provenance), BarsFailure> {
+    // not registered here: the server registers the provenance of the response it serves (with the date of the last bar), at the point it serves it
+    let opened = crate::snapshot::open_unrecorded(path).map_err(|f| BarsFailure { error: BarsError::Busy, failure: Some(f.to_value()) })?;
+    let busy = |_| BarsFailure { error: BarsError::Busy, failure: None };
+    let conn = &opened.conn;
+    let mut bars = bars_on(conn, symbol, limit).map_err(busy)?;
     if is_index_name(symbol) || bars.len() >= limit || bars.is_empty() {
-        return Ok((bars, Vec::new()));
+        return Ok((bars, Vec::new(), opened.provenance));
     }
-    let chain = crate::snapshot::open_read_only(path).map(|conn| rename_chain(&conn, symbol)).unwrap_or_default();
+    let chain = rename_chain(conn, symbol);
     let mut joined = Vec::new();
     for (step, last) in chain {
         let room = limit.saturating_sub(bars.len());
@@ -323,7 +398,7 @@ pub fn daily_bars_joined(path: &Path, symbol: &str, limit: usize) -> Result<(Vec
             break;
         }
         let first = bars[0].t;
-        let mut before: Vec<Bar> = daily_bars(path, &step.symbol, room)?.into_iter().filter(|b| b.t <= last && b.t < first).collect();
+        let mut before: Vec<Bar> = bars_on(conn, &step.symbol, room).map_err(busy)?.into_iter().filter(|b| b.t <= last && b.t < first).collect();
         if before.is_empty() {
             continue;
         }
@@ -332,7 +407,7 @@ pub fn daily_bars_joined(path: &Path, symbol: &str, limit: usize) -> Result<(Vec
         joined.push(step);
     }
     joined.reverse();
-    Ok((bars, joined))
+    Ok((bars, joined, opened.provenance))
 }
 
 #[cfg(test)]
@@ -484,7 +559,7 @@ mod adjusted_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn adjusted() -> Adjusted {
-        Adjusted { bars: vec![Bar { t: 1, o: 1.0, h: 1.0, l: 1.0, c: 1.0, v: 1.0 }], flags: vec![], joined: vec![] }
+        Adjusted { bars: vec![Bar { t: 1, o: 1.0, h: 1.0, l: 1.0, c: 1.0, v: 1.0 }], flags: vec![], joined: vec![], provenance: None }
     }
 
     #[tokio::test]
@@ -617,5 +692,144 @@ mod join_tests {
         assert_eq!(a.joined[0].symbol, "OLD");
         let old: Adjusted = serde_json::from_slice(br#"{"bars":[],"flags":[]}"#).unwrap();
         assert!(old.joined.is_empty()); // a helper that does not say is read as joining nothing
+    }
+
+    // ---- T6 review (R2): the adjusted-history fetch (helper, then the command run directly) is one deadline and one bounded admission ----
+    fn py() -> Option<String> {
+        ["../.venv/Scripts/python.exe", "../.venv/bin/python"].into_iter().find(|p| std::path::Path::new(p).exists()).map(String::from)
+    }
+    fn helper_that(py: &str, on_request: &str) -> Arc<crate::helper::Helpers> {
+        let code = format!("import json, sys, time\nprint(json.dumps({{\"ready\": True}}), flush=True)\nfor line in sys.stdin:\n    r = json.loads(line)\n{on_request}\n");
+        let limits = crate::bounded::Limits { workers: 1, capacity: 2, deadline: Duration::from_secs(60), start_limit: Duration::from_secs(20), grace: Duration::from_millis(300), recheck: Duration::from_secs(5), history: 50 };
+        Arc::new(crate::helper::Helpers::with_limits(vec![py.to_string(), "-c".into(), code], limits))
+    }
+    fn one_bar() -> Adjusted {
+        Adjusted { bars: vec![Bar { t: 1, o: 1.0, h: 1.0, l: 1.0, c: 1.0, v: 1.0 }], flags: vec![], joined: vec![], provenance: None }
+    }
+
+    #[tokio::test]
+    async fn an_adjusted_fetch_whose_helper_expired_does_not_run_the_command_beside_it() {
+        let Some(py) = py() else { return };
+        let helpers = helper_that(&py, "    time.sleep(60)");
+        let adm = crate::bounded::Admission::new("t", 2, 2);
+        let direct_runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = direct_runs.clone();
+        let got = fetch_adjusted(Some(&helpers), &adm, vec![], Duration::from_millis(900), move |_permit, _left| async move {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(one_bar())
+        })
+        .await;
+        assert_eq!(got.is_none(), true);
+        assert_eq!(direct_runs.load(std::sync::atomic::Ordering::SeqCst), 0, "the helper's job expired: nothing else may run the same work");
+    }
+
+    #[tokio::test]
+    async fn the_direct_fetch_after_a_helper_failure_is_given_only_what_is_left_of_the_deadline() {
+        let Some(py) = py() else { return };
+        let helpers = helper_that(&py, "    time.sleep(0.6)\n    print(json.dumps({\"id\": r[\"id\"], \"ok\": False}), flush=True)");
+        let adm = crate::bounded::Admission::new("t", 2, 2);
+        let left_seen = Arc::new(Mutex::new(None));
+        let seen = left_seen.clone();
+        let got = fetch_adjusted(Some(&helpers), &adm, vec![], Duration::from_millis(2_000), move |_permit, budget| async move {
+            *seen.lock().unwrap() = Some(budget.remaining());
+            Some(one_bar())
+        })
+        .await;
+        assert_eq!(got.is_some(), true, "a helper that failed leaves the command free to run");
+        let left = left_seen.lock().unwrap().expect("the command was run");
+        assert_eq!(left <= Duration::from_millis(1_400), true, "0.6 s of the 2 s went on the helper: {left:?}");
+    }
+
+    #[tokio::test]
+    async fn a_full_admission_refuses_the_adjusted_fetch_at_once_without_running_anything() {
+        let adm = crate::bounded::Admission::new("t", 1, 0);
+        let _held = adm.admit("chart_bars", &crate::bounded::Budget::new(Duration::from_secs(5))).await.ok().expect("a free place");
+        let ran = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = ran.clone();
+        let t = std::time::Instant::now();
+        let got = fetch_adjusted(None, &adm, vec![], Duration::from_secs(5), move |_permit, _| async move {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(one_bar())
+        })
+        .await;
+        assert_eq!((got.is_none(), ran.load(std::sync::atomic::Ordering::SeqCst), t.elapsed() < Duration::from_millis(500)), (true, 0, true));
+    }
+
+    #[tokio::test]
+    async fn an_adjusted_fetch_refused_by_a_full_helper_queue_does_not_run_the_command_either() {
+        let Some(py) = py() else { return };
+        let code = "import json, sys, time\nprint(json.dumps({\"ready\": True}), flush=True)\nfor line in sys.stdin:\n    time.sleep(60)\n";
+        let limits = crate::bounded::Limits { workers: 1, capacity: 0, deadline: Duration::from_secs(60), start_limit: Duration::from_secs(20), grace: Duration::from_millis(300), recheck: Duration::from_secs(5), history: 50 };
+        let helpers = Arc::new(crate::helper::Helpers::with_limits(vec![py, "-c".into(), code.into()], limits));
+        let busy = tokio::spawn({ let h = helpers.clone(); async move { h.run(crate::helper::HelperOp::ChartBars, &[], Duration::from_millis(1_500)).await } });
+        tokio::time::sleep(Duration::from_millis(400)).await; // the only helper has it
+        let adm = crate::bounded::Admission::new("t", 2, 2);
+        let ran = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = ran.clone();
+        let t = std::time::Instant::now();
+        let got = fetch_adjusted(Some(&helpers), &adm, vec![], Duration::from_secs(5), move |_permit, _| async move {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(one_bar())
+        })
+        .await;
+        assert_eq!((got.is_none(), ran.load(std::sync::atomic::Ordering::SeqCst), t.elapsed() < Duration::from_millis(900)), (true, 0, true), "refused at once, and nothing else ran the work");
+        let _ = busy.await;
+    }
+
+    #[tokio::test]
+    async fn the_helper_is_given_what_is_left_after_the_wait_for_a_place_in_the_adjusted_fetch() {
+        let Some(py) = py() else { return };
+        let helpers = helper_that(&py, "    time.sleep(60)");
+        let adm = Arc::new(crate::bounded::Admission::new("t", 1, 1));
+        let held = adm.admit("chart_bars", &crate::bounded::Budget::new(Duration::from_secs(30))).await.ok().expect("a free place");
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(600)).await;
+            drop(held);
+        });
+        let ran = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = ran.clone();
+        let t = std::time::Instant::now();
+        let got = fetch_adjusted(Some(&helpers), &adm, vec![], Duration::from_millis(1_400), move |_permit, _| async move {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(one_bar())
+        })
+        .await;
+        assert_eq!(got.is_none(), true);
+        assert_eq!(t.elapsed() > Duration::from_millis(1_100) && t.elapsed() < Duration::from_millis(1_900), true, "0.6 s waiting and the helper's time are one 1.4 s deadline, not 0.6 s and then a fresh 1.4 s: {:?}", t.elapsed());
+        assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 0, "the helper expired: the command was not run beside it");
+    }
+
+    // ---- T6 review 2: the command run directly has an owner of its own and the fetch's deadline ----
+    #[tokio::test]
+    async fn the_adjusted_command_that_overruns_is_cut_at_the_deadline_it_was_given_and_ended() {
+        let Some(py) = py() else { return };
+        let adm = crate::bounded::Admission::new("t", 1, 0);
+        let permit = adm.admit("chart_bars", &crate::bounded::Budget::new(Duration::from_secs(5))).await.ok().expect("a place");
+        let mut cmd = tokio::process::Command::new(py);
+        cmd.args(["-c", "import time\ntime.sleep(60)"]);
+        let t = std::time::Instant::now();
+        // (the test's own bound: a command given no real deadline fails this assertion instead of waiting a minute)
+        let got = tokio::time::timeout(Duration::from_secs(8), run_chart_bars(&adm, permit, cmd, &crate::bounded::Budget::new(Duration::from_millis(500)))).await;
+        assert_eq!(got.is_ok(), true, "it came back at its deadline");
+        assert_eq!(got.unwrap().is_none(), true);
+        assert_eq!(t.elapsed() < Duration::from_secs(3), true, "{:?}", t.elapsed());
+    }
+
+    // ---- T6 review 3: the deadline the fetch began with goes all the way down ----
+    #[tokio::test]
+    async fn the_adjusted_command_is_bound_by_the_fetchs_original_deadline_however_long_the_start_takes() {
+        let Some(py) = py() else { return };
+        let adm = Arc::new(crate::bounded::Admission::new("t", 1, 0));
+        let owner = adm.clone();
+        let t = std::time::Instant::now();
+        let got = fetch_adjusted(None, &adm, vec![], Duration::from_millis(1_500), move |permit, budget| async move {
+            tokio::time::sleep(Duration::from_millis(900)).await; // something slow between being given the time and starting the command
+            let mut cmd = tokio::process::Command::new(py);
+            cmd.args(["-c", "import time\ntime.sleep(60)"]);
+            run_chart_bars(&owner, permit, cmd, &budget).await
+        })
+        .await;
+        assert_eq!(got.is_none(), true);
+        assert_eq!(t.elapsed() < Duration::from_millis(2_100), true, "one 1.5 s deadline, not 0.9 s and then a fresh 1.5 s: {:?}", t.elapsed());
     }
 }
