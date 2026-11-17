@@ -1,0 +1,55 @@
+{
+    "candidate":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+    "tools":  {
+                  "python":  "Python 3.13.14",
+                  "cargo":  "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+                  "rustc":  "rustc 1.98.1 (48a229cea 2026-09-01)",
+                  "node":  "v24.18.0",
+                  "sh":  "C:\\Program Files\\Git\\bin\\sh.exe (not on PATH: the Rust gate adds that folder and records it)"
+              },
+    "exclusions":  [
+                       "tests/test_dashboard_app.py",
+                       "tests/test_dashboard_live_panel.py",
+                       "tests/test_dashboard_market.py",
+                       "tests/test_dashboard_verdict_panel.py",
+                       "tests/test_llm_basics.py",
+                       "tests/test_llm_probe.py",
+                       "tests/test_llm_router.py",
+                       "tests/test_angel_login.py",
+                       "tests/test_kite_login.py"
+                   ],
+    "collected":  3176,
+    "counts":  {
+                   "passed":  3093,
+                   "failed":  0,
+                   "skipped":  83,
+                   "errors":  0,
+                   "xfailed":  0,
+                   "xpassed":  0,
+                   "deselected":  0
+               },
+    "seconds":  346,
+    "skip_reason_groups":  4,
+    "checks":  {
+                   "tests_collected":  true,
+                   "no_collection_errors":  true,
+                   "exit_zero":  true,
+                   "no_failures_or_errors":  true,
+                   "count_matches_collected_ids":  true,
+                   "expected_passed":  true,
+                   "expected_skipped":  true,
+                   "imports_from_candidate":  true
+               },
+    "import_origin":  {
+                          "processes_observed":  19,
+                          "processes_that_imported_athena":  17,
+                          "athena_modules_in_largest_process":  326,
+                          "violations":  0,
+                          "violation_examples":  [
+
+                                                 ],
+                          "ok":  true
+                      },
+    "not_covered":  "the nine excluded modules; the suite default live-test skips (--live is never used); silent early-return tests are NOT detected by this gate and need a reviewed list (see the plan)",
+    "ok":  true
+}

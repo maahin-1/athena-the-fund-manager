@@ -1,0 +1,15 @@
+{
+    "ref":  "HEAD",
+    "candidate_commit":  "37f1fc19846a178083d9ced7a7a25aeffe65b1f9",
+    "baseline_commit":  "37f1fc19846a178083d9ced7a7a25aeffe65b1f9",
+    "protected_tracked_entries_in_candidate":  1,
+    "protected_tracked_entries_in_baseline":  1,
+    "inherited_entries_identical_to_baseline":  true,
+    "new_or_changed_protected_entries":  0,
+    "protected_paths_materialized_on_disk":  0,
+    "protected_entries_skip_worktree":  1,
+    "files_on_disk":  1011,
+    "git_status_entries":  0,
+    "note":  "exception: the baseline already tracks the entries counted above; they are kept unchanged as metadata only and are not materialized. A zero-protected-filename check cannot pass and is not claimed.",
+    "ok":  true
+}

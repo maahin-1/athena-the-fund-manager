@@ -1,0 +1,46 @@
+{
+    "candidate":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+    "tools":  {
+                  "python":  "Python 3.13.14",
+                  "cargo":  "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+                  "rustc":  "rustc 1.98.1 (48a229cea 2026-09-01)",
+                  "node":  "v24.18.0",
+                  "sh":  "C:\\Program Files\\Git\\bin\\sh.exe (not on PATH: the Rust gate adds that folder and records it)"
+              },
+    "sh_path_added":  "C:\\Program Files\\Git\\bin",
+    "counts":  {
+                   "passed":  417,
+                   "failed":  0,
+                   "ignored":  2,
+                   "filtered_out":  0,
+                   "result_lines":  1
+               },
+    "listed":  419,
+    "seconds":  17.2,
+    "checks":  {
+                   "exit_zero":  true,
+                   "no_failures":  true,
+                   "passed_as_expected":  true,
+                   "ignored_as_expected":  true,
+                   "listed_ids_match_outcomes":  true,
+                   "no_python_import_from_outside_candidate":  true,
+                   "interpreter_invoked_by_the_tests_is_the_intended_one":  true,
+                   "python_backed_tests_ran_and_started_python":  true
+               },
+    "interpreter":  {
+                        "ran":  true,
+                        "is_candidate_venv_path":  true,
+                        "same_environment_as_intended":  true,
+                        "athena_from_candidate":  true,
+                        "executable":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim\\.venv\\Scripts\\python.exe",
+                        "version":  "3.13.14",
+                        "prefix":  "D:\\projects\\learn-project\\athena-the-fund-manager\\.venv"
+                    },
+    "python_processes_observed_full_run":  61,
+    "python_backed_tests_listed":  43,
+    "python_backed_tests_verified":  43,
+    "evidence_problems":  [
+
+                          ],
+    "ok":  true
+}

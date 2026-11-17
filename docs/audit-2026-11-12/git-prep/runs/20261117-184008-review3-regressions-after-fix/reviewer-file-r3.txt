@@ -1,0 +1,13 @@
+﻿......                                                                   [100%]
+=================================== PASSES ====================================
+_____________ test_comparator_never_opens_protected_source_alias ______________
+---------------------------- Captured stdout call -----------------------------
+{"expected_files": 1, "accepted_by_class": {}, "accepted": 0, "mismatched": 0, "missing": 0, "source_no_longer_matches_manifest": 0, "candidate_tracked_files": null, "unexpected_tracked": 0, "baseline_files_changed_without_being_expected": 0, "protected_names_skipped_not_opened": 0, "removal_check": "skipped (explicit --no-removal-check)", "baseline_files_removed_without_being_planned": 0, "planned_deletions_still_present": 0, "protected_baseline_entries_missing": 0, "unsafe_declarations": 1, "ok": false}
+=========================== short test summary info ===========================
+PASSED docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_valid_workflow_control
+PASSED docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_reject_inherited_remote_override
+PASSED docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_reject_inherited_ref_override
+PASSED docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_sparse_exclusion_preserves_filename[blocked]
+PASSED docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_sparse_exclusion_preserves_filename[blocked ]
+PASSED docs/audit-2026-11-12/git-prep/review3/test_review_regressions.py::test_comparator_never_opens_protected_source_alias
+6 passed in 0.54s

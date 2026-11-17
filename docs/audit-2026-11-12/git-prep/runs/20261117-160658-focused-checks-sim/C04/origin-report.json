@@ -1,0 +1,8 @@
+{
+  "processes_observed": 2,
+  "processes_that_imported_athena": 2,
+  "athena_modules_in_largest_process": 37,
+  "violations": 0,
+  "violation_examples": [],
+  "ok": true
+}

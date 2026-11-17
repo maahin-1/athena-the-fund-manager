@@ -1,0 +1,23 @@
+{
+  "expected_files": 227,
+  "accepted_by_class": {
+    "eol_lf": 202,
+    "eol_crlf": 18,
+    "exact": 2,
+    "eol_auto": 5
+  },
+  "accepted": 227,
+  "mismatched": [],
+  "missing": [],
+  "source_no_longer_matches_manifest": [],
+  "candidate_tracked_files": 227,
+  "unexpected_tracked": [],
+  "baseline_files_changed_without_being_expected": [],
+  "protected_names_skipped_not_opened": 0,
+  "removal_check": "skipped (explicit --no-removal-check)",
+  "baseline_files_removed_without_being_planned": [],
+  "planned_deletions_still_present": [],
+  "protected_baseline_entries_missing": 0,
+  "unsafe_declarations": [],
+  "ok": true
+}

@@ -1,0 +1,22 @@
+{
+    "staged_files":  227,
+    "expected":  227,
+    "accepted":  227,
+    "accepted_by_class":  {
+                              "eol_lf":  202,
+                              "eol_crlf":  18,
+                              "exact":  2,
+                              "eol_auto":  5
+                          },
+    "mismatched":  0,
+    "missing":  0,
+    "unexpected_tracked":  0,
+    "removal_check":  "skipped (explicit --no-removal-check)",
+    "exit":  0,
+    "control_exit":  1,
+    "control_mismatched":  [
+                               "src/athena/timing.py"
+                           ],
+    "control_names_the_changed_file":  true,
+    "ok":  true
+}

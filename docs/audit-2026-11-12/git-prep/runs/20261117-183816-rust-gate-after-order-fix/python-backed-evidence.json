@@ -1,0 +1,267 @@
+{
+  "ok": true,
+  "reasons": [],
+  "listed_tests": 43,
+  "tests_verified": 43,
+  "per_test": [
+    {
+      "id": "analyse_worker::tests::a_backtest_goes_through_the_same_worker",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "analyse_worker::tests::a_dead_worker_is_reported_and_replaced_on_the_next_request",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "analyse_worker::tests::a_full_queue_is_refused_at_once_and_the_accepted_requests_still_finish",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "analyse_worker::tests::a_request_gets_its_own_answer_and_a_failure_keeps_the_worker",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "analyse_worker::tests::a_request_past_its_deadline_has_its_child_ended_and_confirmed_before_the_next_gets_a_worker",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "analyse_worker::tests::a_strategy_is_passed_on_whole_and_a_bad_or_huge_one_is_refused_before_the_worker_hears_of_it",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "analyse_worker::tests::the_deadline_includes_the_wait_so_a_second_request_behind_a_long_one_times_out_on_the_same_clock",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "bars::join_tests::an_adjusted_fetch_refused_by_a_full_helper_queue_does_not_run_the_command_either",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "bars::join_tests::an_adjusted_fetch_whose_helper_expired_does_not_run_the_command_beside_it",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "bars::join_tests::the_adjusted_command_is_bound_by_the_fetchs_original_deadline_however_long_the_start_takes",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "bars::join_tests::the_adjusted_command_that_overruns_is_cut_at_the_deadline_it_was_given_and_ended",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "bars::join_tests::the_direct_fetch_after_a_helper_failure_is_given_only_what_is_left_of_the_deadline",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "bars::join_tests::the_helper_is_given_what_is_left_after_the_wait_for_a_place_in_the_adjusted_fetch",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "bounded::tests::a_real_command_that_overruns_is_ended_and_really_gone_before_its_place_is_free",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "flow_board::tests::a_board_refused_by_a_full_helper_queue_is_overloaded_and_starts_nothing",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "flow_board::tests::a_board_whose_helper_expired_does_not_start_the_module_a_second_time",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "flow_board::tests::the_board_module_run_after_a_helper_failure_gets_only_what_is_left_of_the_deadline",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "flow_board::tests::the_place_for_the_board_is_bounded_and_the_wait_for_it_counts_against_the_deadline",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "forensic_job::tests::a_report_of_the_known_schema_is_carried_whole_to_the_page",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "forensic_job::tests::the_jobs_own_error_is_shown_short_and_anything_else_is_a_fixed_message",
+      "ok": true,
+      "processes": 4,
+      "problems": []
+    },
+    {
+      "id": "forensic_job::tests::the_same_document_may_be_asked_twice_but_another_waits_and_the_arguments_reach_the_job",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::a_module_that_overran_its_deadline_is_really_gone_and_its_place_is_free_afterwards",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::a_request_refused_by_a_full_helper_queue_does_not_start_the_module_and_is_told_it_is_overloaded",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::a_request_that_waits_past_its_deadline_for_a_place_gives_up_at_the_deadline_and_does_not_run_on_past_it",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::a_request_whose_helper_expired_does_not_start_the_module_a_second_time",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::an_export_returns_the_files_bytes_and_removes_the_file",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::an_export_that_exits_with_code_2_is_no_data_and_one_that_fails_is_a_failure_and_a_good_one_is_read",
+      "ok": true,
+      "processes": 3,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::no_price_is_passed_when_the_warehouse_has_none",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::the_child_gets_the_symbol_basis_store_and_price_and_its_document_comes_back",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::the_childs_failures_become_fixed_errors",
+      "ok": true,
+      "processes": 4,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::the_helper_is_given_what_is_left_after_the_wait_for_a_place_not_the_whole_limit",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::the_module_run_after_a_helper_failure_gets_only_what_is_left_of_the_deadline",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::the_valuation_runs_its_own_module_with_the_same_arguments_and_is_refused_when_not_configured",
+      "ok": true,
+      "processes": 3,
+      "problems": []
+    },
+    {
+      "id": "fundamentals::tests::waiting_for_a_place_counts_against_the_deadline_and_the_wait_itself_is_bounded",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "helper::tests::a_call_past_the_queue_capacity_gets_none_at_once_and_the_accepted_calls_are_answered",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "helper::tests::a_command_that_failed_and_a_helper_that_could_not_start_leave_the_command_free_to_run",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "helper::tests::a_helper_answers_with_what_the_command_prints_and_a_failure_or_silence_is_none",
+      "ok": true,
+      "processes": 2,
+      "problems": []
+    },
+    {
+      "id": "helper::tests::a_refused_request_is_a_refusal_and_does_not_invite_the_command_to_be_run_again",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "helper::tests::after_shutdown_the_helpers_are_ended_and_a_request_is_refused_as_closed",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "helper::tests::an_expired_request_names_its_job_and_does_not_invite_the_command_to_be_run_again",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "helper::tests::the_callers_limit_covers_the_wait_for_a_free_helper",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "server::tests::a_client_that_disconnects_from_a_running_analysis_lets_it_finish_and_the_worker_keeps_its_child",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    },
+    {
+      "id": "server::tests::a_client_that_disconnects_while_its_analysis_is_queued_cancels_the_queued_job_and_the_running_one_is_untouched",
+      "ok": true,
+      "processes": 1,
+      "problems": []
+    }
+  ],
+  "full_run_processes": 60
+}

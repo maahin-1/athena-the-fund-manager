@@ -1,0 +1,53 @@
+{
+    "candidate":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+    "toolchain":  {
+                      "node":  "v24.18.0",
+                      "npm":  "11.16.0",
+                      "typescript":  "7.0.2",
+                      "vitest":  "5.0.4",
+                      "vite":  "8.3.4"
+                  },
+    "guard":  {
+                  "approved_sha256":  "08B7B5A3DBAB4834E9A63BD000ADF9A00547050707C550646AA8C693D3548BBF",
+                  "approved_file_matches":  true,
+                  "run_local_sha256":  "76FFF1CBF4E63402627FFF3D2985DA6E9E28ABD1C8E7271DF5AA8435EA7F8083",
+                  "lines_changed_in_run_local_copy":  1,
+                  "the_one_changed_line":  "const BASE = \u003crun folder\u003e/guard"
+              },
+    "empty_variable_file_dir":  "C:\\Users\\LEGION\\ath-wp07\\web-work-1\\no-dotfiles",
+    "tests":  null,
+    "guard_selftest":  {
+                           "pass_lines":  68,
+                           "fail_lines":  0
+                       },
+    "guard_hits":  {
+                       "total_records":  956115,
+                       "denied_relative_fetch":  123,
+                       "denied_absolute_fetch":  0,
+                       "other_denied":  0,
+                       "fs_outside_project":  955916,
+                       "baseline_reference":  "baseline run: 895 tests, 130 denied relative fetches, no other kind"
+                   },
+    "production_build":  {
+                             "files":  0,
+                             "bytes":  null,
+                             "log":  "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\runs\\20261117-155557-web-gate-sim\\build.log"
+                         },
+    "not_covered":  "Playwright/browser checks; worker threads and native addons are outside the guard (GUARD-LIMITS.md)",
+    "checks":  {
+                   "approved_guard_file":  true,
+                   "guard_selftest_all_pass":  true,
+                   "tsc_exit_zero":  true,
+                   "vitest_exit_zero":  false,
+                   "results_file_written":  false,
+                   "no_failed_tests_or_suites":  false,
+                   "tests_ran":  false,
+                   "no_absolute_url_fetch":  true,
+                   "no_other_denied_call":  true,
+                   "no_fs_outside_project":  false,
+                   "build_options_not_drifted":  true,
+                   "build_exit_zero":  true,
+                   "build_wrote_index_and_js":  false
+               },
+    "ok":  false
+}

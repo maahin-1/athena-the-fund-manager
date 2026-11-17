@@ -1,0 +1,12 @@
+{
+    "tests_run_alone":  417,
+    "not_exactly_one_pass_when_run_alone":  2,
+    "python_backed_failing_alone":  0,
+    "on_another_interpreter":  0,
+    "python_backed":  43,
+    "total_python_processes":  62,
+    "full_run_min_processes":  31,
+    "rebuilt_from":  "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\runs\\20261117-171202-rust-derive-sim\\isolated-all.json",
+    "list":  "d:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\verify\\rust-python-tests.json",
+    "ok":  true
+}

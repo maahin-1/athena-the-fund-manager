@@ -1,0 +1,14 @@
+﻿..........                                                               [100%]
+=================================== PASSES ====================================
+=========================== short test summary info ===========================
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_complete_evidence_passes
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_a_test_that_passed_without_starting_python_fails
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_zero_observed_python_processes_never_counts_as_coverage
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_an_empty_recorded_list_cannot_claim_coverage
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_a_wrong_or_unreachable_interpreter_fails
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_another_interpreter_and_foreign_imports_fail
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_missing_extra_failed_or_multi_pass_results_fail
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_the_full_run_must_observe_the_recorded_minimum
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_a_process_that_was_killed_is_still_counted_through_its_start_record
+PASSED docs/audit-2026-11-12/git-prep/verify/test_rust_evidence.py::test_origin_report_counts_processes_and_executables
+10 passed in 0.04s

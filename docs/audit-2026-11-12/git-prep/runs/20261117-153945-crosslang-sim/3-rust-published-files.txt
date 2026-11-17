@@ -1,0 +1,6 @@
+w.duckdb 798720
+w.snap.20261115T101500Z-a1b2c3.duckdb 536576
+w.snap.20261115T101500Z-a1b2c3.json 309
+w.snap.20261115T101501Z-a1b2c4.duckdb 798720
+w.snap.20261115T101501Z-a1b2c4.json 309
+w.snap.current 240

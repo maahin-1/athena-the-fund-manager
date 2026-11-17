@@ -1,0 +1,25 @@
+# maintenance
+# exit=0
+# calls:
+build_candidate -Source C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\source -Ref HEAD -Dest C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\1-candidate -Baseline 37f1fc19846a178083d9ced7a7a25aeffe65b1f9
+compare_manifest --expected C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\expected.json --candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate --baseline-repo C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\source --baseline-ref aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\2-compare.json --source-root C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\later-backup-tree --source-root C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\earlier-backup-tree
+origin_probe -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -Python D:\projects\learn-project\athena-the-fund-manager\.venv\Scripts\python.exe -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\3-origin-probe
+python_gate -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -Python D:\projects\learn-project\athena-the-fund-manager\.venv\Scripts\python.exe -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\4-python -Scratch C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\py-scratch -ExpectedPassed 3198 -ExpectedSkipped 83
+formula_golden_gate -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -Python D:\projects\learn-project\athena-the-fund-manager\.venv\Scripts\python.exe -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\5-formula-golden
+rust_gate -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -Python D:\projects\learn-project\athena-the-fund-manager\.venv\Scripts\python.exe -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\6-rust -CargoTarget C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\cargo-target -ExpectedPassed 417 -ExpectedIgnored 2
+crosslang -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -Python D:\projects\learn-project\athena-the-fund-manager\.venv\Scripts\python.exe -Work C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\xl-work -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\7-crosslang -CargoTarget C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\cargo-target
+web_gate -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -NodeModules C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\nm -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\8-web -Work C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\web-work
+hygiene_gate -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -BaseRef aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\9-hygiene
+policy_gate -Candidate C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w10\candidate -Python D:\projects\learn-project\athena-the-fund-manager\.venv\Scripts\python.exe -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\o10\10-policy -PyYamlPath 
+# output:
+1 build_candidate    passed exit=0 (0s)
+2 compare_manifest   passed exit=0 (0.1s)
+3 origin_probe       passed exit=0 (0s)
+4 python_gate        passed exit=0 (0s)
+5 formula_golden     passed exit=0 (0s)
+6 rust_gate          passed exit=0 (0s)
+7 crosslang          passed exit=0 (0s)
+8 web_gate           passed exit=0 (0s)
+9 hygiene            passed exit=0 (0s)
+10 policy            passed exit=0 (0s)
+final gate ok=True (not run: 0)

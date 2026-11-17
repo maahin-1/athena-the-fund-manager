@@ -1,0 +1,120 @@
+tests/test_claims.py::test_a_claim_that_matches_its_fact_is_verified_and_the_sentence_is_rendered_by_code_with_its_sign
+tests/test_claims.py::test_a_fraction_may_be_shown_as_a_percent_and_keeps_its_sign
+tests/test_claims.py::test_a_reversed_sign_is_rejected[claim0]
+tests/test_claims.py::test_a_reversed_sign_is_rejected[claim1]
+tests/test_claims.py::test_a_reversed_sign_is_rejected[claim2]
+tests/test_claims.py::test_a_metric_that_is_not_a_fact_is_rejected
+tests/test_claims.py::test_a_claim_that_names_one_metric_but_cites_another_fact_is_rejected
+tests/test_claims.py::test_a_wrong_period_is_rejected_and_a_period_the_source_does_not_state_is_too
+tests/test_claims.py::test_a_wrong_unit_is_rejected_and_only_a_fraction_converts
+tests/test_claims.py::test_a_wrong_entity_is_rejected
+tests/test_claims.py::test_a_value_off_by_more_than_the_digits_it_shows_is_rejected_and_rounding_to_those_digits_is_not
+tests/test_claims.py::test_a_fact_with_no_value_cannot_be_claimed
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[None]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[roe]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw2]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw3]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw4]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw5]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw6]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw7]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw8]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw9]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw10]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw11]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw12]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw13]
+tests/test_claims.py::test_a_malformed_payload_is_a_list_of_reasons_never_an_exception[raw14]
+tests/test_claims.py::test_the_fingerprint_changes_with_any_part_of_the_fact
+tests/test_claims.py::test_source_text_that_tries_to_instruct_the_model_is_never_followed_and_is_cleaned_in_the_rendered_sentence
+tests/test_claims.py::test_the_council_sheet_gives_each_fact_its_entity_and_source
+tests/test_claims.py::test_interpretation_may_not_carry_figures_or_promise_an_outcome
+tests/test_claims.py::test_the_conversion_table_is_exactly_fraction_to_percent
+tests/test_specialist_claims.py::test_a_bound_reply_becomes_an_output_with_code_rendered_claims_and_a_verification_label
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": [{"fact": "roe", "entity": "TCS", "metric": "roe", "period": "FY2026", "value": 0.25, "unit": "fraction"}]}-sign]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": [{"fact": "revenue_growth", "entity": "TCS", "metric": "revenue_growth", "period": "FY2026", "value": -0.25, "unit": "fraction"}]}-not a fact]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": [{"fact": "roe", "entity": "TCS", "metric": "roe", "period": "FY2025", "value": -0.25, "unit": "fraction"}]}-period]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": [{"fact": "roe", "entity": "TCS", "metric": "roe", "period": "FY2026", "value": -0.25, "unit": "ratio"}]}-unit]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": [{"fact": "roe", "entity": "INFY", "metric": "roe", "period": "FY2026", "value": -0.25, "unit": "fraction"}]}-entity]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Return on equity is positive 25%.", "claims": [{"fact": "roe", "entity": "TCS", "metric": "roe", "period": "FY2026", "value": -0.25, "unit": "fraction"}, {"fact": "pe", "entity": "TCS", "metric": "pe", "period": "trailing 4 quarters", "value": 20, "unit": "ratio"}]}-figure]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Revenue grew 20%.", "claims": [{"fact": "pe", "entity": "TCS", "metric": "pe", "period": "trailing 4 quarters", "value": 20, "unit": "ratio"}]}-figure]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bullish", "confidence": 70, "reasoning": "The company is certain to outperform.", "claims": [{"fact": "roe", "entity": "TCS", "metric": "roe", "period": "FY2026", "value": -0.25, "unit": "fraction"}]}-promises]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": []}-at least one]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Weak profitability."}-claims]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": null}-claims must be a list]
+tests/test_specialist_claims.py::test_a_wrong_or_missing_claim_is_rejected_with_the_reason_and_may_be_repaired_once[{"signal": "bearish", "confidence": 70, "reasoning": "Profitability is negative and the multiple looks stretched for it.", "claims": "roe"}-claims must be a list]
+tests/test_specialist_claims.py::test_a_reply_that_never_repairs_fails_loud_or_quiet_as_before
+tests/test_specialist_claims.py::test_a_neutral_view_may_rest_on_no_claim_but_still_carries_no_figures_and_no_certainty
+tests/test_specialist_claims.py::test_a_model_that_adds_its_own_rendered_statement_or_verification_is_rejected
+tests/test_specialist_claims.py::test_the_packet_text_cannot_instruct_the_checker
+tests/test_specialist_claims.py::test_the_default_output_is_labelled_numeric_consistency_and_does_not_claim_binding
+tests/test_specialist_claims.py::test_the_legacy_check_still_accepts_what_it_always_accepted_and_the_label_says_it_binds_nothing
+tests/test_specialist_claims.py::test_an_abstention_carries_no_verification_label
+tests/test_specialist_claims.py::test_older_outputs_without_the_new_keys_still_validate_and_wrong_new_keys_do_not
+tests/test_specialist_base.py::test_parse_model_json_handles_fences_and_surrounding_text
+tests/test_specialist_base.py::test_valid_reply_becomes_a_full_contract_output
+tests/test_specialist_base.py::test_system_prompt_carries_persona_and_contract_and_user_prompt_carries_data
+tests/test_specialist_base.py::test_missing_critical_input_abstains_without_calling_the_model
+tests/test_specialist_base.py::test_missing_optional_input_is_partial_and_the_prompt_says_so
+tests/test_specialist_base.py::test_model_cannot_choose_its_own_coverage_label
+tests/test_specialist_base.py::test_ungrounded_figure_is_rejected_with_feedback_then_accepted
+tests/test_specialist_base.py::test_invalid_contract_values_are_rejected
+tests/test_specialist_base.py::test_unparseable_reply_fails_loud_by_default_and_quiet_on_request
+tests/test_specialist_base.py::test_identical_requests_are_served_from_cache_and_copies_are_independent
+tests/test_council_binding.py::test_a_correct_number_attached_to_the_wrong_fact_is_rejected_in_a_debate_case
+tests/test_council_binding.py::test_the_same_figure_with_its_own_fact_cited_passes_whether_the_id_is_listed_or_written_inline
+tests/test_council_binding.py::test_a_signed_figure_must_agree_with_the_sign_of_the_fact_it_cites
+tests/test_council_binding.py::test_a_fraction_may_be_cited_as_a_percent_but_a_plain_number_is_not_scaled
+tests/test_council_binding.py::test_a_figure_that_is_on_no_fact_is_left_to_the_sheet_wide_check_as_before
+tests/test_council_binding.py::test_the_judge_is_bound_the_same_way_to_what_it_relied_on
+tests/test_council_binding.py::test_the_sheet_shows_the_typed_claims_an_analyst_made_and_the_label_of_what_was_checked
+tests/test_council_debate_judge.py::test_no_debate_is_held_when_the_analysts_do_not_conflict
+tests/test_council_debate_judge.py::test_each_side_argues_once_from_the_sheet_and_cites_ids
+tests/test_council_debate_judge.py::test_a_case_citing_an_id_or_a_figure_that_is_not_on_the_sheet_is_sent_back_once_then_recorded_as_failed
+tests/test_council_debate_judge.py::test_a_case_with_a_wrong_shape_or_too_long_is_rejected
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[None]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised['F1']
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[[]]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[[None]]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[[1]]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[['F1', None]]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[['F9']]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[['F1, T2']]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[[['F1']]]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[{'id': 'F1'}]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[['f1']]
+tests/test_council_debate_judge.py::test_a_debate_case_with_missing_malformed_or_unknown_citations_is_rejected_not_raised[[True]]
+tests/test_council_debate_judge.py::test_a_debate_case_with_non_text_or_empty_prose_is_rejected[case-None]
+tests/test_council_debate_judge.py::test_a_debate_case_with_non_text_or_empty_prose_is_rejected[case-value1]
+tests/test_council_debate_judge.py::test_a_debate_case_with_non_text_or_empty_prose_is_rejected[case-]
+tests/test_council_debate_judge.py::test_a_debate_case_with_non_text_or_empty_prose_is_rejected[weakest_point-None]
+tests/test_council_debate_judge.py::test_a_debate_case_with_non_text_or_empty_prose_is_rejected[weakest_point-5]
+tests/test_council_debate_judge.py::test_a_debate_case_with_non_text_or_empty_prose_is_rejected[weakest_point-  ]
+tests/test_council_debate_judge.py::test_a_malformed_case_is_sent_back_once_and_a_repaired_reply_survives
+tests/test_council_debate_judge.py::test_one_side_that_never_cites_is_recorded_failed_and_the_other_side_still_stands
+tests/test_council_debate_judge.py::test_the_judge_keeps_the_blends_conviction_unless_it_asks_to_lower_it_and_cannot_raise_it
+tests/test_council_debate_judge.py::test_a_stance_more_than_one_step_from_the_blend_is_pulled_back_and_says_so
+tests/test_council_debate_judge.py::test_the_judge_is_shown_the_debate_and_its_citations_are_checked
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised[None]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised['F1']
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised[[None]]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised[[1]]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised[['F9']]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised[['F1, T2']]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised[[['F1']]]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_malformed_or_unknown_citations_is_rejected_not_raised[{'id': 'F1'}]
+tests/test_council_debate_judge.py::test_a_changed_stance_or_lowered_conviction_needs_citations[Overweight-same]
+tests/test_council_debate_judge.py::test_a_changed_stance_or_lowered_conviction_needs_citations[Hold-lower]
+tests/test_council_debate_judge.py::test_no_change_and_no_citations_is_accepted_only_as_insufficient_support
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[stance-None]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[stance-value1]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[why-None]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[why-7]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[would_change_my_mind-None]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[look_again_days-True]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[look_again_days-None]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[look_again_days-20.5]
+tests/test_council_debate_judge.py::test_a_judge_reply_with_wrong_types_is_rejected_not_raised[conviction-None]
+tests/test_council_debate_judge.py::test_a_judge_that_writes_far_more_than_the_word_limit_is_rejected
+tests/test_council_debate_judge.py::test_the_ids_in_the_test_sheet_are_the_ones_used_here
+tests/test_council_debate_judge.py::test_the_debaters_and_the_judge_are_told_how_to_read_the_valuation_models_ratio

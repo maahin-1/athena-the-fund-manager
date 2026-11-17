@@ -1,0 +1,21 @@
+# existing work dir
+# exit=1
+# calls:
+
+# output:
+powershell.exe : run directory already exists (never reused): 
+At D:\projects\learn-project\athena-the-fund-manager\docs\audit-2026-11-12\git-prep\verify\test_final_gate.ps1:51 
+char:17
++     $gateText = & powershell.exe @argv 2>&1 | Out-String
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (run directory a...never reused): :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+C:\Users\LEGION\AppData\Local\Temp\fg-test-017e01739307446fb98e338f694481e7\w2
+At D:\projects\learn-project\athena-the-fund-manager\docs\audit-2026-11-12\git-prep\verify\common.ps1:13 char:41
++ ... th $Path) { throw "run directory already exists (never reused): $Path ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (run directory a...338f694481e7\w2:String) [], RuntimeException
+    + FullyQualifiedErrorId : run directory already exists (never reused): C:\Users\LEGION\AppData\Local\Temp\fg-test- 
+   017e01739307446fb98e338f694481e7\w2
+ 

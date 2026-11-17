@@ -1,0 +1,13 @@
+{
+  "processes_observed": 60,
+  "processes_ended_normally": 39,
+  "processes_that_imported_athena": 0,
+  "athena_modules_in_largest_process": 0,
+  "violations": 0,
+  "violation_examples": [],
+  "intended_executable": "C:\\Users\\LEGION\\ath-wp07\\cand-sim\\.venv\\Scripts\\python.exe",
+  "processes_on_intended_executable": 60,
+  "processes_on_other_executable": 0,
+  "other_executable_examples": [],
+  "ok": true
+}

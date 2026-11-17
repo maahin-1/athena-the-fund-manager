@@ -1,0 +1,17 @@
+{
+  "expected_files": 203,
+  "accepted_by_class": {
+    "eol_lf": 189,
+    "eol_crlf": 12,
+    "exact": 2
+  },
+  "accepted": 203,
+  "mismatched": [],
+  "missing": [],
+  "source_no_longer_matches_manifest": [],
+  "candidate_tracked_files": 203,
+  "unexpected_tracked": [],
+  "baseline_files_changed_without_being_expected": [],
+  "protected_names_skipped_not_opened": 0,
+  "ok": true
+}

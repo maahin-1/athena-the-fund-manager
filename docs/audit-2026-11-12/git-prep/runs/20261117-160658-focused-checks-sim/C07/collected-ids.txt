@@ -1,0 +1,87 @@
+tests/test_llm_budget.py::test_calls_are_counted_by_tier_with_the_model_that_answered
+tests/test_llm_budget.py::test_a_call_past_the_ceiling_is_refused_before_it_is_made
+tests/test_llm_budget.py::test_a_new_month_starts_the_count_again
+tests/test_llm_budget.py::test_a_missing_budget_file_means_the_owner_set_no_ceiling_but_a_broken_one_means_the_ceilings_are_unknown
+tests/test_llm_budget.py::test_the_router_hands_out_metered_clients_only_when_given_a_meter
+tests/test_llm_budget.py::test_tokens_the_provider_reports_are_kept_with_each_call_and_summed
+tests/test_llm_resilience.py::test_a_429_that_means_no_credits_is_not_retried_and_a_real_rate_limit_still_is
+tests/test_llm_resilience.py::test_a_model_found_unusable_is_remembered_across_processes_and_forgotten_after_the_ttl
+tests/test_llm_resilience.py::test_a_degraded_model_is_skipped_by_the_next_chain_without_a_call
+tests/test_llm_resilience.py::test_failed_calls_and_the_models_tried_first_are_logged_and_only_failures_known_to_be_declined_stay_off_the_ceiling
+tests/test_llm_resilience.py::test_a_reply_the_caller_rejects_is_dropped_from_the_cache_so_it_does_not_stick
+tests/test_llm_resilience.py::test_a_specialist_asks_the_cache_to_forget_a_rejected_reply_and_clamps_a_capped_confidence
+tests/test_llm_resilience.py::test_the_ownership_and_flow_caps_the_personas_state_in_words_are_in_the_spec
+tests/test_llm_ledger.py::test_processes_competing_for_the_last_slots_cannot_all_take_them[1-6]
+tests/test_llm_ledger.py::test_processes_competing_for_the_last_slots_cannot_all_take_them[3-8]
+tests/test_llm_ledger.py::test_an_unreadable_line_in_the_usage_log_does_not_reset_the_count_the_audit_reproduced
+tests/test_llm_ledger.py::test_garbage_appended_to_the_log_after_the_import_changes_nothing
+tests/test_llm_ledger.py::test_the_earlier_usage_log_is_imported_once_and_the_month_does_not_start_again
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['not json']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['[]']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['"strong"']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['{"strong": 5}']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['{"strong": {"calls_per_month": "300"}}']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['{"strong": {"calls_per_month": -1}}']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['{"strong": {"calls_per_month": 2.5}}']
+tests/test_llm_ledger.py::test_a_ceiling_file_that_exists_but_cannot_be_trusted_refuses_metered_work_instead_of_meaning_no_ceiling['{"strong": {"calls_per_month": true}}']
+tests/test_llm_ledger.py::test_a_ceiling_file_with_a_byte_order_mark_is_still_read
+tests/test_llm_ledger.py::test_a_tier_without_a_ceiling_is_only_counted_and_a_zero_ceiling_refuses_everything
+tests/test_llm_ledger.py::test_an_unreadable_ledger_refuses_metered_work_and_is_never_read_as_empty
+tests/test_llm_ledger.py::test_a_ledger_that_cannot_be_written_after_the_reply_does_not_lose_the_reply_and_keeps_the_unit_counted
+tests/test_llm_ledger.py::test_a_failing_usage_log_does_not_fail_the_call_and_the_ledger_has_it
+tests/test_llm_ledger.py::test_a_reservation_whose_process_died_keeps_counting_until_it_is_released_with_a_reason
+tests/test_llm_ledger.py::test_an_interrupt_in_the_middle_of_a_call_leaves_the_unit_counted
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'http_error', 'status': 4-refused0]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'http_error', 'status': 4-refused1]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'http_error', 'status': 4-refused2]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[]-refused]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[None-unknown]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'timeout', 'status': None-unknown]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'network_error', 'status'-unknown]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'http_error', 'status': 5-unknown]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'http_error', 'status': 4-unknown0]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'bad_reply', 'status': 20-unknown]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'http_error', 'status': 4-unknown1]
+tests/test_llm_ledger.py::test_a_failure_is_free_only_when_every_attempt_is_known_to_have_been_declined[[{'n': 1, 'model': 'm', 'outcome': 'http_error', 'status': N-unknown]
+tests/test_llm_ledger.py::test_a_retry_and_a_fallback_are_provider_attempts_of_one_logical_request
+tests/test_llm_ledger.py::test_a_provider_that_reports_no_usage_is_recorded_as_unreported_not_as_zero
+tests/test_llm_ledger.py::test_a_chain_every_model_of_which_declined_costs_nothing_and_one_that_timed_out_still_counts
+tests/test_llm_ledger.py::test_a_cache_hit_reserves_nothing_and_counts_nothing
+tests/test_llm_ledger.py::test_a_new_month_starts_a_new_count_in_the_ledger
+tests/test_llm_ledger.py::test_the_command_prints_the_units_and_what_is_unresolved_and_releases_only_with_a_name_and_a_reason
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [{}]}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [null]}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": ["text"]}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": "abc"}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [{"message": null}]}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [{"message": "hi"}]}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [{"message": []}]}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [{"message": {"content": 5}}]}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [{"message": {"content": ["a", "b"]}}]]
+tests/test_llm_replies_unexpected.py::test_a_malformed_200_reply_still_counts_and_the_next_request_is_blocked_before_any_transport[{"choices": [{"message": {"content": {"text": "x"}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [{}]}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [null]}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": ["text"]}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": "abc"}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [{"message": null}]}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [{"message": "hi"}]}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [{"message": []}]}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [{"message": {"content": 5}}]}]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [{"message": {"content": ["a", "b"]}}]]
+tests/test_llm_replies_unexpected.py::test_each_malformed_reply_is_a_recorded_provider_error_and_not_an_unrecorded_key_error[{"choices": [{"message": {"content": {"text": "x"}]
+tests/test_llm_replies_unexpected.py::test_a_malformed_reply_is_retried_and_each_attempt_is_recorded
+tests/test_llm_replies_unexpected.py::test_an_interruption_or_surprise_after_the_request_went_out_keeps_the_unit_counted[KeyboardInterrupt]
+tests/test_llm_replies_unexpected.py::test_an_interruption_or_surprise_after_the_request_went_out_keeps_the_unit_counted[SystemExit]
+tests/test_llm_replies_unexpected.py::test_an_interruption_or_surprise_after_the_request_went_out_keeps_the_unit_counted[RuntimeError]
+tests/test_llm_replies_unexpected.py::test_an_interruption_or_surprise_after_the_request_went_out_keeps_the_unit_counted[ValueError]
+tests/test_llm_replies_unexpected.py::test_an_interruption_while_the_reply_is_decoded_leaves_a_request_that_is_not_a_refusal
+tests/test_llm_replies_unexpected.py::test_a_client_that_was_called_and_reports_no_request_is_not_taken_to_have_sent_none
+tests/test_llm_replies_unexpected.py::test_a_chain_that_called_nothing_because_every_model_was_skipped_is_still_free
+tests/test_llm_replies_unexpected.py::test_a_malformed_usage_block_leaves_tokens_unreported_and_the_reply_is_still_answered[usage0]
+tests/test_llm_replies_unexpected.py::test_a_malformed_usage_block_leaves_tokens_unreported_and_the_reply_is_still_answered[usage1]
+tests/test_llm_replies_unexpected.py::test_a_malformed_usage_block_leaves_tokens_unreported_and_the_reply_is_still_answered[usage2]
+tests/test_llm_replies_unexpected.py::test_a_malformed_usage_block_leaves_tokens_unreported_and_the_reply_is_still_answered[usage3]
+tests/test_llm_replies_unexpected.py::test_a_malformed_usage_block_leaves_tokens_unreported_and_the_reply_is_still_answered[none]
+tests/test_llm_replies_unexpected.py::test_a_malformed_usage_block_leaves_tokens_unreported_and_the_reply_is_still_answered[usage5]
+tests/test_llm_replies_unexpected.py::test_a_malformed_usage_block_leaves_tokens_unreported_and_the_reply_is_still_answered[None]

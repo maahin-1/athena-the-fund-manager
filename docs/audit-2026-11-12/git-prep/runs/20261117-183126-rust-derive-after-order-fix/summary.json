@@ -1,0 +1,12 @@
+{
+    "tests_run_alone":  417,
+    "not_exactly_one_pass_when_run_alone":  0,
+    "python_backed_failing_alone":  0,
+    "on_another_interpreter":  0,
+    "python_backed":  43,
+    "total_python_processes":  62,
+    "full_run_min_processes":  31,
+    "rebuilt_from":  "",
+    "list":  "C:\\Users\\LEGION\\AppData\\Local\\Temp\\claude\\ed5e936a5cc19168\\608bc073-258a-4e5c-b2f1-60f2be42ba55\\scratchpad\\new-rust-python-tests.json",
+    "ok":  true
+}
