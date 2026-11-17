@@ -1,0 +1,22 @@
+{
+  "disposition": "keep_open",
+  "date": "2026-11-16",
+  "existing_tests_passed": 49,
+  "reviewer_probes_failed": 4,
+  "total": 53,
+  "exit_code": 101,
+  "application_suite_rerun": false,
+  "findings": {
+    "reproduced": [
+      "admission_wait_cancel_leak",
+      "idle_unconfirmed_shutdown_restart",
+      "corrupt_journal_fail_open",
+      "reduced_workers_loses_guard"
+    ],
+    "source_inspected": [
+      "direct_execution_unconfirmed_cleanup",
+      "journal_snapshot_publication_race"
+    ]
+  },
+  "application_code_changed": false
+}
