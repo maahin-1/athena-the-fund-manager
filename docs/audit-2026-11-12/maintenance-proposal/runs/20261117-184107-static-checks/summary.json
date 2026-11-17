@@ -1,0 +1,9 @@
+{
+  "proposal_check_exit": 0,
+  "policy_tests_exit": 0,
+  "policy_tests_summary": "105 passed in 26.48s",
+  "policy_tests_skipped_any": false,
+  "negative_control_defects": 15,
+  "negative_control_all_rejected_with_expected_message": true,
+  "ok": true
+}

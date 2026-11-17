@@ -1,0 +1,107 @@
+[
+  {
+    "defect": "a well-formed but wrong SHA beside correct pins",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job python step 5: `actions/upload-artifact@0000000000000000000000000000000000000000`: actions/upload-artifact is pinned to 000000000000..., the recorded pair is cf430e030ddb... (v7.0.2)"
+  },
+  {
+    "defect": "a SHA that is right for another repository",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job web step 1: `actions/setup-node@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0`: actions/setup-node is pinned to 6d4fd22b2046..., the recorded pair is 949feb2413d6... (v7.1.0)"
+  },
+  {
+    "defect": "a nested expression inside a run script",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job policy step 2: expression inside a run script (format('{0}', github.event.pull_request.title)): pass it through env: instead"
+  },
+  {
+    "defect": "actions/checkout reintroduced",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] dependency-review.yml: job review step 0: `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`: actions/checkout is not allowed: use the access-safe checkout step"
+  },
+  {
+    "defect": "a changed copy of the checkout script",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job policy step 0: the checkout step's script is not byte-for-byte scripts/ci/safe_checkout.sh"
+  },
+  {
+    "defect": "a workflow-level REMOTE_URL",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: workflow-level: env defines REMOTE_URL, which steers the checkout (remote, revision, credentials or git configuration)"
+  },
+  {
+    "defect": "a job-level CHECKOUT_SHA",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job policy: env defines CHECKOUT_SHA, which steers the checkout (remote, revision, credentials or git configuration)"
+  },
+  {
+    "defect": "a workflow-level GIT_CONFIG_COUNT",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: workflow-level: env defines GIT_CONFIG_COUNT, which steers the checkout (remote, revision, credentials or git configuration)"
+  },
+  {
+    "defect": "a workflow env that is an expression",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: workflow-level: env must be a literal mapping (an expression could carry any variable name, including the checkout controls)"
+  },
+  {
+    "defect": "a job that uses a container",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job policy: `container:` is not allowed (its environment and git binary are not covered by the checkout policy, and its env could steer the checkout)"
+  },
+  {
+    "defect": "the script edited to honour overrides while a token is present",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job policy step 0: the checkout step's script is not byte-for-byte scripts/ci/safe_checkout.sh"
+  },
+  {
+    "defect": "a privileged trigger",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: privileged trigger pull_request_target"
+  },
+  {
+    "defect": "a job without a timeout",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [workflows] ci.yml: job policy has no timeout-minutes"
+  },
+  {
+    "defect": "an extra Dependabot ecosystem",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [dependabot] ecosystems/directories differ: {'pip': '/', 'cargo': '/terminal', 'npm': '/terminal/web', 'github-actions': '/', 'docker': '/'}"
+  },
+  {
+    "defect": "a sensitive CODEOWNERS path removed",
+    "exit": 1,
+    "failed": true,
+    "expected_message_found": true,
+    "first_failure": "FAIL [codeowners] sensitive path /pyproject.toml is not listed"
+  }
+]

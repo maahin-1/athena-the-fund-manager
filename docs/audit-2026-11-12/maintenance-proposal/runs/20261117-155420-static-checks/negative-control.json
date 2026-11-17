@@ -1,0 +1,21 @@
+{
+  "ok": false,
+  "failures": {
+    "workflows": [
+      "ci.yml: privileged trigger pull_request_target",
+      "ci.yml: job policy step 0: `actions/checkout@v7` is not pinned to a full commit SHA",
+      "ci.yml: job python step 0: `actions/checkout@v7` is not pinned to a full commit SHA",
+      "ci.yml: job rust step 0: `actions/checkout@v7` is not pinned to a full commit SHA",
+      "ci.yml: job web step 0: `actions/checkout@v7` is not pinned to a full commit SHA",
+      "ci.yml: job gate has no timeout-minutes"
+    ],
+    "dependabot": [
+      "ecosystems/directories differ: {'pip': '/', 'cargo': '/terminal', 'npm': '/terminal/web', 'github-actions': '/', 'docker': '/'}",
+      "docker: schedule or open-PR cap not as proposed"
+    ],
+    "codeowners": [
+      "sensitive path /scripts/ is not listed"
+    ]
+  },
+  "files_checked": 20
+}
