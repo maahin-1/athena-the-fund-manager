@@ -41,11 +41,27 @@ def test_the_report_names_what_was_made_and_what_failed(tmp_path):
 def test_calibrate_reads_the_logs_and_saves_the_calibration(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     log = tmp_path / "log.jsonl"
-    row = {"symbol": "S", "as_of": "2024-01-31", "specialist": "valuation", "run": 0, "signal": "bullish", "confidence": 80, "horizon": 63, "label": "outperform"}
+    row = {"symbol": "S", "as_of": "2024-01-31", "specialist": "valuation", "run": 0, "signal": "bullish", "confidence": 80, "horizon": 63, "label": "outperform", "source": "NSE results filings"}
     log.write_text(json.dumps(row) + "\n", encoding="utf-8")
     assert cli.main(["--calibrate", str(log)]) == 0
-    assert "valuation" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "valuation" in out and "evidence used: archival" in out
     assert Calibration.load(tmp_path / ".athena" / "calibration.json").measures["valuation"][63].cases == 1
+
+
+def test_calibrate_leaves_out_approximate_and_unrecorded_evidence_unless_told_to_pool(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    base = {"symbol": "S", "as_of": "2024-01-31", "specialist": "valuation", "run": 0, "signal": "bullish", "confidence": 80, "horizon": 63, "label": "outperform"}
+    rows = [{**base, "source": "NSE results filings"}, {**base, "symbol": "Y", "source": "Yahoo, filtered by legal filing deadline"}, {k: v for k, v in {**base, "symbol": "Z"}.items()}]
+    log = tmp_path / "log.jsonl"
+    log.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    assert cli.main(["--calibrate", str(log)]) == 0
+    out = capsys.readouterr().out
+    assert "left out (rows by class)" in out and "approximate_deadline" in out and "unclassified" in out
+    assert Calibration.load(tmp_path / ".athena" / "calibration.json").measures["valuation"][63].cases == 1
+    assert cli.main(["--evidence", "all", "--calibrate", str(log)]) == 0
+    assert "pooled, unqualified" in capsys.readouterr().out
+    assert Calibration.load(tmp_path / ".athena" / "calibration.json").measures["valuation"][63].cases == 3
 
 
 def test_list_shows_each_stock_with_a_verdict_and_whether_it_is_out_of_date(tmp_path, capsys, monkeypatch):

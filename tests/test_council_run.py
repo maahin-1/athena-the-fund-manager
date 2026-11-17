@@ -50,6 +50,23 @@ def test_without_a_conflict_the_council_is_not_called_unless_it_is_asked_for_eve
     assert asked["judge"]["stance"] == "Overweight" and "held to Overweight" in asked["judge"]["limited"]  # Hold is two steps from Buy: pulled back to one
 
 
+def test_an_invalid_council_keeps_the_blend_rating_conviction_and_the_valid_side(tmp_path):
+    path = database(tmp_path)
+    plain = runner(path, None).make("TCS")["payload"]  # the same inputs with no council at all
+    null_citations = json.dumps({"case": "Up.", "evidence": None, "weakest_point": "Down (T1)."})
+    no_citations = json.dumps({"case": "Up.", "evidence": [], "weakest_point": "Down (T1)."})
+    judge_null = json.dumps({"stance": "Sell", "why": "Bad.", "relied_on": None, "would_change_my_mind": "Nothing.", "conviction": "lower", "look_again_days": 20})
+    debaters = Script(null_citations, null_citations, case("Dear at 100 (T1)."))  # bull never passes (two tries); bear passes first time
+    judge_llm = Script(judge_null, judge_null)
+    payload = runner(path, Council(debaters, judge_llm, "judge-model")).make("TCS")["payload"]
+    council = payload["council"]
+    assert "failed" in council["debate"]["bull"] and council["debate"]["bear"]["case"] == "Dear at 100 (T1)."
+    assert "failed" in council["judge"] and "stance" not in council["judge"]
+    assert payload["verdict"] == plain["verdict"] and payload["decision"] == plain["decision"]  # rating and conviction are exactly the blend's
+    empty = runner(path, Council(Script(no_citations, no_citations, no_citations, no_citations), Script(judge_null, judge_null), "j")).make("TCS")["payload"]["council"]
+    assert "failed" in empty["debate"]["bull"] and "failed" in empty["debate"]["bear"]
+
+
 def test_a_council_that_fails_is_recorded_and_the_blend_still_stands(tmp_path):
     class Broken:
         def complete(self, system, user):
