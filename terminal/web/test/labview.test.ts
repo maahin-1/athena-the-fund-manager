@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Bar } from '../src/bars';
-import { ChartLabView, type BarsFetcher } from '../src/chartlab/view';
+import { ChartLabView, fetchBars, type BarsFetcher } from '../src/chartlab/view';
 import { REGISTRY } from '../src/chartlab/registry';
 import type { ChartRenderer } from '../src/chartlab/render';
 import type { KeyValue } from '../src/chartlab/store';
@@ -32,7 +32,7 @@ interface Harness {
   shown: (number | null)[]; // what each range put in view
 }
 
-function harness(storage = new Memory()): Harness {
+function harness(storage = new Memory(), custom?: BarsFetcher): Harness {
   const h = { paints: 0, ticks: 0, fetched: [] as Harness['fetched'], quotes: (() => {}) as (qs: Quote[]) => void, storage, shown: [] as (number | null)[] } as Harness;
   const renderer = (): ChartRenderer => ({
     paint: () => void h.paints++,
@@ -46,10 +46,12 @@ function harness(storage = new Memory()): Harness {
     applyTheme: () => {},
     dispose: () => {},
   });
-  const fetchBars: BarsFetcher = async (symbol, tf, limit, adjusted) => {
-    h.fetched.push([symbol, tf, limit, adjusted]);
-    return { bars: symbol === 'NIFTY 50' ? bars.slice(10) : bars, note: '' };
-  };
+  const fetchBars: BarsFetcher =
+    custom ??
+    (async (symbol, tf, limit, adjusted) => {
+      h.fetched.push([symbol, tf, limit, adjusted]);
+      return { bars: symbol === 'NIFTY 50' ? bars.slice(10) : bars, note: '' };
+    });
   const ctx = {
     feed: { onQuotes: (fn: (qs: Quote[]) => void) => ((h.quotes = fn), () => {}), need: vi.fn(), release: vi.fn(), quotes: new Map() },
     bus: { subscribe: () => () => {}, setSymbol: vi.fn(), symbolOf: () => undefined },
@@ -71,6 +73,61 @@ async function shown(): Promise<Harness> {
 
 beforeEach(() => {
   document.body.replaceChildren();
+});
+
+// ---- T5-R3: the Chart Lab shows which data answered, as the chart panel does ----
+const SNAPSHOT_ANSWER = {
+  source: 'snapshot', source_path: 'w.snap.x.duckdb', generation_id: '20261115T101500Z-a1b2c3', generation_basis: 'manifest', snapshot_created_at: '2026-11-15T10:15:00Z', data_as_of: '2026-11-13',
+  snapshot_data_as_of: { daily_bars: '2026-11-13', index_bars: null }, fallback_reason: 'locked_by_writer', validated: true, snapshot_status: null, cache: { hit: false, age_seconds: 0 },
+};
+
+describe('chart lab provenance', () => {
+  it('shows that a snapshot answered, why, when the copy was taken and where its data stops', async () => {
+    const h = harness(new Memory(), async () => ({ bars, note: '', provenance: SNAPSHOT_ANSWER }));
+    h.view.show('SBIN');
+    await flush();
+    const note = h.view.element.querySelector('.lab-note')?.textContent ?? '';
+    expect(note).toContain('Snapshot, because a build is updating the warehouse');
+    expect(note).toContain('copy taken 15 Nov 10:15 UTC');
+    expect(note).toContain('data to 13 Nov 2026');
+  });
+
+  it('keeps the server note and adds the provenance after it', async () => {
+    const h = harness(new Memory(), async () => ({ bars, note: 'Price breaks no record explains: 2026-03-02.', provenance: SNAPSHOT_ANSWER }));
+    h.view.show('SBIN');
+    await flush();
+    const note = h.view.element.querySelector('.lab-note')?.textContent ?? '';
+    expect(note.indexOf('Price breaks')).toBeLessThan(note.indexOf('Snapshot, because'));
+  });
+
+  it('says why there is no data when the warehouse could not be read and no snapshot could stand in', async () => {
+    const failure = { failure: { main_reason: 'main_unreadable', snapshot_reason: 'hash_mismatch' } };
+    const h = harness(new Memory(), async () => ({ bars: [], note: 'warehouse busy', provenance: failure }));
+    h.view.show('SBIN');
+    await flush();
+    const note = h.view.element.querySelector('.lab-note')?.textContent ?? '';
+    expect(note).toContain('No warehouse data: the warehouse file could not be read');
+    expect(note).toContain('hash mismatch');
+  });
+
+  it('says nothing about provenance for a real-file answer or an answer that reported none', async () => {
+    const main = { source: 'main', generation_id: 'main:1:2', snapshot_created_at: null, data_as_of: '2026-11-13', fallback_reason: null, snapshot_status: null };
+    for (const provenance of [main, undefined, null]) {
+      const h = harness(new Memory(), async () => ({ bars, note: '', provenance }));
+      h.view.show('SBIN');
+      await flush();
+      expect(h.view.element.querySelector('.lab-note')?.textContent ?? '').not.toMatch(/Snapshot|No warehouse data/);
+    }
+  });
+
+  it('the server fetcher passes the response provenance through, and says none when the response has none', async () => {
+    const reply = (body: unknown) => vi.fn(async () => ({ json: async () => body }) as Response);
+    vi.stubGlobal('fetch', reply({ bars: [], note: '', provenance: SNAPSHOT_ANSWER }));
+    expect((await fetchBars('SBIN', '1D', null, true)).provenance).toEqual(SNAPSHOT_ANSWER);
+    vi.stubGlobal('fetch', reply({ bars: [], note: '' }));
+    expect((await fetchBars('SBIN', '1D', null, true)).provenance).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
 });
 
 describe('chart lab page', () => {

@@ -6,6 +6,7 @@ import { applyTick, tickFitsChart, VolumeSteps, type Bar } from '../bars';
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import { bollinger, ema, INDICATOR_NAMES, macd, rsi, sma, type Series } from '../indicators';
+import { provenanceNote } from '../provenance';
 import { barLimit, RANGES, type Range, type Timeframe } from '../ranges';
 import { el, Panel, type AppContext } from './base';
 
@@ -160,7 +161,7 @@ export class ChartPanel extends Panel {
     // every stored daily bar is loaded whatever the range; the range only sets what is in view, and the rest can be scrolled back to
     const limit = this.tf === '1D' ? 5000 : 0;
     const url = `/api/bars?symbol=${encodeURIComponent(symbol)}&tf=${this.tf}${limit ? `&limit=${limit}` : ''}`;
-    let body: { bars: Bar[]; note: string };
+    let body: { bars: Bar[]; note: string; provenance?: unknown };
     try {
       body = await (await fetch(url)).json();
     } catch {
@@ -174,7 +175,7 @@ export class ChartPanel extends Panel {
     const stored = this.tf === '1D' && wanted >= 252 && bars.length > 0 && bars.length < wanted * 0.9
       ? `Only ${bars.length} trading days are stored, from ${new Date(bars[0].t * 1000).toISOString().slice(0, 10)}.`
       : '';
-    const notes = [this.range.note, stored, body.note && body.note !== 'warehouse busy' && body.note !== 'loading' ? body.note : '', body.note === 'warehouse busy' ? 'the warehouse is busy (a build is running); try again in a minute' : ''];
+    const notes = [this.range.note, stored, body.note && body.note !== 'warehouse busy' && body.note !== 'loading' ? body.note : '', body.note === 'warehouse busy' ? 'the warehouse is busy (a build is running); try again in a minute' : '', provenanceNote(body.provenance)];
     this.note.textContent = notes.filter(Boolean).join(' ');
     if (body.note === 'loading' && attempt < 6) {
       this.note.textContent = 'loading intraday bars…';

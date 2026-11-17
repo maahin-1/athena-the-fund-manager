@@ -1,5 +1,6 @@
 import { DEFAULT_RATE, price, yearsToExpiry } from './black76';
 import type { Quote } from './chain';
+import type { SessionState } from './quality';
 
 /** A synthetic option market for the fake feed and tests: internally consistent prices (Black-76 at a smile, so put-call parity holds and the volatilities read
  *  back from the prices are the smile), open interest and volume shaped like a real chain, and the same numbers for the same contract on the same day. It makes
@@ -26,6 +27,10 @@ export interface OptionFeed {
   quotes(keys: ContractKey[]): Promise<Map<string, Quote>>;
   /** What the page shows beside the prices instead of the default label, when the feed has something more exact to say. */
   badge?(): { text: string; title: string };
+  /** Whether the quotes are from a live session or the last one, and the newest receipt time seen (ages after the session are measured from it). Absent for a feed with no notion of a session. */
+  session?(): SessionState;
+  /** The server's clock now (ms): the receipt times on the quotes are in it. Absent when the feed has no server. */
+  serverNow?(): number;
 }
 
 /** A number in [0, 1) that depends only on the text (FNV-1a), so a contract gets the same "random" numbers every time. */
@@ -72,9 +77,11 @@ export function syntheticQuote(c: ContractKey, m: SyntheticMarket): SyntheticQuo
   const day = Math.floor(m.now / 86_400);
   const k = keyOf(c);
   const noise = unit(`${k}|${day}`);
+  // a made-up market is made when it is asked for: every quote is as old as the moment it was made, so it is judged on times like any other
+  const made = { time: m.now * 1000, receivedAt: m.now * 1000, bookSeenAt: m.now * 1000 };
   if (c.kind === 'future') {
     const last = round(F);
-    return { last, bid: round(last - TICK), ask: round(last + TICK), volume: Math.round(200_000 * (0.5 + noise)), oi: Math.round(400_000 * (0.6 + 0.8 * unit(`${k}|oi`))), oiChange: Math.round((noise - 0.5) * 40_000) };
+    return { last, bid: round(last - TICK), ask: round(last + TICK), volume: Math.round(200_000 * (0.5 + noise)), oi: Math.round(400_000 * (0.6 + 0.8 * unit(`${k}|oi`))), oiChange: Math.round((noise - 0.5) * 40_000), ...made };
   }
   const vol = smileVol(F, c.strike, T);
   const fair = price(c.kind, F, c.strike, T, vol, m.rate);
@@ -91,6 +98,7 @@ export function syntheticQuote(c: ContractKey, m: SyntheticMarket): SyntheticQuo
     volume: Math.round(oi * (0.15 + 0.5 * noise)),
     oi,
     oiChange: Math.round(oi * (noise - 0.4) * 0.2),
+    ...made,
   };
 }
 

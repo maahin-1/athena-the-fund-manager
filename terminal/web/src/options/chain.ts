@@ -10,8 +10,23 @@ export interface Quote {
   /** Open interest in contracts, and its change since the previous day's close. */
   oi: number;
   oiChange: number;
-  /** The exchange's time of the last trade in milliseconds, when the feed says (a live feed does, the synthetic one does not). */
+  /** The exchange's time of the last trade in milliseconds, when the feed says (a live feed does, the synthetic one does not). This is the **trade** time, from the packet's own last-traded field: it says
+   *  nothing about the book and is never the packet's time. */
   time?: number;
+  /** The exchange's timestamp of the packet that gave the quote its content (ms): when the event the packet reports happened, which need not be a trade. Recorded; used for the session, not for the book's age. */
+  packetTime?: number;
+  /** Times the server refused (a future time, a malformed one), as it sent them: the field (`t` the packet's, `lt` the trade's), the value and the reason. */
+  timeFaults?: { f: string; v: number; why: string }[];
+  /** When the server received the packet that gave the quote its present content (ms). The time the page learned of it is never used: a reconnect would make an old quote look new. */
+  receivedAt?: number;
+  /** When the server last received a change of the best bid or ask (ms): a receipt time, because this stream carries no exchange time for the book. */
+  bookSeenAt?: number;
+  /** The exchange's own time of the book, for a source that gives one. The broker stream does not. */
+  bookTime?: number;
+  /** How late the stream delivered the last new trade: receipt time less its exchange time (ms). */
+  deliveryDelayMs?: number;
+  /** Packets for the contract that were discarded because their exchange time was older than the held quote's. */
+  outOfOrder?: number;
 }
 
 export interface StrikeRow {
@@ -24,20 +39,23 @@ export interface StrikeRow {
  *  ones at the money), the middle of the readings. Null when no strike has both prices. It does not depend on the spot or on any dividend, and it agrees with the
  *  option prices whatever time the spot was taken, which is what makes the volatilities read from them consistent. */
 export function parityForward(rows: StrikeRow[], T: number, r: number): number | null {
-  const readings: { strike: number; gap: number; forward: number }[] = [];
+  return parityForwardDetail(rows, T, r)?.forward ?? null;
+}
+
+/** `parityForward` and the quotes it was read from (the call and the put of each of the strikes it used): the forward's inputs, for judging their times. */
+export function parityForwardDetail(rows: StrikeRow[], T: number, r: number): { forward: number; quotes: Quote[]; inputs: { quote: Quote; role: 'call' | 'put'; strike: number }[] } | null {
+  const readings: { strike: number; gap: number; forward: number; call: Quote; put: Quote }[] = [];
   for (const row of rows) {
     const c = quotePrice(row.call);
     const p = quotePrice(row.put);
-    if (c === null || p === null) continue;
-    readings.push({ strike: row.strike, gap: Math.abs(c - p), forward: row.strike + Math.exp(r * Math.max(T, 0)) * (c - p) });
+    if (c === null || p === null || !row.call || !row.put) continue;
+    readings.push({ strike: row.strike, gap: Math.abs(c - p), forward: row.strike + Math.exp(r * Math.max(T, 0)) * (c - p), call: row.call, put: row.put });
   }
   if (!readings.length) return null;
-  const nearest = readings
-    .sort((a, b) => a.gap - b.gap || a.strike - b.strike)
-    .slice(0, 3)
-    .map((x) => x.forward)
-    .sort((a, b) => a - b);
-  return nearest[Math.floor(nearest.length / 2)];
+  const nearest = readings.sort((a, b) => a.gap - b.gap || a.strike - b.strike).slice(0, 3);
+  const middle = [...nearest].sort((a, b) => a.forward - b.forward)[Math.floor(nearest.length / 2)];
+  const inputs = nearest.flatMap((x) => [{ quote: x.call, role: 'call' as const, strike: x.strike }, { quote: x.put, role: 'put' as const, strike: x.strike }]);
+  return { forward: middle.forward, quotes: inputs.map((i) => i.quote), inputs };
 }
 
 /** How far the forward the options imply may be from spot grown at the rate before it is taken for bad prices (a dividend or a stale print moves it a little). */

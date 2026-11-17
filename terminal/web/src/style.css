@@ -58,6 +58,7 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 .health.good { color: var(--up); }
 .health.warn { color: var(--label); }
 .health.bad { color: var(--dn); }
+.databadge:empty { display: none; }
 
 .dock { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: hidden; }
 .group-actions { display: flex; align-items: center; gap: 2px; padding: 0 4px; height: 100%; }
@@ -253,6 +254,9 @@ html, body { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hid
 .opt-underlying { width: 150px; text-transform: uppercase; }
 .opt-rate { width: 64px; }
 .opt-synth { margin-left: auto; padding: 1px 8px; border: 1px solid var(--warn, #c9a227); color: var(--warn, #c9a227); border-radius: 3px; font-size: 11px; }
+.opt-synth[data-kind="quality"] { border-color: var(--bad, #c0392b); color: var(--bad, #c0392b); }
+.opt-chain td.q-labelled { font-style: italic; }
+.opt-chain td.q-withheld { color: var(--fg-dim); cursor: help; }
 .opt-stats { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
 .opt-stat .k { color: var(--fg-dim); margin-right: 5px; font-size: 11px; }
 .opt-stat .v { font-variant-numeric: tabular-nums; }

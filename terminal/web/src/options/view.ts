@@ -6,6 +6,7 @@ import { DEFAULT_RATE, yearsToExpiry } from './black76';
 import { renderChain } from './chainview';
 import type { Quote } from './chain';
 import { PayoffBuilder } from './payoffview';
+import { qualitySummary, type SessionState } from './quality';
 import { lineChart } from './svgchart';
 import { liveFeed, type LiveFeed } from './livefeed';
 import { keyOf, syntheticFeed, type OptionFeed } from './synthetic';
@@ -203,12 +204,33 @@ export class OptionsView {
     this.toolbar.append(this.underlyingInput, this.datalist, this.expirySelect, this.aroundSelect, greeksLabel, el('span', 'note', 'Rate %'), this.rateInput, refresh, this.badge);
   }
 
-  /** What the prices are, said beside them: made up, live, or the last ones the exchange sent. */
+  /** The moment (the server's clock, when the feed has one) and the session the quotes are judged against. */
+  private qualityContext(): { nowMs?: number; session?: SessionState } {
+    return { nowMs: this.feed.serverNow?.(), session: this.feed.session?.() };
+  }
+
+  /** What the prices are, said beside them: made up, live, or the last ones the exchange sent. A live feed says "live prices" only while the chain's required inputs (its forward and its at-the-money
+   *  call and put) are judged fit: when they are not, the badge says what the worst of them is, whatever the newest quote is. */
   private updateBadge(): void {
     const b = this.feed.badge?.() ?? (this.feed.synthetic ? { text: 'synthetic prices', title: 'These prices are made up for a test market; the server has no live derivative stream (the fake feed is on, or the broker is not connected).' } : { text: 'live prices', title: '' });
-    this.badge.textContent = b.text;
-    this.badge.title = b.title;
-    this.badge.dataset.kind = this.feed.synthetic ? 'synthetic' : b.text.startsWith('live') ? 'live' : 'last';
+    let { text, title } = b;
+    let kind = this.feed.synthetic ? 'synthetic' : b.text.startsWith('live') ? 'live' : 'last';
+    const q = this.view?.quality ?? null;
+    if (q && !this.feed.synthetic && q.status !== 'ok') {
+      const summary = qualitySummary(q);
+      if (b.text.startsWith('live')) {
+        text = q.status === 'withheld' ? 'inputs withheld' : 'quotes labelled';
+        title = summary;
+        kind = 'quality';
+      } else {
+        title = `${b.title}\n${summary}`.trim();
+      }
+    } else if (q && !this.feed.synthetic && q.rows.withheld > 0) {
+      title = `${b.title}\n${q.rows.withheld} contract sides have no volatility: their own quotes failed the quality rules (see the cell).`.trim();
+    }
+    this.badge.textContent = text;
+    this.badge.title = title;
+    this.badge.dataset.kind = kind;
   }
 
   /** The price of the underlying itself, for a live feed: an index from the exchange's snapshot, a share from the cash stream; none for a commodity. */
@@ -320,7 +342,7 @@ export class OptionsView {
       const [quotes, spot] = await Promise.all([this.feed.quotes(chainKeys(structure)), this.feed.spot(underlying)]);
       if (mine !== this.token) return;
       this.structure = structure;
-      this.view = assemble(structure, quotes, spot, this.now(), this.settings.rate);
+      this.view = assemble(structure, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
       this.note.textContent = '';
       this.paintChain();
       this.paintCurves();
@@ -410,7 +432,7 @@ export class OptionsView {
     for (const n of near) {
       try {
         const quotes = await this.feed.quotes(chainKeys(n.chain));
-        const v = assemble(n.chain, quotes, spot, this.now(), this.settings.rate);
+        const v = assemble(n.chain, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
         if (v.atmIv !== null) points.push({ x: T(n.date) * 365, y: v.atmIv * 100 });
       } catch {
         /* an expiry that cannot be read is left out of the curve */
@@ -447,7 +469,7 @@ export class OptionsView {
     try {
       const [quotes, spot] = await Promise.all([this.feed.quotes(chainKeys(s)), this.feed.spot(s.underlying)]);
       if (mine !== this.token) return;
-      this.view = assemble(s, quotes, spot, this.now(), this.settings.rate);
+      this.view = assemble(s, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
       this.paintChain(false);
       this.paintCurves();
       this.updateBadge();
