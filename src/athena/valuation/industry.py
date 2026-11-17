@@ -99,6 +99,19 @@ def lookup(store: ReferenceStore, symbol: str, on_or_before: date) -> IndustryCo
     return for_industry(store, industry, method, confidence, on_or_before)
 
 
+def lookup_as_of(store: ReferenceStore, symbol: str, on_or_before: date) -> tuple[IndustryContext | None, str]:
+    """The strict form of `lookup`: the mapping AND the tables as they stood on the date, and when there is none, why. A company mapped only after the date, or with no table published by it, is not
+    read from today's map: it is `(None, reason)`."""
+    mapped = store.company_industry_as_of(symbol, on_or_before)
+    if mapped is None:
+        return None, f"no industry mapping had been made for {symbol} by {on_or_before.isoformat()}"
+    industry, method, confidence, _as_of = mapped
+    context = for_industry(store, industry, method, confidence, on_or_before)
+    if context is None:
+        return None, f"no industry tables had been published by {on_or_before.isoformat()}"
+    return context, ""
+
+
 def for_industry(store: ReferenceStore, industry: str, method: str, confidence: float, on_or_before: date) -> IndustryContext | None:
     """The benchmarks of a named industry as they stood on a date, or None when no table was published by then."""
     stats = store.industry_stats(industry, on_or_before=on_or_before)

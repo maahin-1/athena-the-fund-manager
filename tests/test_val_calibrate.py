@@ -109,7 +109,7 @@ def test_as_of_fundamentals_only_reads_rows_filed_by_the_cutoff_and_divides_shar
         def company(self, symbol):
             return {"symbol": symbol, "shares": 1000.0, "layout": "indas"}
 
-    store = c.AsOfFundamentals(Base(), datetime(2024, 12, 31), {"A": 10.0})  # type: ignore[arg-type]
+    store = c.AsOfFundamentals(Base(), datetime(2024, 12, 31), {"A": 10.0}, policy="latest_filtered")  # type: ignore[arg-type]  # the approximate reader, asked for by name: this fake has only the latest table
     got = store.lines("A", "consolidated", "income")
     assert list(got) == [(date(2023, 4, 1), date(2024, 3, 31))]
     assert store.company("A")["shares"] == 100.0

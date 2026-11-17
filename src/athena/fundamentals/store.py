@@ -3,6 +3,7 @@
 One DuckDB file. Python writes in short bursts (open, write one filing, close); the terminal's server opens it read-only. Times are naive UTC."""
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -31,8 +32,46 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS segments (url TEXT, symbol TEXT, basis TEXT, period_end DATE, filed TIMESTAMP, idx INTEGER, name TEXT, revenue DOUBLE, profit DOUBLE,"
     " assets DOUBLE, liabilities DOUBLE)",
     "CREATE TABLE IF NOT EXISTS share_counts (url TEXT PRIMARY KEY, symbol TEXT, basis TEXT, period_end DATE, filed TIMESTAMP, declared DOUBLE, from_profit DOUBLE)",
+    # WP04 (Q3). `statement_lines` above is the LATEST-value table the current pages read: a newer filing replaces an older one's row there. `statement_versions` is the append-only record of every
+    # filing's lines, so the value public at a past date can be read back. A version is identified by company, basis, statement, period, line AND the filing it came from; it carries when the
+    # filing was made public (`filed`), when this system first stored it (`ingested`, NULL when unknown), the hash of the raw filing, and the parser/mapping version that read it. `provenance` is
+    # `ingest` (written as the filing was read), `rebuilt_from_raw` (re-read from a kept raw filing) or `seeded_from_latest` (copied from the latest table when the versions were introduced:
+    # whatever that row was, it is NOT known to be the original). No unique key: duplicates are prevented by the writers, as for `statement_lines`.
+    "CREATE TABLE IF NOT EXISTS statement_versions (symbol TEXT, basis TEXT, statement TEXT, period_start DATE, period_end DATE, key TEXT, value DOUBLE, filing_url TEXT, filed TIMESTAMP,"
+    " ingested TIMESTAMP, source TEXT, source_hash TEXT, parser_version TEXT, layout TEXT, provenance TEXT, migration_id TEXT)",
+    "CREATE TABLE IF NOT EXISTS filing_withdrawals (filing_url TEXT, withdrawn_at TIMESTAMP, reason TEXT)",
+    "CREATE TABLE IF NOT EXISTS migrations (migration_id TEXT PRIMARY KEY, applied_at TIMESTAMP, kind TEXT, counts TEXT)",
+    "CREATE TABLE IF NOT EXISTS schema_meta (name TEXT PRIMARY KEY, value TEXT)",
 )
 KEY = "symbol = ? AND basis = ? AND statement = ? AND period_start = ? AND period_end = ? AND key = ?"
+VERSIONS_SCHEMA = 1  # the `statement_versions` layout this code writes; a store with a newer one is refused rather than written to blindly
+VERSION_COLUMNS = ("basis", "statement", "period_start", "period_end", "key", "value", "filing_url", "filed", "ingested", "source", "source_hash", "parser_version", "layout", "provenance", "migration_id")
+SEEDED, REBUILT, INGESTED = "seeded_from_latest", "rebuilt_from_raw", "ingest"
+_parser_version: str | None = None
+
+
+def parser_version() -> str:
+    """Which reading of a raw filing produced a row: a hash of the parser and the line mapping, so it changes by itself when either does."""
+    global _parser_version
+    if _parser_version is None:
+        from athena.fundamentals import rows as rows_module
+
+        digest = hashlib.sha256()
+        for module in (rows_module, spec):
+            digest.update(Path(module.__file__).read_bytes())
+        _parser_version = "rows-" + digest.hexdigest()[:12]
+    return _parser_version
+
+
+def statement_rows(st: Statements) -> list[tuple[Any, ...]]:
+    """A parsed filing as `(symbol, basis, statement, period_start, period_end, key, value)` rows: what both the latest table and the versions table are written from."""
+    rows: list[tuple[Any, ...]] = []
+    for statement, periods in ((spec.INCOME, st.income), (spec.CASHFLOW, st.cashflow), (spec.BANKING, st.banking)):
+        for (start, end), got in periods.items():
+            rows += [(st.symbol, st.basis, statement, start, end, key, value) for key, value in got.items()]
+    for end, got in st.balance.items():
+        rows += [(st.symbol, st.basis, spec.BALANCE, end, end, key, value) for key, value in got.items()]
+    return rows
 
 
 def _utc(moment: datetime) -> datetime:
@@ -71,6 +110,12 @@ class FundamentalsStore:
         if not read_only:
             for statement in SCHEMA:
                 self._con.execute(statement)
+            held = self._con.execute("SELECT value FROM schema_meta WHERE name = 'statement_versions'").fetchone()
+            if held is None:
+                self._con.execute("INSERT INTO schema_meta VALUES ('statement_versions', ?)", [str(VERSIONS_SCHEMA)])
+            elif int(held[0]) > VERSIONS_SCHEMA:
+                self._con.close()
+                raise AthenaError(f"the fundamentals store has statement_versions schema {held[0]}, newer than this code understands ({VERSIONS_SCHEMA}): update Athena before writing to it")
 
     def __enter__(self) -> "FundamentalsStore":
         return self
@@ -135,18 +180,20 @@ class FundamentalsStore:
             raise
         self._con.execute("COMMIT")
 
-    def save_statements(self, st: Statements, url: str, filed: datetime, source: str = "nse-xbrl") -> int:
-        """Store a filing's rows. A row already held from a filing made later is kept; one from an earlier filing is replaced. Returns the number of rows offered."""
+    def save_statements(self, st: Statements, url: str, filed: datetime, source: str = "nse-xbrl", source_hash: str = "", version: str | None = None) -> int:
+        """Store a filing's rows. In the latest-value table (what the current pages read) a row already held from a filing made later is kept and one from an earlier filing is replaced, as it
+        always was. Every row is ALSO appended to `statement_versions` under this filing, whatever the latest table does with it, so an original replaced by a revision (or arriving after
+        it) stays recoverable. `source_hash` is the hash of the raw filing; `version` the parser/mapping version (default: the current one). Returns the number of rows offered."""
         filed = _utc(filed)
-        rows: list[tuple[Any, ...]] = []
-        for statement, periods in ((spec.INCOME, st.income), (spec.CASHFLOW, st.cashflow), (spec.BANKING, st.banking)):
-            for (start, end), got in periods.items():
-                rows += [(st.symbol, st.basis, statement, start, end, key, value) for key, value in got.items()]
-        for end, got in st.balance.items():
-            rows += [(st.symbol, st.basis, spec.BALANCE, end, end, key, value) for key, value in got.items()]
+        rows = statement_rows(st)
         if not rows:
             return 0
+        stamp, reading = now(), version or parser_version()
         with self._atomic():
+            self._con.executemany(
+                f"INSERT INTO statement_versions SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL WHERE NOT EXISTS (SELECT 1 FROM statement_versions WHERE {KEY} AND filing_url = ?)",
+                [(*row, url, filed, stamp, source, source_hash or None, reading, st.layout, INGESTED, *row[:6], url) for row in rows],
+            )
             self._con.executemany(f"DELETE FROM statement_lines WHERE {KEY} AND filed < ?", [(*row[:6], filed) for row in rows])
             self._con.executemany(
                 f"INSERT INTO statement_lines SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM statement_lines WHERE {KEY})",
@@ -155,8 +202,121 @@ class FundamentalsStore:
         return len(rows)
 
     def forget_filing(self, url: str) -> None:
-        """Drop every row a filing gave, so it can be read again with a changed mapping."""
+        """Drop every row a filing gave, so it can be read again with a changed mapping. Its versions go with it: they are this system's reading of that filing, and are written again from the new
+        reading. (A version of the filer's number is never dropped by anything else.)"""
         self._con.execute("DELETE FROM statement_lines WHERE filing_url = ?", [url])
+        self._con.execute("DELETE FROM statement_versions WHERE filing_url = ?", [url])
+
+    # ---- versions (WP04)
+    def has_versions(self) -> bool:
+        """Whether the versions table exists and holds anything."""
+        if not self._table_exists("statement_versions"):
+            return False
+        return self._con.execute("SELECT count(*) FROM statement_versions").fetchone()[0] > 0
+
+    def _table_exists(self, name: str) -> bool:
+        return self._con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [name]).fetchone()[0] > 0
+
+    def versions(self, symbol: str, basis: str | None = None, statement: str | None = None) -> list[dict[str, Any]]:
+        """Every stored version of the company's lines (optionally of one basis and statement), oldest filing first. Empty when the store has no versions table (a file from before WP04)."""
+        if not self._table_exists("statement_versions"):
+            return []
+        sql, args = f"SELECT {', '.join(VERSION_COLUMNS)} FROM statement_versions WHERE symbol = ?", [symbol]
+        for column, value in (("basis", basis), ("statement", statement)):
+            if value is not None:
+                sql, args = sql + f" AND {column} = ?", [*args, value]
+        sql += " ORDER BY period_end, period_start, key, filed, filing_url"
+        return [dict(zip(VERSION_COLUMNS, row)) for row in self._con.execute(sql, args).fetchall()]
+
+    def _eligible(self, symbol: str, basis: str, statement: str, cutoff: datetime) -> list[tuple[Any, ...]]:
+        """The version rows public at `cutoff`: filed by it and not withdrawn by it."""
+        if not self._table_exists("statement_versions"):
+            raise AthenaError("this store has no statement versions: run python -m athena.fundamentals.vintages on a copy first")
+        cut = _utc(cutoff)
+        withdrawn = "NOT EXISTS (SELECT 1 FROM filing_withdrawals w WHERE w.filing_url = v.filing_url AND w.withdrawn_at <= ?)" if self._table_exists("filing_withdrawals") else "? IS NOT NULL"
+        return self._con.execute(
+            "SELECT period_start, period_end, key, value, filing_url, filed FROM statement_versions v WHERE symbol = ? AND basis = ? AND statement = ? AND filed <= ? AND " + withdrawn,
+            [symbol, basis, statement, cut, cut],
+        ).fetchall()
+
+    def lines_as_of(self, symbol: str, basis: str, statement: str, cutoff: datetime, fieldwise: bool = False) -> dict[tuple[date, date], dict[str, float]]:
+        """The lines as they stood at `cutoff`: for each period, the version that was public then and not yet withdrawn. By default the whole latest eligible FILING supplies the period, so a
+        partial amendment is exactly what it reported and inherits nothing from the filing it amended; `fieldwise=True` takes the newest eligible value of each line instead. Ties (two
+        filings at the same instant) go to the greater filing identity, so the answer does not depend on insertion order. A period with no eligible version is absent: see `gaps_as_of`."""
+        rows = self._eligible(symbol, basis, statement, cutoff)
+        out: dict[tuple[date, date], dict[str, float]] = {}
+        if fieldwise:
+            best: dict[tuple[date, date, str], tuple[Any, ...]] = {}
+            for start, end, key, value, url, filed in rows:
+                held = best.get((start, end, key))
+                if held is None or (filed, url) > (held[0], held[1]):
+                    best[(start, end, key)] = (filed, url, value)
+            for (start, end, key), (_, _, value) in sorted(best.items(), key=lambda kv: (kv[0][1], kv[0][0], kv[0][2])):
+                out.setdefault((start, end), {})[key] = value
+            return out
+        winner: dict[tuple[date, date], tuple[Any, str]] = {}
+        for start, end, _key, _value, url, filed in rows:
+            if (start, end) not in winner or (filed, url) > winner[(start, end)]:
+                winner[(start, end)] = (filed, url)
+        for start, end, key, value, url, _filed in sorted(rows, key=lambda r: (r[1], r[0], r[2])):
+            if winner[(start, end)][1] == url:
+                out.setdefault((start, end), {})[key] = value
+        return out
+
+    def gaps_as_of(self, symbol: str, basis: str, statement: str, cutoff: datetime) -> list[dict[str, Any]]:
+        """The periods this store holds a version of but none that was public at `cutoff`, each with the reason. This is how a missing original shows: the store only holds the revision, and says so."""
+        have = self.lines_as_of(symbol, basis, statement, cutoff)
+        gaps = []
+        for start, end, first in self._con.execute(
+            "SELECT period_start, period_end, min(filed) FROM statement_versions WHERE symbol = ? AND basis = ? AND statement = ? GROUP BY period_start, period_end ORDER BY period_end, period_start",
+            [symbol, basis, statement],
+        ).fetchall():
+            if (start, end) in have:
+                continue
+            if first > _utc(cutoff):
+                why = f"no version was public by {_utc(cutoff):%Y-%m-%d}: the first held version was filed {first:%Y-%m-%d}, and an earlier original, if there was one, is not held"
+            else:
+                why = f"every version public by {_utc(cutoff):%Y-%m-%d} has since been withdrawn"
+            gaps.append({"period_start": start, "period_end": end, "reason": why})
+        return gaps
+
+    def withdraw_filing(self, url: str, when: datetime, reason: str) -> None:
+        """Record that a filing was withdrawn from `when`: its versions stop counting from then on (a cutoff before `when` still sees them, because they were public), and the latest-value table is rebuilt
+        for its company from the versions that remain. The versions themselves are kept."""
+        symbols = [r[0] for r in self._con.execute("SELECT DISTINCT symbol FROM statement_versions WHERE filing_url = ?", [url]).fetchall()]
+        if not symbols:
+            raise AthenaError(f"no stored filing {url}: nothing to withdraw")
+        self._con.execute("INSERT INTO filing_withdrawals VALUES (?, ?, ?)", [url, _utc(when), reason])
+        self.rebuild_latest(symbols)
+
+    def rebuild_latest(self, symbols: Sequence[str]) -> int:
+        """Recompute the latest-value table for these companies from their versions (the newest filing of each line that has not been withdrawn). Refuses unless every row now in the latest table is
+        also a version: otherwise rebuilding would drop a row that exists nowhere else. Returns the rows written."""
+        written = 0
+        for symbol in symbols:
+            orphan = self._con.execute(
+                f"SELECT count(*) FROM statement_lines l WHERE l.symbol = ? AND NOT EXISTS (SELECT 1 FROM statement_versions v WHERE v.symbol = l.symbol AND v.basis = l.basis AND v.statement = l.statement"
+                " AND v.period_start = l.period_start AND v.period_end = l.period_end AND v.key = l.key AND v.filing_url = l.filing_url)",
+                [symbol],
+            ).fetchone()[0]
+            if orphan:
+                raise AthenaError(f"{symbol} has {orphan} latest-value rows that are not stored as versions yet: run the versions migration before changing what is current")
+            best: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+            for basis, statement, start, end, key, value, url, filed, source in self._con.execute(
+                "SELECT basis, statement, period_start, period_end, key, value, filing_url, filed, source FROM statement_versions v WHERE symbol = ? AND NOT EXISTS"
+                " (SELECT 1 FROM filing_withdrawals w WHERE w.filing_url = v.filing_url AND w.withdrawn_at <= ?)",
+                [symbol, now()],
+            ).fetchall():
+                k = (basis, statement, start, end, key)
+                if k not in best or (filed, url) > (best[k][1], best[k][2]):
+                    best[k] = (value, filed, url, source)
+            with self._atomic():
+                self._con.execute("DELETE FROM statement_lines WHERE symbol = ?", [symbol])
+                rows = [(symbol, *k, value, url, filed, source) for k, (value, filed, url, source) in best.items()]
+                if rows:
+                    self._con.executemany("INSERT INTO statement_lines VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+                written += len(rows)
+        return written
 
     def save_holding(self, symbol: str, holding: Holding, url: str, filed: datetime) -> None:
         """Store one quarter's pattern, replacing what was held for that symbol and quarter."""

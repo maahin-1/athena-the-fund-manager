@@ -37,6 +37,9 @@ class Panel:
 
     days: list[date]
     px: dict[str, np.ndarray]
+    raw: dict[str, np.ndarray] | None = None  # the close as quoted that day (not adjusted for later splits): what a price floor must be tested against (`athena.evaluation.cohort`)
+    traded: dict[str, np.ndarray] | None = None  # close x volume in rupees as traded that day, nan where the stock did not trade
+    min_price: float = MIN_PRICE  # the floor the signals apply to the ADJUSTED close: the legacy study's; the cohort study sets it to 0 and applies the nominal-price rule itself
 
     @classmethod
     def build(cls, series: Mapping[str, Sequence[tuple[date, float]]]) -> Panel:
@@ -55,14 +58,14 @@ def momentum_12_1(panel: Panel, i: int) -> dict[str, float]:
     """The return from 252 to 21 trading days ago (the last month left out, as it tends to reverse)."""
     if i < 252:
         return {}
-    return {s: a[i - 21] / a[i - 252] - 1.0 for s, a in panel.px.items() if a[i - 21] > 0 and a[i - 252] > 0 and a[i] >= MIN_PRICE}
+    return {s: a[i - 21] / a[i - 252] - 1.0 for s, a in panel.px.items() if a[i - 21] > 0 and a[i - 252] > 0 and a[i] >= panel.min_price}
 
 
 def reversal_1m(panel: Panel, i: int) -> dict[str, float]:
     """Minus the last 21 days' return: last month's losers score high."""
     if i < 21:
         return {}
-    return {s: -(a[i] / a[i - 21] - 1.0) for s, a in panel.px.items() if a[i - 21] > 0 and a[i] >= MIN_PRICE}
+    return {s: -(a[i] / a[i - 21] - 1.0) for s, a in panel.px.items() if a[i - 21] > 0 and a[i] >= panel.min_price}
 
 
 def low_volatility(panel: Panel, i: int) -> dict[str, float]:
@@ -72,7 +75,7 @@ def low_volatility(panel: Panel, i: int) -> dict[str, float]:
     out = {}
     for s, a in panel.px.items():
         window = a[i - 126 : i + 1]
-        if np.isnan(window).any() or a[i] < MIN_PRICE or (window <= 0).any():
+        if np.isnan(window).any() or a[i] < panel.min_price or (window <= 0).any():
             continue
         out[s] = -float(np.std(np.diff(window) / window[:-1]))
     return out
@@ -143,6 +146,29 @@ def format_report(name: str, rep: Mapping[str, Any]) -> str:
             f"positive in {rep['years_positive']} years. By year: {per_year}")
 
 
+def _main_cohort(args: argparse.Namespace, since: date, out_path: str) -> int:
+    """The cohort study: a frozen, eligibility-filtered cohort that keeps stopped and restructured names, as an association reported as a range (`athena.evaluation.cohort`, policy locked in
+    docs/audit-2026-11-12/WP04-STUDY-POLICY.md). Writes its own file; the legacy report is never overwritten by it."""
+    from athena.evaluation import cohort
+    from athena.evaluation.policy import POLICY
+    from athena.trading_calendar import ist_date
+    from athena.warehouse.history import adjusted_history
+    from athena.warehouse.warehouse import Warehouse
+
+    with Warehouse(args.db, read_only=True, wait_seconds=300) as warehouse:
+        history = adjusted_history(warehouse)
+        panel, unadjustable = cohort.load_panel(warehouse, lambda symbol: [(ist_date(b.timestamp), b.close) for b in history(symbol)])
+    print(f"cohort study, policy {POLICY.fingerprint()}: frozen cohort, nominal-price and traded-value eligibility, stopped and restructured names kept")
+    out: dict[str, Any] = {"study_policy": POLICY.to_dict(), "study_policy_fingerprint": POLICY.fingerprint()}
+    for name, signal in SIGNALS.items():
+        out[name] = cohort.report_cohort(cohort.run_cohort(panel, signal, since, args.horizon, unadjustable=unadjustable))
+        print(cohort.format_cohort(name, out[name]))
+    path = Path(out_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     from athena.trading_calendar import ist_date
     from athena.warehouse.history import adjusted_history
@@ -152,8 +178,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--db", default=str(DEFAULT_PATH))
     parser.add_argument("--since", default="2011-01-01")
     parser.add_argument("--horizon", type=int, default=21)
-    parser.add_argument("--out", default=str(REPORT_PATH))
+    parser.add_argument("--legacy", action="store_true", help="the earlier study: a name with no close at the end of its window is dropped, and the price floor is applied to the adjusted close. Writes the earlier report path.")
+    parser.add_argument("--out", default=None, help=f"default: {REPORT_PATH} with --legacy, else a separate cohort report beside it")
     args = parser.parse_args(argv)
+    out_path = args.out or str(REPORT_PATH if args.legacy else REPORT_PATH.with_name("walkforward-cohort.json"))
+    since = date.fromisoformat(args.since)
+    if not args.legacy:
+        return _main_cohort(args, since, out_path)
     with Warehouse(args.db, read_only=True, wait_seconds=300) as warehouse:
         history = adjusted_history(warehouse)
         series = {e["symbol"]: [(ist_date(b.timestamp), b.close) for b in history(e["symbol"])] for e in warehouse.universe("stock")}
@@ -162,12 +193,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rt = round_trip(load(), "delivery", 100000.0, daily_traded_crore=100.0)  # a stock of middling liquidity; every window sells the old fifth and buys the new
     cost = rt["fraction"]
+    print("legacy study: survivors of each window only, price floor on the adjusted close")
     print(f"cost of trading a window: {cost:.2%} of the value{'' if rt['verified'] else ' (rates not yet checked against a contract note)'}")
     out: dict[str, Any] = {}
     for name, signal in SIGNALS.items():
-        out[name] = report(run(panel, signal, date.fromisoformat(args.since), args.horizon), cost)
+        out[name] = report(run(panel, signal, since, args.horizon), cost)
         print(format_report(name, out[name]))
-    path = Path(args.out)
+    path = Path(out_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")
     return 0
