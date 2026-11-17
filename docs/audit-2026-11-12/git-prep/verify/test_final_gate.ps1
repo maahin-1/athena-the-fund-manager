@@ -116,7 +116,7 @@ Check 'maintenance: ten stages including policy, gate passes' ($r.exit -eq 0 -an
 Check 'maintenance: the comparison reference is the integration tip, not the original baseline' ($cmp -match "--baseline-ref $tip" -and $cmp -notmatch "--baseline-ref $orig") $cmp
 Check 'maintenance: hygiene compares with the integration tip' ($hy -match [regex]::Escape($tip)) $hy
 Check 'maintenance: protected entries are still compared with the ORIGINAL baseline' ($bcm -match "-Baseline $orig") $bcm
-Check 'maintenance: the Python count includes the 105 policy tests (3198)' ($py -match '-ExpectedPassed 3198') $py
+Check 'maintenance: the Python count includes the 105 policy tests and the 10 checkout-identity tests (3208)' ($py -match '-ExpectedPassed 3208') $py
 $r = Run-Gate 'integration counts' @{}
 $py = $r.calls | Where-Object { $_ -like 'python_gate *' } | Select-Object -First 1
 Check 'integration: the Python count passed to the gate is 3093' ($py -match '-ExpectedPassed 3093') $py

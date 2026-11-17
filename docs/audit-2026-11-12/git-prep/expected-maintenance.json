@@ -1,5 +1,5 @@
 {
- "note": "Allowlist manifest for verify/compare_manifest.py: every file the maintenance branch adds or changes, with the SHA-256 of the verified source bytes (looked up by source_path or path under the backup trees). A file is accepted only if the candidate holds what the declared line-ending policy makes of those bytes. Additions, changes AND removals are checked against the reference: the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip). A baseline file absent from the candidate fails unless it is listed under deleted (none is planned). Protected names never appear here.",
+ "note": "Allowlist manifest for verify/compare_manifest.py: every file the maintenance branch adds or changes, with the SHA-256 of the verified source bytes (looked up by source_path or path under the backup trees). A file is accepted only if the candidate holds what the declared line-ending policy makes of those bytes. Additions, changes AND removals are checked against the reference: the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip). A baseline file absent from the candidate fails unless it is listed under deleted (none is planned). Protected names never appear here. Revision after the first hosted run: M06 (one follow-up maintenance commit) adds the guard v4 files, the checkout-identity script and its tests, and changes ci.yml, ci/expected-counts.json, web_gate.ps1, final_gate.ps1 and test_final_gate.ps1; this file is self_exempt because it changes in that commit and cannot hold its own hash.",
  "baseline_head": "37f1fc19846a178083d9ced7a7a25aeffe65b1f9",
  "compared_against": "the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip)",
  "branch": "maintenance",
@@ -179,8 +179,8 @@
   },
   {
    "path": ".github/workflows/ci.yml",
-   "sha256": "92e3b7ca40cd1486d318a771ce864b01a28c79146f99b77c7582dbfe88d93df2",
-   "group": "M04",
+   "sha256": "122dd35b23260da2669e1100dd298362fc283dd375ec9d73d4da4d7cd3ebbaff",
+   "group": "M04, M06",
    "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/workflows/ci.yml"
   },
   {
@@ -191,8 +191,8 @@
   },
   {
    "path": "ci/expected-counts.json",
-   "sha256": "522eb3ce7287c24bbd20fb8fdde08b0b8e7b8f8d4fb48187682f4a828a0f0ace",
-   "group": "M04",
+   "sha256": "8ca0b04c848a22cf0ec537e6ecd7a3aa6b399825bd5d65e5ad921d7524172ca8",
+   "group": "M04, M06",
    "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/ci/expected-counts.json"
   },
   {
@@ -242,8 +242,65 @@
    "sha256": "170fd336ed1a9d7d0efeef9bbd03c595c95fc7508f0af4f498511a1f82b77f0d",
    "group": "M05",
    "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/dependabot.yml"
+  },
+  {
+   "path": "scripts/ci/record_checkout_identity.sh",
+   "sha256": "2562307b69c91cca9d20d5be2aa0f1c7e2d47e7f0edcf29e5366ebf90b1017ba",
+   "group": "M06"
+  },
+  {
+   "path": "tests/test_ci_checkout_identity.py",
+   "sha256": "e12b3b2b6415c44f903ab4ad2d4c1897b958f13a00d151f0f990a4f7c9075e49",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard.setup.v4.mjs",
+   "sha256": "600924933bc19692a4b5f40cb114708165712f4823fa5132976f48da29f342c8",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard_selftest_v4.mjs",
+   "sha256": "6bf12d2e4f18bc6e72b231e1893c3f02feedd69b5ee4c412ea8ab4b5a2a5af7d",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard_regressions_v4.mjs",
+   "sha256": "de6eeb2f91b492ddbb7a77aff10b7721909a451bd8e83ded3c8c1076c9e3334a",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard_judge_v4.mjs",
+   "sha256": "b981d8ae8d0c39c73127774f564533aae28cac28f6139d04e66eafe64a8e3ae9",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/GUARD-V4.md",
+   "sha256": "98dfbf67aacca09239e8dfeee064634010ef133b8100679f97143eb02b7a5953",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/web_gate.ps1",
+   "sha256": "5bd60a56decbccaca586a3868781cec3492ec79a0ac5850c8876a9c75221689d",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/final_gate.ps1",
+   "sha256": "c715dfb54b9d428f05d0b64947fe91359d62001e2ab8960c88a2d182514f4097",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/test_final_gate.ps1",
+   "sha256": "542f99fc6897676b4883f51b3b6162a68e3a7b6973e9d03f0c5f2060171b880c",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/expected-maintenance.json",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "group": "M06 (self_exempt: the file cannot hold its own hash)"
   }
  ],
  "deleted": [],
- "self_exempt": []
+ "self_exempt": [
+  "docs/audit-2026-11-12/git-prep/expected-maintenance.json"
+ ]
 }

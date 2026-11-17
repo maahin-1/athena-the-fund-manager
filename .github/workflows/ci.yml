@@ -174,6 +174,13 @@ jobs:
             exit 1
           fi
           echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - name: Record checkout identity (the commit, tree and parents this job actually has)
+        shell: bash
+        env:
+          IDENTITY_DIR: ${{ runner.temp }}/checkout-identity
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci/record_checkout_identity.sh
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -185,6 +192,12 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pyyaml==6.0.3
           python scripts/ci/check_workflows.py .github/workflows
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gate-policy
+          path: ${{ runner.temp }}/checkout-identity
+          retention-days: 14
 
   python:
     name: python
@@ -327,6 +340,13 @@ jobs:
             exit 1
           fi
           echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - name: Record checkout identity (the commit, tree and parents this job actually has)
+        shell: bash
+        env:
+          IDENTITY_DIR: ${{ runner.temp }}/checkout-identity
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci/record_checkout_identity.sh
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -347,7 +367,9 @@ jobs:
         if: always()
         with:
           name: gate-python
-          path: ${{ runner.temp }}/gate-python
+          path: |
+            ${{ runner.temp }}/gate-python
+            ${{ runner.temp }}/checkout-identity
           retention-days: 14
 
   rust:
@@ -491,6 +513,13 @@ jobs:
             exit 1
           fi
           echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - name: Record checkout identity (the commit, tree and parents this job actually has)
+        shell: bash
+        env:
+          IDENTITY_DIR: ${{ runner.temp }}/checkout-identity
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci/record_checkout_identity.sh
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -524,6 +553,7 @@ jobs:
           path: |
             ${{ runner.temp }}/gate-rust
             ${{ runner.temp }}/gate-crosslang
+            ${{ runner.temp }}/checkout-identity
           retention-days: 14
 
   web:
@@ -667,13 +697,20 @@ jobs:
             exit 1
           fi
           echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - name: Record checkout identity (the commit, tree and parents this job actually has)
+        shell: bash
+        env:
+          IDENTITY_DIR: ${{ runner.temp }}/checkout-identity
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci/record_checkout_identity.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install from the lockfile
         working-directory: terminal/web
         run: npm ci --no-audit --no-fund
-      - name: Web gate (guard v3, TypeScript, Vitest with every test ID, production build)
+      - name: Web gate (guard v4, TypeScript, Vitest with every test ID, production build)
         run: |
           pwsh -NoProfile -File docs/audit-2026-11-12/git-prep/verify/web_gate.ps1 `
             -Candidate $env:GITHUB_WORKSPACE -NodeModules "$env:GITHUB_WORKSPACE\terminal\web\node_modules" `
@@ -683,7 +720,9 @@ jobs:
         if: always()
         with:
           name: gate-web
-          path: ${{ runner.temp }}/gate-web
+          path: |
+            ${{ runner.temp }}/gate-web
+            ${{ runner.temp }}/checkout-identity
           retention-days: 14
 
   gate:

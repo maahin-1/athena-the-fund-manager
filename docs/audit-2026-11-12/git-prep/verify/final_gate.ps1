@@ -36,7 +36,7 @@ param(
 $ErrorActionPreference = 'Continue'
 . "$PSScriptRoot\common.ps1"
 if (-not $VerifyDir) { $VerifyDir = $PSScriptRoot }   # $PSScriptRoot is not available inside a param block in Windows PowerShell 5.1
-if ($PythonPassed -lt 0) { $PythonPassed = if ($Branch -eq 'maintenance') { 3198 } else { 3093 } }   # the maintenance branch adds the 105 tests of tests/test_ci_repo_policy.py (ci/expected-counts.json)
+if ($PythonPassed -lt 0) { $PythonPassed = if ($Branch -eq 'maintenance') { 3208 } else { 3093 } }   # the maintenance branch adds the 105 tests of tests/test_ci_repo_policy.py and the 10 of tests/test_ci_checkout_identity.py (ci/expected-counts.json)
 $roots = @($SourceRoots -split ';' | Where-Object { $_.Trim() })
 if ($roots.Count -eq 0) { throw 'no source root given: the manifest comparison cannot find the verified files' }
 foreach ($r in $roots) { if (-not (Test-Path -LiteralPath $r -PathType Container)) { throw "source root not found: $r" } }
