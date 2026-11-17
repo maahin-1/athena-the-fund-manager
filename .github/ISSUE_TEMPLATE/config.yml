@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/maahin-1/athena-the-fund-manager/security/advisories/new
+    about: Do not open a public issue for a vulnerability. This link works only once private vulnerability reporting is enabled for the repository (verify before relying on it).

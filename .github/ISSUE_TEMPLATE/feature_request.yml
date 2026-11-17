@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a change in behaviour. Small, concrete requests are easiest to act on.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can you not do today, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should happen, in terms someone could test with synthetic data.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: It needs no live trading, no credentials and no private data to build and test.
+          required: true
+        - label: I understand the project provides research tooling and is not investment advice.
+          required: true

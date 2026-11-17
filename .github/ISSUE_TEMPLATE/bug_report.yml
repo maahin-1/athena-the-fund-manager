@@ -1,0 +1,48 @@
+name: Bug report
+description: Something behaves differently from what the documentation or tests say. Not for security problems (see SECURITY.md).
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste credentials, tokens, account numbers, broker or provider responses that contain them, or files from a private data store.** Use synthetic data. Security problems go through the private route in SECURITY.md, never here.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Exact messages or output, trimmed to what matters.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Steps or a short script that needs no private data, no network and no credentials.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python / Rust / Node versions, which part (Python library, terminal server, web page).
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Confirmation
+      options:
+        - label: This report contains no credentials, private data or account details.
+          required: true
