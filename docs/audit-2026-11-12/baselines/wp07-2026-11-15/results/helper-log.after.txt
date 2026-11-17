@@ -1,0 +1,1 @@
+helper.log (not opened) after: size=0 mtime=2026-10-28T11:17:41

@@ -1,0 +1,5 @@
+2026-11-15 16:24:21  rust: cargo test --offline --locked --no-run
+2026-11-15 16:28:06  rust: build exit 101
+2026-11-15 16:28:06  web: npm test -- --config <scratch> --reporter=default --reporter=json
+2026-11-15 16:28:27  web: npm test exit 0
+2026-11-15 16:28:29  done

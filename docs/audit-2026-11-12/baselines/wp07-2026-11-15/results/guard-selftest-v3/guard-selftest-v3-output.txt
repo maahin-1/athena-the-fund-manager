@@ -1,0 +1,73 @@
+﻿PASS  fetch refused
+PASS  WebSocket refused
+PASS  XMLHttpRequest.open refused
+PASS  net.connect (tcp) refused
+PASS  http.get refused
+PASS  dns.lookup refused
+PASS  child_process.spawn refused
+PASS  readFileSync refuses .env
+PASS  readFileSync refuses .env.local
+PASS  readFileSync refuses .env.production
+PASS  readFileSync refuses .env.example
+PASS  readFileSync refuses prod.env
+PASS  readFileSync refuses a.b.env
+PASS  readFileSync refuses .envrc
+PASS  readFileSync refuses x/y/.env
+PASS  readFileSync refuses .athena/warehouse.duckdb
+PASS  readFileSync refuses .venv/Scripts/python.exe
+PASS  readFileSync refuses .git/config
+PASS  readFileSync refuses .hidden
+PASS  existsSync refuses a protected name
+PASS  fs.promises.readFile refuses
+PASS  a named import of readFileSync is guarded
+PASS  renameSync to .env refused
+PASS  copyFileSync to .env refused
+PASS  cpSync to .env refused
+PASS  linkSync to .env refused
+PASS  symlinkSync (path .env) refused
+PASS  fs.promises.copyFile to .env rejects
+PASS  fs.promises.rename to .env rejects
+PASS  renameSync to .env.local refused
+PASS  copyFileSync to .env.local refused
+PASS  cpSync to .env.local refused
+PASS  linkSync to .env.local refused
+PASS  symlinkSync (path .env.local) refused
+PASS  fs.promises.copyFile to .env.local rejects
+PASS  fs.promises.rename to .env.local rejects
+PASS  renameSync to prod.env refused
+PASS  copyFileSync to prod.env refused
+PASS  cpSync to prod.env refused
+PASS  linkSync to prod.env refused
+PASS  symlinkSync (path prod.env) refused
+PASS  fs.promises.copyFile to prod.env rejects
+PASS  fs.promises.rename to prod.env rejects
+PASS  renameSync to .envrc refused
+PASS  copyFileSync to .envrc refused
+PASS  cpSync to .envrc refused
+PASS  linkSync to .envrc refused
+PASS  symlinkSync (path .envrc) refused
+PASS  fs.promises.copyFile to .envrc rejects
+PASS  fs.promises.rename to .envrc rejects
+PASS  renameSync to .athena/db refused
+PASS  copyFileSync to .athena/db refused
+PASS  cpSync to .athena/db refused
+PASS  linkSync to .athena/db refused
+PASS  symlinkSync (path .athena/db) refused
+PASS  fs.promises.copyFile to .athena/db rejects
+PASS  fs.promises.rename to .athena/db rejects
+PASS  renameSync to .hidden refused
+PASS  copyFileSync to .hidden refused
+PASS  cpSync to .hidden refused
+PASS  linkSync to .hidden refused
+PASS  symlinkSync (path .hidden) refused
+PASS  fs.promises.copyFile to .hidden rejects
+PASS  fs.promises.rename to .hidden rejects
+PASS  renameSync from a protected source refused
+PASS  symlinkSync with a protected target refused
+PASS  an ordinary copy and rename still work
+PASS  protectedPath does not flag an ordinary name
+LIMIT  a worker thread started by code gets its own unguarded globals (fetch there is the native one: true)
+LIMIT  not covered by design: native addons, process.binding / process.dlopen, WASI, descriptors opened before the guard, the vitest/vite main process, processes started outside child_process
+LIMIT  not exercised by this self-test (implemented): tls.connect, https.*, dgram, dns.resolve*, exec/execFile/fork, EventSource, sendBeacon, the callback forms, createReadStream, opendir
+
+68 passed, 0 failed

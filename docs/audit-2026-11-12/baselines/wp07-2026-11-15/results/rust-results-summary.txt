@@ -1,0 +1,37 @@
+=== run A (no sh on PATH)  (C:\Users\LEGION\AppData\Local\Temp\claude\ed5e936a5cc19168\608bc073-258a-4e5c-b2f1-60f2be42ba55\scratchpad\baseline\rust-test.A-no-sh.log)
+test result: ok. 206 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.65s
+per-test lines: 206; ok=206 FAILED=0 ignored=1
+the eight sh-dependent tests:
+  test chart_explain::tests::a_bad_request_a_failing_child_and_a_busy_slot_are_told_apart ... ok
+  test chart_explain::tests::the_request_reaches_the_child_on_standard_input_and_its_answer_comes_back ... ok
+  test flow_board::tests::a_missing_history_a_busy_file_and_a_broken_child_are_told_apart ... ok
+  test flow_board::tests::the_document_is_read_from_the_child_and_kept_until_the_file_changes ... ok
+  test ipo::tests::a_failing_child_and_a_garbled_answer_are_told_apart ... ok
+  test ipo::tests::the_warehouse_path_reaches_the_command_and_an_answer_is_kept_for_a_minute ... ok
+  test sentiment::tests::a_bad_symbol_a_failing_child_and_a_garbled_answer_are_told_apart ... ok
+  test sentiment::tests::the_symbol_and_the_tone_flag_reach_the_command_and_an_answer_is_kept ... ok
+=== run B (Git for Windows sh on PATH)  (C:\Users\LEGION\AppData\Local\Temp\claude\ed5e936a5cc19168\608bc073-258a-4e5c-b2f1-60f2be42ba55\scratchpad\baseline\rust-test.B-with-sh.log)
+test result: ok. 206 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.96s
+per-test lines: 206; ok=206 FAILED=0 ignored=1
+the eight sh-dependent tests:
+  test chart_explain::tests::the_request_reaches_the_child_on_standard_input_and_its_answer_comes_back ... ok
+  test flow_board::tests::the_document_is_read_from_the_child_and_kept_until_the_file_changes ... ok
+  test flow_board::tests::a_missing_history_a_busy_file_and_a_broken_child_are_told_apart ... ok
+  test ipo::tests::the_warehouse_path_reaches_the_command_and_an_answer_is_kept_for_a_minute ... ok
+  test ipo::tests::a_failing_child_and_a_garbled_answer_are_told_apart ... ok
+  test chart_explain::tests::a_bad_request_a_failing_child_and_a_busy_slot_are_told_apart ... ok
+  test sentiment::tests::the_symbol_and_the_tone_flag_reach_the_command_and_an_answer_is_kept ... ok
+  test sentiment::tests::a_bad_symbol_a_failing_child_and_a_garbled_answer_are_told_apart ... ok
+=== list (cargo test -- --list): 206 tests
+  chart_explain::tests::a_bad_request_a_failing_child_and_a_busy_slot_are_told_apart: test
+  chart_explain::tests::the_request_reaches_the_child_on_standard_input_and_its_answer_comes_back: test
+  flow_board::tests::a_missing_history_a_busy_file_and_a_broken_child_are_told_apart: test
+  flow_board::tests::the_document_is_read_from_the_child_and_kept_until_the_file_changes: test
+  ipo::tests::a_failing_child_and_a_garbled_answer_are_told_apart: test
+  ipo::tests::the_warehouse_path_reaches_the_command_and_an_answer_is_kept_for_a_minute: test
+  sentiment::tests::a_bad_symbol_a_failing_child_and_a_garbled_answer_are_told_apart: test
+  sentiment::tests::the_symbol_and_the_tone_flag_reach_the_command_and_an_answer_is_kept: test
+=== problems in B (first 5)
+test bars::tests::a_failed_fetch_is_remembered_so_polling_does_not_repeat_it_and_the_page_can_say_there_is_nothing ... ok
+test derivs::tests::a_download_with_no_contracts_keeps_an_older_cache_and_a_failed_one_too ... ok
+test result: ok. 206 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.96s

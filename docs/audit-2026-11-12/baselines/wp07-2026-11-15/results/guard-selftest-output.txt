@@ -1,0 +1,30 @@
+﻿PASS  fetch refused
+PASS  WebSocket refused
+PASS  XMLHttpRequest.open refused
+PASS  net.connect (tcp) refused
+PASS  http.get refused
+PASS  dns.lookup refused
+PASS  child_process.spawn refused
+PASS  readFileSync refuses .env
+PASS  readFileSync refuses .env.local
+PASS  readFileSync refuses .env.production
+PASS  readFileSync refuses .env.example
+PASS  readFileSync refuses prod.env
+PASS  readFileSync refuses a.b.env
+PASS  readFileSync refuses .envrc
+PASS  readFileSync refuses x/y/.env
+PASS  readFileSync refuses .athena/warehouse.duckdb
+PASS  readFileSync refuses .venv/Scripts/python.exe
+PASS  readFileSync refuses .git/config
+PASS  readFileSync refuses .hidden
+PASS  existsSync refuses a protected name
+PASS  statSync refuses a protected name
+PASS  fs.promises.readFile refuses
+PASS  a named import of readFileSync is guarded (live binding synced)
+PASS  a named import from node:fs/promises is guarded
+PASS  protectedPath does not flag an ordinary name
+PASS  an ordinary temp file can still be written and read
+LIMIT  a worker thread started by code gets its own unguarded globals (fetch there is the native one: true)
+LIMIT  not covered by design: native addons, process.binding / process.dlopen, WASI, reads through a descriptor obtained before the guard, the vitest/vite main process, and any process the code starts outside child_process
+
+26 passed, 0 failed

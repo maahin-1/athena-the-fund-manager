@@ -1,0 +1,9 @@
+2026-11-15 16:33:31  rust: cargo test --offline --locked --no-run
+2026-11-15 16:42:15  rust: build exit 0
+2026-11-15 16:42:20  rust run A: cargo test --offline --locked   (PATH as is: no sh)
+2026-11-15 16:42:26  rust run A exit 0
+2026-11-15 16:42:26  rust run B: same command with Git for Windows sh on PATH (supplementary)
+2026-11-15 16:42:34  rust run B exit 0
+2026-11-15 16:42:34  web: npm test -- --config <scratch v2> --reporter=default --reporter=json
+2026-11-15 16:42:50  web: npm test exit 0
+2026-11-15 16:42:52  done
