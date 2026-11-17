@@ -1,0 +1,5 @@
+{
+  "note": "Counts the gates must reproduce exactly. Update in the same pull request that adds or removes tests, and say why. An unexplained change fails the gate. Recorded from the clean offline runs of 17 November 2026 on the stand-in candidate (docs/audit-2026-11-12/git-prep/runs); python.passed = 3093 measured on the application candidate + 105 tests of this proposal (tests/test_ci_repo_policy.py, measured separately: 105 passed after review 3; it was 17 before), to be re-measured when the maintenance commit is assembled; the Python skipped count assumes no Damodaran mirror and no --live.",
+  "python": { "passed": 3198, "skipped": 83, "excluded_modules": 9 },
+  "rust": { "passed": 417, "ignored": 2 }
+}

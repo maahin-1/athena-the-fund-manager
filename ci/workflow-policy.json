@@ -1,0 +1,14 @@
+{
+  "_note": "Policy data for scripts/ci/check_workflows.py. `actions`: the ONLY third-party action repositories a workflow may use, each with the release tag and the commit SHA it pointed to when read from the public GitHub API on 17 November 2026 (GitHub-owned actions only). Every `uses:` in every workflow must be exactly one of these repository/SHA pairs (a different 40-hex SHA is a failure, not a pass). Re-verify when applying: a tag can move, a SHA cannot. A Dependabot update to an action therefore also needs this file updated in the same pull request, reviewed by the owner (the file is CODEOWNED). `actions/checkout` is deliberately absent: jobs use the access-safe checkout step instead (scripts/ci/safe_checkout.sh). `no_checkout_jobs`: jobs that never read repository files and so have no checkout step.",
+  "actions": {
+    "actions/setup-python": {"tag": "v7.1.0", "sha": "6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"},
+    "actions/setup-node": {"tag": "v7.1.0", "sha": "949feb2413d6458794dcd2491c4babbbce0c15c1"},
+    "actions/upload-artifact": {"tag": "v7.0.2", "sha": "cf430e030ddbb5b0abf93d22962f4752f3646cd9"},
+    "actions/dependency-review-action": {"tag": "v5.0.0", "sha": "a1d282b36b6f3519aa1f3fc636f609c47dddb294"}
+  },
+  "checkout_control_env": ["REMOTE_URL", "CHECKOUT_SHA", "ATHENA_CHECKOUT_*", "GH_TOKEN", "GITHUB_*", "GIT_*", "HOME", "USERPROFILE", "XDG_*", "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS", "PS4", "BASH_XTRACEFD", "PATH", "LD_*", "*_PROXY"],
+  "_checkout_control_env_note": "Environment variable names (case-insensitive, `*` wildcard) that no workflow-level or job-level `env:` may define, because they would steer the access-safe checkout: the remote and the revision (REMOTE_URL, CHECKOUT_SHA, ATHENA_CHECKOUT_*; authenticated operation takes both from the job context only), credentials (GH_TOKEN, GITHUB_*), git configuration (GIT_*, HOME, USERPROFILE, XDG_*), and the shell and loader (BASH_ENV, ENV, SHELLOPTS, BASHOPTS, PS4, BASH_XTRACEFD, PATH, LD_*) or a proxy (*_PROXY). A job may not use `container:` either. scripts/ci/safe_checkout.sh refuses the overrides and drops inherited GIT_* itself; this list makes the same mistake visible in review before the workflow runs.",
+  "checkout_step_name": "Access-safe checkout",
+  "checkout_script": "scripts/ci/safe_checkout.sh",
+  "no_checkout_jobs": ["ci.yml:gate", "dependency-review.yml:review"]
+}

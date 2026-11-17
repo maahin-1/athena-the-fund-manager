@@ -1,0 +1,22 @@
+# PROPOSED dependency review for pull requests. Not on any branch; it works only when the repository's dependency graph is enabled (SETTINGS-MATRIX.md, row S1) and, for private repositories,
+# only where GitHub makes the feature available: verify on a disposable pull request before relying on it, and do not make it a required check until it has run successfully.
+# Read-only token, no secrets, `pull_request` (never `pull_request_target`). It reports vulnerable or licence-problematic dependency changes; it does not fix them.
+# It reads no repository file (it compares the dependency graph through the API), so it has no checkout step at all; whether that holds on a real run is part of the first-run verification.
+name: dependency-review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never

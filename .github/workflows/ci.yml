@@ -1,0 +1,707 @@
+# PROPOSED continuous integration for the Athena repository.
+# STATUS: a local proposal. It has NOT been added to any branch, has never run on GitHub, and its job names are not "required" anywhere. Syntax and policy were checked locally only
+# (maintenance-proposal/checks/check_proposal.py); a successful run on GitHub is a precondition before any check is made required (see BOOTSTRAP in README.md).
+#
+# Design:
+#  * Windows is the platform the project is built for (PowerShell start-up, process and lock handling), so Python, Rust and web run on windows-latest. No Linux claim is made: Linux runs only
+#    the policy checks that need no project code to execute.
+#  * Offline tests: every test uses synthetic fixtures and fakes. Dependencies are downloaded from public registries during setup only (pip with a constraints file, rustup/crates with --locked,
+#    npm ci from the lockfile). No job has any secret, deployment credential or write permission. The web guard is a tripwire, not a sandbox (GUARD-LIMITS.md).
+#  * The gates reuse the local scripts so that CI and the local verification are the same code:  docs/audit-2026-11-12/git-prep/verify/*.ps1  (strict counts, named exclusions, import-origin proof).
+#  * One aggregate job, `gate`, always reports. Skipped or cancelled needed jobs make it fail. Path filters are deliberately not used: they would leave the aggregate pending or turn omitted tests green.
+#  * Third-party actions are GitHub's own, pinned to full commit SHAs resolved from the public API on 17 November 2026 (re-verify when applying); ci/workflow-policy.json records each repository/SHA pair and the
+#    policy job rejects any other. actions/checkout is NOT used: it would write every tracked path, including the one protected template the baseline already tracks, to the runner's disk. Every job that reads the
+#    repository starts with the same `Access-safe checkout` step (scripts/ci/safe_checkout.sh embedded verbatim; the checker enforces equality): the protected name is excluded by a sparse checkout configured
+#    BEFORE the first checkout, as verify/build_candidate.ps1 does locally. The token goes to that one step only, for the fetch, and is not stored.
+#
+# Untrusted code: this workflow uses `pull_request` (never `pull_request_target`), read-only token, no secrets. PR titles, branch names and other event text are never interpolated into shell code.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.13'
+  RUST_VERSION: '1.98.1'
+  NODE_VERSION: '24.18.0'
+
+jobs:
+  policy:
+    name: policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Access-safe checkout
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          export LC_ALL=C
+          # Access-safe checkout. Replaces actions/checkout, which would write EVERY tracked path to the runner's disk, including the one protected template the baseline commit already tracks.
+          # The exclusion is configured BEFORE the first checkout (non-cone sparse checkout), exactly as docs/audit-2026-11-12/git-prep/verify/build_candidate.ps1 does locally: the entry stays in the index as
+          # skip-worktree metadata and is never written. Only names are examined; no file content is read. The policy word is assembled from pieces so this script contains no such name literally.
+          # Needs git >= 2.35 (sparse-checkout --no-cone). Credentials are used for the fetch only and are not stored in the repository configuration, and are never printed.
+          #
+          # Which remote and which commit: with a token present (authenticated hosted operation) both come from the job context ONLY (GITHUB_REPOSITORY, GITHUB_SHA). REMOTE_URL, CHECKOUT_SHA and
+          # ATHENA_CHECKOUT_TOKENLESS are refused when set together with a token, and every inherited GIT_* variable is dropped, so nothing inherited can redirect the authenticated fetch or change the tested
+          # commit. REMOTE_URL / CHECKOUT_SHA exist for local fixtures only, and are honoured only in the explicit tokenless mode (ATHENA_CHECKOUT_TOKENLESS=1 and no token).
+          # Path shapes that a line-based sparse pattern cannot carry faithfully (control characters including line breaks, backslashes, a component that begins with a space or ends with a space or a dot,
+          # a protected name as a directory) are rejected from the commit's metadata BEFORE any file is written; the on-disk audit at the end is a second line, not the first.
+          w="e""nv"
+
+          refuse() { echo "access-safe checkout REFUSED: $*"; exit 1; }
+          # case-insensitive, like the local builder (a case-insensitive file system would alias `.ENV` to the same file)
+          protected_name() { local n="${1,,}"; case "$n" in ".${w}"*|*".${w}") return 0 ;; esac; return 1; }
+
+          fixture="${ATHENA_CHECKOUT_TOKENLESS:-}"
+          if [ -n "${GH_TOKEN:-}" ]; then
+            mode=authenticated
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable (REMOTE_URL, CHECKOUT_SHA or ATHENA_CHECKOUT_TOKENLESS) is set while a token is present; authenticated operation takes the remote and the commit from the job context only"
+            fi
+          elif [ "$fixture" = "1" ]; then
+            mode=fixture
+          else
+            mode=public
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable is set without the explicit tokenless fixture mode (ATHENA_CHECKOUT_TOKENLESS=1)"
+            fi
+          fi
+
+          if [ "$mode" = fixture ]; then
+            url="${REMOTE_URL:-}"; sha="${CHECKOUT_SHA:-}"
+            [ -n "$url" ] && [ -n "$sha" ] || refuse "fixture mode needs REMOTE_URL and CHECKOUT_SHA"
+          else
+            repo="${GITHUB_REPOSITORY:-}"; sha="${GITHUB_SHA:-}"
+            repo_re='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+            [[ "$repo" =~ $repo_re ]] || refuse "GITHUB_REPOSITORY is not a plain owner/name"
+            case "${repo%%/*}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            case "${repo#*/}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            url="https://github.com/${repo}.git"
+          fi
+          sha_re='^[0-9a-f]{40}$'
+          [[ "$sha" =~ $sha_re ]] || refuse "the commit to check out is not a full 40-character lower-case SHA"
+
+          removed=()
+          while IFS= read -r v; do
+            case "$v" in GIT_*) removed+=("$v"); unset "$v" ;; esac
+          done < <(compgen -e)
+          if [ "${#removed[@]}" -gt 0 ]; then
+            echo "access-safe checkout: dropped inherited git control variables (names only): ${removed[*]}"
+          fi
+
+          git init --quiet .
+          git config core.autocrlf false
+          git config core.safecrlf false
+          git config core.longpaths true
+          git remote add origin "$url"
+          auth=()
+          if [ "$mode" = authenticated ]; then
+            basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+            auth=(-c "http.extraheader=AUTHORIZATION: basic ${basic}")
+          fi
+          git ${auth[@]+"${auth[@]}"} fetch --quiet --no-tags --depth=1 origin "$sha"
+          got="$(git rev-parse "FETCH_HEAD^{commit}")"
+          [ "$got" = "$sha" ] || refuse "the fetched commit does not equal the requested commit"
+
+          listing="$(mktemp)"
+          git ls-tree -r -z --name-only FETCH_HEAD > "$listing"
+          patterns='/*'$'\n'
+          excluded=0
+          bad=0
+          shown=0
+          while IFS= read -r -d '' p; do
+            reason=""
+            has_protected=0
+            lowered="${p,,}"
+            if [[ "$lowered" == *".${w}"* ]]; then has_protected=1; fi  # only decides whether a name may be echoed in the failure message
+            IFS=/ read -r -a parts <<< "${p//[[:cntrl:]]/_}"
+            if [[ "$p" == *[[:cntrl:]]* ]]; then
+              reason="a control character"
+            elif [[ "$p" == *\\* ]]; then
+              reason="a backslash"
+            else
+              last=$(( ${#parts[@]} - 1 ))
+              for i in "${!parts[@]}"; do
+                c="${parts[$i]}"
+                case "$c" in
+                  *" "|*".") reason="a component ends with a space or a dot"; break ;;
+                  " "*) reason="a component starts with a space"; break ;;
+                esac
+                if [ "$i" -ne "$last" ] && protected_name "$c"; then reason="a protected name used as a directory"; break; fi
+              done
+            fi
+            if [ -n "$reason" ]; then
+              bad=$((bad + 1))
+              if [ "$shown" -lt 5 ]; then
+                shown=$((shown + 1))
+                if [ "$has_protected" -eq 1 ]; then echo "  unsupported path ($reason): <protected name withheld>"; else printf '  unsupported path (%s): %q\n' "$reason" "$p"; fi
+              fi
+              continue
+            fi
+            if protected_name "${p##*/}"; then
+              esc="$(printf '%s' "$p" | sed -e 's/[][*?\x5c]/\x5c&/g' -e 's/ $/\x5c /')"
+              patterns+="!/${esc}"$'\n'
+              excluded=$((excluded + 1))
+            fi
+          done < "$listing"
+          rm -f "$listing"
+          if [ "$bad" -ne 0 ]; then
+            refuse "$bad unsupported path shape(s) in the commit's tree; nothing was checked out"
+          fi
+          printf '%s' "$patterns" | git sparse-checkout set --no-cone --stdin
+          git checkout --quiet --detach "$sha"
+          head="$(git rev-parse HEAD)"
+          [ "$head" = "$sha" ] || refuse "HEAD after the checkout does not equal the requested commit"
+          found=0
+          while IFS= read -r -d '' f; do
+            if protected_name "${f##*/}"; then found=$((found + 1)); fi
+          done < <(find . -path ./.git -prune -o -type f -print0)
+          if [ "$found" -ne 0 ]; then
+            echo "access-safe checkout FAILED: $found protected name(s) exist on disk"
+            exit 1
+          fi
+          echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Repository policy (no runtime data, build output, protected names beyond the inherited entry, or oversized files)
+        shell: bash
+        run: python scripts/ci/check_repo_policy.py
+      - name: Workflow policy (permissions, pinned actions, no privileged triggers)
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pyyaml==6.0.3
+          python scripts/ci/check_workflows.py .github/workflows
+
+  python:
+    name: python
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Access-safe checkout
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          export LC_ALL=C
+          # Access-safe checkout. Replaces actions/checkout, which would write EVERY tracked path to the runner's disk, including the one protected template the baseline commit already tracks.
+          # The exclusion is configured BEFORE the first checkout (non-cone sparse checkout), exactly as docs/audit-2026-11-12/git-prep/verify/build_candidate.ps1 does locally: the entry stays in the index as
+          # skip-worktree metadata and is never written. Only names are examined; no file content is read. The policy word is assembled from pieces so this script contains no such name literally.
+          # Needs git >= 2.35 (sparse-checkout --no-cone). Credentials are used for the fetch only and are not stored in the repository configuration, and are never printed.
+          #
+          # Which remote and which commit: with a token present (authenticated hosted operation) both come from the job context ONLY (GITHUB_REPOSITORY, GITHUB_SHA). REMOTE_URL, CHECKOUT_SHA and
+          # ATHENA_CHECKOUT_TOKENLESS are refused when set together with a token, and every inherited GIT_* variable is dropped, so nothing inherited can redirect the authenticated fetch or change the tested
+          # commit. REMOTE_URL / CHECKOUT_SHA exist for local fixtures only, and are honoured only in the explicit tokenless mode (ATHENA_CHECKOUT_TOKENLESS=1 and no token).
+          # Path shapes that a line-based sparse pattern cannot carry faithfully (control characters including line breaks, backslashes, a component that begins with a space or ends with a space or a dot,
+          # a protected name as a directory) are rejected from the commit's metadata BEFORE any file is written; the on-disk audit at the end is a second line, not the first.
+          w="e""nv"
+
+          refuse() { echo "access-safe checkout REFUSED: $*"; exit 1; }
+          # case-insensitive, like the local builder (a case-insensitive file system would alias `.ENV` to the same file)
+          protected_name() { local n="${1,,}"; case "$n" in ".${w}"*|*".${w}") return 0 ;; esac; return 1; }
+
+          fixture="${ATHENA_CHECKOUT_TOKENLESS:-}"
+          if [ -n "${GH_TOKEN:-}" ]; then
+            mode=authenticated
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable (REMOTE_URL, CHECKOUT_SHA or ATHENA_CHECKOUT_TOKENLESS) is set while a token is present; authenticated operation takes the remote and the commit from the job context only"
+            fi
+          elif [ "$fixture" = "1" ]; then
+            mode=fixture
+          else
+            mode=public
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable is set without the explicit tokenless fixture mode (ATHENA_CHECKOUT_TOKENLESS=1)"
+            fi
+          fi
+
+          if [ "$mode" = fixture ]; then
+            url="${REMOTE_URL:-}"; sha="${CHECKOUT_SHA:-}"
+            [ -n "$url" ] && [ -n "$sha" ] || refuse "fixture mode needs REMOTE_URL and CHECKOUT_SHA"
+          else
+            repo="${GITHUB_REPOSITORY:-}"; sha="${GITHUB_SHA:-}"
+            repo_re='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+            [[ "$repo" =~ $repo_re ]] || refuse "GITHUB_REPOSITORY is not a plain owner/name"
+            case "${repo%%/*}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            case "${repo#*/}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            url="https://github.com/${repo}.git"
+          fi
+          sha_re='^[0-9a-f]{40}$'
+          [[ "$sha" =~ $sha_re ]] || refuse "the commit to check out is not a full 40-character lower-case SHA"
+
+          removed=()
+          while IFS= read -r v; do
+            case "$v" in GIT_*) removed+=("$v"); unset "$v" ;; esac
+          done < <(compgen -e)
+          if [ "${#removed[@]}" -gt 0 ]; then
+            echo "access-safe checkout: dropped inherited git control variables (names only): ${removed[*]}"
+          fi
+
+          git init --quiet .
+          git config core.autocrlf false
+          git config core.safecrlf false
+          git config core.longpaths true
+          git remote add origin "$url"
+          auth=()
+          if [ "$mode" = authenticated ]; then
+            basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+            auth=(-c "http.extraheader=AUTHORIZATION: basic ${basic}")
+          fi
+          git ${auth[@]+"${auth[@]}"} fetch --quiet --no-tags --depth=1 origin "$sha"
+          got="$(git rev-parse "FETCH_HEAD^{commit}")"
+          [ "$got" = "$sha" ] || refuse "the fetched commit does not equal the requested commit"
+
+          listing="$(mktemp)"
+          git ls-tree -r -z --name-only FETCH_HEAD > "$listing"
+          patterns='/*'$'\n'
+          excluded=0
+          bad=0
+          shown=0
+          while IFS= read -r -d '' p; do
+            reason=""
+            has_protected=0
+            lowered="${p,,}"
+            if [[ "$lowered" == *".${w}"* ]]; then has_protected=1; fi  # only decides whether a name may be echoed in the failure message
+            IFS=/ read -r -a parts <<< "${p//[[:cntrl:]]/_}"
+            if [[ "$p" == *[[:cntrl:]]* ]]; then
+              reason="a control character"
+            elif [[ "$p" == *\\* ]]; then
+              reason="a backslash"
+            else
+              last=$(( ${#parts[@]} - 1 ))
+              for i in "${!parts[@]}"; do
+                c="${parts[$i]}"
+                case "$c" in
+                  *" "|*".") reason="a component ends with a space or a dot"; break ;;
+                  " "*) reason="a component starts with a space"; break ;;
+                esac
+                if [ "$i" -ne "$last" ] && protected_name "$c"; then reason="a protected name used as a directory"; break; fi
+              done
+            fi
+            if [ -n "$reason" ]; then
+              bad=$((bad + 1))
+              if [ "$shown" -lt 5 ]; then
+                shown=$((shown + 1))
+                if [ "$has_protected" -eq 1 ]; then echo "  unsupported path ($reason): <protected name withheld>"; else printf '  unsupported path (%s): %q\n' "$reason" "$p"; fi
+              fi
+              continue
+            fi
+            if protected_name "${p##*/}"; then
+              esc="$(printf '%s' "$p" | sed -e 's/[][*?\x5c]/\x5c&/g' -e 's/ $/\x5c /')"
+              patterns+="!/${esc}"$'\n'
+              excluded=$((excluded + 1))
+            fi
+          done < "$listing"
+          rm -f "$listing"
+          if [ "$bad" -ne 0 ]; then
+            refuse "$bad unsupported path shape(s) in the commit's tree; nothing was checked out"
+          fi
+          printf '%s' "$patterns" | git sparse-checkout set --no-cone --stdin
+          git checkout --quiet --detach "$sha"
+          head="$(git rev-parse HEAD)"
+          [ "$head" = "$sha" ] || refuse "HEAD after the checkout does not equal the requested commit"
+          found=0
+          while IFS= read -r -d '' f; do
+            if protected_name "${f##*/}"; then found=$((found + 1)); fi
+          done < <(find . -path ./.git -prune -o -type f -print0)
+          if [ "$found" -ne 0 ]; then
+            echo "access-safe checkout FAILED: $found protected name(s) exist on disk"
+            exit 1
+          fi
+          echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install (editable, with the constraints file)
+        run: |
+          python -m pip install --disable-pip-version-check -c ci/python-constraints.txt -e ".[dev]" pyyaml
+      - name: Broad Python gate (named exclusions, collected IDs, skip reasons, import origin, strict counts)
+        run: |
+          $c = Get-Content ci/expected-counts.json -Raw | ConvertFrom-Json
+          pwsh -NoProfile -File docs/audit-2026-11-12/git-prep/verify/python_gate.ps1 `
+            -Candidate $env:GITHUB_WORKSPACE -Python (Get-Command python).Source `
+            -Out "$env:RUNNER_TEMP\gate-python" -Scratch "$env:RUNNER_TEMP\py-scratch" `
+            -ExpectedPassed $c.python.passed -ExpectedSkipped $c.python.skipped
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Formula golden check
+        run: python scripts/formula_golden.py --check
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gate-python
+          path: ${{ runner.temp }}/gate-python
+          retention-days: 14
+
+  rust:
+    name: rust
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Access-safe checkout
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          export LC_ALL=C
+          # Access-safe checkout. Replaces actions/checkout, which would write EVERY tracked path to the runner's disk, including the one protected template the baseline commit already tracks.
+          # The exclusion is configured BEFORE the first checkout (non-cone sparse checkout), exactly as docs/audit-2026-11-12/git-prep/verify/build_candidate.ps1 does locally: the entry stays in the index as
+          # skip-worktree metadata and is never written. Only names are examined; no file content is read. The policy word is assembled from pieces so this script contains no such name literally.
+          # Needs git >= 2.35 (sparse-checkout --no-cone). Credentials are used for the fetch only and are not stored in the repository configuration, and are never printed.
+          #
+          # Which remote and which commit: with a token present (authenticated hosted operation) both come from the job context ONLY (GITHUB_REPOSITORY, GITHUB_SHA). REMOTE_URL, CHECKOUT_SHA and
+          # ATHENA_CHECKOUT_TOKENLESS are refused when set together with a token, and every inherited GIT_* variable is dropped, so nothing inherited can redirect the authenticated fetch or change the tested
+          # commit. REMOTE_URL / CHECKOUT_SHA exist for local fixtures only, and are honoured only in the explicit tokenless mode (ATHENA_CHECKOUT_TOKENLESS=1 and no token).
+          # Path shapes that a line-based sparse pattern cannot carry faithfully (control characters including line breaks, backslashes, a component that begins with a space or ends with a space or a dot,
+          # a protected name as a directory) are rejected from the commit's metadata BEFORE any file is written; the on-disk audit at the end is a second line, not the first.
+          w="e""nv"
+
+          refuse() { echo "access-safe checkout REFUSED: $*"; exit 1; }
+          # case-insensitive, like the local builder (a case-insensitive file system would alias `.ENV` to the same file)
+          protected_name() { local n="${1,,}"; case "$n" in ".${w}"*|*".${w}") return 0 ;; esac; return 1; }
+
+          fixture="${ATHENA_CHECKOUT_TOKENLESS:-}"
+          if [ -n "${GH_TOKEN:-}" ]; then
+            mode=authenticated
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable (REMOTE_URL, CHECKOUT_SHA or ATHENA_CHECKOUT_TOKENLESS) is set while a token is present; authenticated operation takes the remote and the commit from the job context only"
+            fi
+          elif [ "$fixture" = "1" ]; then
+            mode=fixture
+          else
+            mode=public
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable is set without the explicit tokenless fixture mode (ATHENA_CHECKOUT_TOKENLESS=1)"
+            fi
+          fi
+
+          if [ "$mode" = fixture ]; then
+            url="${REMOTE_URL:-}"; sha="${CHECKOUT_SHA:-}"
+            [ -n "$url" ] && [ -n "$sha" ] || refuse "fixture mode needs REMOTE_URL and CHECKOUT_SHA"
+          else
+            repo="${GITHUB_REPOSITORY:-}"; sha="${GITHUB_SHA:-}"
+            repo_re='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+            [[ "$repo" =~ $repo_re ]] || refuse "GITHUB_REPOSITORY is not a plain owner/name"
+            case "${repo%%/*}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            case "${repo#*/}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            url="https://github.com/${repo}.git"
+          fi
+          sha_re='^[0-9a-f]{40}$'
+          [[ "$sha" =~ $sha_re ]] || refuse "the commit to check out is not a full 40-character lower-case SHA"
+
+          removed=()
+          while IFS= read -r v; do
+            case "$v" in GIT_*) removed+=("$v"); unset "$v" ;; esac
+          done < <(compgen -e)
+          if [ "${#removed[@]}" -gt 0 ]; then
+            echo "access-safe checkout: dropped inherited git control variables (names only): ${removed[*]}"
+          fi
+
+          git init --quiet .
+          git config core.autocrlf false
+          git config core.safecrlf false
+          git config core.longpaths true
+          git remote add origin "$url"
+          auth=()
+          if [ "$mode" = authenticated ]; then
+            basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+            auth=(-c "http.extraheader=AUTHORIZATION: basic ${basic}")
+          fi
+          git ${auth[@]+"${auth[@]}"} fetch --quiet --no-tags --depth=1 origin "$sha"
+          got="$(git rev-parse "FETCH_HEAD^{commit}")"
+          [ "$got" = "$sha" ] || refuse "the fetched commit does not equal the requested commit"
+
+          listing="$(mktemp)"
+          git ls-tree -r -z --name-only FETCH_HEAD > "$listing"
+          patterns='/*'$'\n'
+          excluded=0
+          bad=0
+          shown=0
+          while IFS= read -r -d '' p; do
+            reason=""
+            has_protected=0
+            lowered="${p,,}"
+            if [[ "$lowered" == *".${w}"* ]]; then has_protected=1; fi  # only decides whether a name may be echoed in the failure message
+            IFS=/ read -r -a parts <<< "${p//[[:cntrl:]]/_}"
+            if [[ "$p" == *[[:cntrl:]]* ]]; then
+              reason="a control character"
+            elif [[ "$p" == *\\* ]]; then
+              reason="a backslash"
+            else
+              last=$(( ${#parts[@]} - 1 ))
+              for i in "${!parts[@]}"; do
+                c="${parts[$i]}"
+                case "$c" in
+                  *" "|*".") reason="a component ends with a space or a dot"; break ;;
+                  " "*) reason="a component starts with a space"; break ;;
+                esac
+                if [ "$i" -ne "$last" ] && protected_name "$c"; then reason="a protected name used as a directory"; break; fi
+              done
+            fi
+            if [ -n "$reason" ]; then
+              bad=$((bad + 1))
+              if [ "$shown" -lt 5 ]; then
+                shown=$((shown + 1))
+                if [ "$has_protected" -eq 1 ]; then echo "  unsupported path ($reason): <protected name withheld>"; else printf '  unsupported path (%s): %q\n' "$reason" "$p"; fi
+              fi
+              continue
+            fi
+            if protected_name "${p##*/}"; then
+              esc="$(printf '%s' "$p" | sed -e 's/[][*?\x5c]/\x5c&/g' -e 's/ $/\x5c /')"
+              patterns+="!/${esc}"$'\n'
+              excluded=$((excluded + 1))
+            fi
+          done < "$listing"
+          rm -f "$listing"
+          if [ "$bad" -ne 0 ]; then
+            refuse "$bad unsupported path shape(s) in the commit's tree; nothing was checked out"
+          fi
+          printf '%s' "$patterns" | git sparse-checkout set --no-cone --stdin
+          git checkout --quiet --detach "$sha"
+          head="$(git rev-parse HEAD)"
+          [ "$head" = "$sha" ] || refuse "HEAD after the checkout does not equal the requested commit"
+          found=0
+          while IFS= read -r -d '' f; do
+            if protected_name "${f##*/}"; then found=$((found + 1)); fi
+          done < <(find . -path ./.git -prune -o -type f -print0)
+          if [ "$found" -ne 0 ]; then
+            echo "access-safe checkout FAILED: $found protected name(s) exist on disk"
+            exit 1
+          fi
+          echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Project Python at .venv (the Rust tests start it from there)
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -c ci/python-constraints.txt -e ".[dev]" pyyaml
+      - name: Pinned Rust toolchain
+        run: |
+          rustup toolchain install $env:RUST_VERSION --profile minimal --no-self-update
+          rustup default $env:RUST_VERSION
+          rustc --version
+      - name: Rust gate (cargo test --locked, strict counts, sh and Python required)
+        run: |
+          $c = Get-Content ci/expected-counts.json -Raw | ConvertFrom-Json
+          pwsh -NoProfile -File docs/audit-2026-11-12/git-prep/verify/rust_gate.ps1 `
+            -Candidate $env:GITHUB_WORKSPACE -Python "$env:GITHUB_WORKSPACE\.venv\Scripts\python.exe" `
+            -Out "$env:RUNNER_TEMP\gate-rust" -CargoTarget "$env:RUNNER_TEMP\cargo-target" -Online `
+            -ExpectedPassed $c.rust.passed -ExpectedIgnored $c.rust.ignored
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Python <-> Rust snapshot contract (all four stages)
+        run: |
+          pwsh -NoProfile -File docs/audit-2026-11-12/git-prep/verify/crosslang.ps1 `
+            -Candidate $env:GITHUB_WORKSPACE -Python "$env:GITHUB_WORKSPACE\.venv\Scripts\python.exe" `
+            -Work "$env:RUNNER_TEMP\xl-work" -Out "$env:RUNNER_TEMP\gate-crosslang" -CargoTarget "$env:RUNNER_TEMP\cargo-target"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gate-rust
+          path: |
+            ${{ runner.temp }}/gate-rust
+            ${{ runner.temp }}/gate-crosslang
+          retention-days: 14
+
+  web:
+    name: web
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Access-safe checkout
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +x
+          export LC_ALL=C
+          # Access-safe checkout. Replaces actions/checkout, which would write EVERY tracked path to the runner's disk, including the one protected template the baseline commit already tracks.
+          # The exclusion is configured BEFORE the first checkout (non-cone sparse checkout), exactly as docs/audit-2026-11-12/git-prep/verify/build_candidate.ps1 does locally: the entry stays in the index as
+          # skip-worktree metadata and is never written. Only names are examined; no file content is read. The policy word is assembled from pieces so this script contains no such name literally.
+          # Needs git >= 2.35 (sparse-checkout --no-cone). Credentials are used for the fetch only and are not stored in the repository configuration, and are never printed.
+          #
+          # Which remote and which commit: with a token present (authenticated hosted operation) both come from the job context ONLY (GITHUB_REPOSITORY, GITHUB_SHA). REMOTE_URL, CHECKOUT_SHA and
+          # ATHENA_CHECKOUT_TOKENLESS are refused when set together with a token, and every inherited GIT_* variable is dropped, so nothing inherited can redirect the authenticated fetch or change the tested
+          # commit. REMOTE_URL / CHECKOUT_SHA exist for local fixtures only, and are honoured only in the explicit tokenless mode (ATHENA_CHECKOUT_TOKENLESS=1 and no token).
+          # Path shapes that a line-based sparse pattern cannot carry faithfully (control characters including line breaks, backslashes, a component that begins with a space or ends with a space or a dot,
+          # a protected name as a directory) are rejected from the commit's metadata BEFORE any file is written; the on-disk audit at the end is a second line, not the first.
+          w="e""nv"
+
+          refuse() { echo "access-safe checkout REFUSED: $*"; exit 1; }
+          # case-insensitive, like the local builder (a case-insensitive file system would alias `.ENV` to the same file)
+          protected_name() { local n="${1,,}"; case "$n" in ".${w}"*|*".${w}") return 0 ;; esac; return 1; }
+
+          fixture="${ATHENA_CHECKOUT_TOKENLESS:-}"
+          if [ -n "${GH_TOKEN:-}" ]; then
+            mode=authenticated
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable (REMOTE_URL, CHECKOUT_SHA or ATHENA_CHECKOUT_TOKENLESS) is set while a token is present; authenticated operation takes the remote and the commit from the job context only"
+            fi
+          elif [ "$fixture" = "1" ]; then
+            mode=fixture
+          else
+            mode=public
+            if [ -n "$fixture" ] || [ -n "${REMOTE_URL:-}" ] || [ -n "${CHECKOUT_SHA:-}" ]; then
+              refuse "an override variable is set without the explicit tokenless fixture mode (ATHENA_CHECKOUT_TOKENLESS=1)"
+            fi
+          fi
+
+          if [ "$mode" = fixture ]; then
+            url="${REMOTE_URL:-}"; sha="${CHECKOUT_SHA:-}"
+            [ -n "$url" ] && [ -n "$sha" ] || refuse "fixture mode needs REMOTE_URL and CHECKOUT_SHA"
+          else
+            repo="${GITHUB_REPOSITORY:-}"; sha="${GITHUB_SHA:-}"
+            repo_re='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+            [[ "$repo" =~ $repo_re ]] || refuse "GITHUB_REPOSITORY is not a plain owner/name"
+            case "${repo%%/*}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            case "${repo#*/}" in .|..) refuse "GITHUB_REPOSITORY is not a plain owner/name" ;; esac
+            url="https://github.com/${repo}.git"
+          fi
+          sha_re='^[0-9a-f]{40}$'
+          [[ "$sha" =~ $sha_re ]] || refuse "the commit to check out is not a full 40-character lower-case SHA"
+
+          removed=()
+          while IFS= read -r v; do
+            case "$v" in GIT_*) removed+=("$v"); unset "$v" ;; esac
+          done < <(compgen -e)
+          if [ "${#removed[@]}" -gt 0 ]; then
+            echo "access-safe checkout: dropped inherited git control variables (names only): ${removed[*]}"
+          fi
+
+          git init --quiet .
+          git config core.autocrlf false
+          git config core.safecrlf false
+          git config core.longpaths true
+          git remote add origin "$url"
+          auth=()
+          if [ "$mode" = authenticated ]; then
+            basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+            auth=(-c "http.extraheader=AUTHORIZATION: basic ${basic}")
+          fi
+          git ${auth[@]+"${auth[@]}"} fetch --quiet --no-tags --depth=1 origin "$sha"
+          got="$(git rev-parse "FETCH_HEAD^{commit}")"
+          [ "$got" = "$sha" ] || refuse "the fetched commit does not equal the requested commit"
+
+          listing="$(mktemp)"
+          git ls-tree -r -z --name-only FETCH_HEAD > "$listing"
+          patterns='/*'$'\n'
+          excluded=0
+          bad=0
+          shown=0
+          while IFS= read -r -d '' p; do
+            reason=""
+            has_protected=0
+            lowered="${p,,}"
+            if [[ "$lowered" == *".${w}"* ]]; then has_protected=1; fi  # only decides whether a name may be echoed in the failure message
+            IFS=/ read -r -a parts <<< "${p//[[:cntrl:]]/_}"
+            if [[ "$p" == *[[:cntrl:]]* ]]; then
+              reason="a control character"
+            elif [[ "$p" == *\\* ]]; then
+              reason="a backslash"
+            else
+              last=$(( ${#parts[@]} - 1 ))
+              for i in "${!parts[@]}"; do
+                c="${parts[$i]}"
+                case "$c" in
+                  *" "|*".") reason="a component ends with a space or a dot"; break ;;
+                  " "*) reason="a component starts with a space"; break ;;
+                esac
+                if [ "$i" -ne "$last" ] && protected_name "$c"; then reason="a protected name used as a directory"; break; fi
+              done
+            fi
+            if [ -n "$reason" ]; then
+              bad=$((bad + 1))
+              if [ "$shown" -lt 5 ]; then
+                shown=$((shown + 1))
+                if [ "$has_protected" -eq 1 ]; then echo "  unsupported path ($reason): <protected name withheld>"; else printf '  unsupported path (%s): %q\n' "$reason" "$p"; fi
+              fi
+              continue
+            fi
+            if protected_name "${p##*/}"; then
+              esc="$(printf '%s' "$p" | sed -e 's/[][*?\x5c]/\x5c&/g' -e 's/ $/\x5c /')"
+              patterns+="!/${esc}"$'\n'
+              excluded=$((excluded + 1))
+            fi
+          done < "$listing"
+          rm -f "$listing"
+          if [ "$bad" -ne 0 ]; then
+            refuse "$bad unsupported path shape(s) in the commit's tree; nothing was checked out"
+          fi
+          printf '%s' "$patterns" | git sparse-checkout set --no-cone --stdin
+          git checkout --quiet --detach "$sha"
+          head="$(git rev-parse HEAD)"
+          [ "$head" = "$sha" ] || refuse "HEAD after the checkout does not equal the requested commit"
+          found=0
+          while IFS= read -r -d '' f; do
+            if protected_name "${f##*/}"; then found=$((found + 1)); fi
+          done < <(find . -path ./.git -prune -o -type f -print0)
+          if [ "$found" -ne 0 ]; then
+            echo "access-safe checkout FAILED: $found protected name(s) exist on disk"
+            exit 1
+          fi
+          echo "access-safe checkout: protected tracked entries kept as metadata only: $excluded; protected names on disk: 0"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install from the lockfile
+        working-directory: terminal/web
+        run: npm ci --no-audit --no-fund
+      - name: Web gate (guard v3, TypeScript, Vitest with every test ID, production build)
+        run: |
+          pwsh -NoProfile -File docs/audit-2026-11-12/git-prep/verify/web_gate.ps1 `
+            -Candidate $env:GITHUB_WORKSPACE -NodeModules "$env:GITHUB_WORKSPACE\terminal\web\node_modules" `
+            -Out "$env:RUNNER_TEMP\gate-web" -Work "$env:RUNNER_TEMP\web-work"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gate-web
+          path: ${{ runner.temp }}/gate-web
+          retention-days: 14
+
+  gate:
+    name: gate
+    if: always()
+    needs: [policy, python, rust, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every needed job must have succeeded (skipped, cancelled or failed all fail the gate)
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {k: v["result"] for k, v in needs.items() if v["result"] != "success"}
+          print("needed jobs:", {k: v["result"] for k, v in needs.items()})
+          sys.exit(1 if bad else 0)
+          PY
