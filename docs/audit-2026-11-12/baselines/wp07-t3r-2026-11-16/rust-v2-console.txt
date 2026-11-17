@@ -1,0 +1,21 @@
+﻿       caught  rs-trade-time-from-packet-field  (46.6s) ['angel::decode::tests::a_last_trade_time_in_either_unit_is_read_and_an_absent_or_malformed_one_is_none_with_the_raw_value_kept']  8 assertion failures
+       caught  rs-sequence-not-read  (43.2s) ['angel::decode::tests::the_packet_time_the_last_trade_time_and_the_sequence_are_read_from_their_own_places']  4 assertion failures
+       caught  rs-seconds-read-as-ms  (29.8s) ['angel::decode::tests::a_last_trade_time_in_either_unit_is_read_and_an_absent_or_malformed_one_is_none_with_the_raw_value_kept']  8 assertion failures
+       caught  rs-epoch-floor-removed  (33.2s) ['angel::decode::tests::a_last_trade_time_in_either_unit_is_read_and_an_absent_or_malformed_one_is_none_with_the_raw_value_kept']  3 assertion failures (and 1 tests failed with an error)
+       caught  rs-watermark-is-the-payload-time  (21.1s) ['deriv_quotes::tests::a_time_less_packet_does_not_erase_the_ordering_watermark_known_then_missing_then_older']  2 assertion failures
+       caught  rs-future-not-refused  (27.9s) ['deriv_quotes::tests::a_future_time_is_refused_at_the_declared_limit_and_does_not_poison_the_order']  2 assertion failures
+       caught  rs-future-limit-off-by-one  (36.7s) ['deriv_quotes::tests::a_future_time_is_refused_at_the_declared_limit_and_does_not_poison_the_order']  1 assertion failures
+       caught  rs-future-time-kept  (24.8s) ['deriv_quotes::tests::a_future_time_is_refused_at_the_declared_limit_and_does_not_poison_the_order']  2 assertion failures
+       caught  rs-future-fault-not-recorded  (26.3s) ['deriv_quotes::tests::a_future_time_is_refused_at_the_declared_limit_and_does_not_poison_the_order']  2 assertion failures
+       caught  rs-same-time-sequence-ignored  (23.5s) ['deriv_quotes::tests::the_same_event_time_with_a_distinct_sequence_is_ordered_by_the_sequence']  1 assertion failures
+       caught  rs-timeless-sequence-ignored  (30.0s) ['deriv_quotes::tests::a_time_less_packet_with_an_earlier_sequence_is_older']  1 assertion failures
+       caught  rs-sequence-not-remembered  (18.3s) ['deriv_quotes::tests::a_time_less_packet_with_an_earlier_sequence_is_older']  2 assertion failures
+       caught  rs-reset-forgets-nothing  (28.4s) ['angel::stream::tests::a_new_connection_restarts_the_sequence_numbers_so_its_first_packets_are_not_taken_for_old_ones']  1 assertion failures (and 1 tests failed with an error)
+   error_only  rs-stream-does-not-reset  (30.5s) ['angel::stream::tests::a_new_connection_restarts_the_sequence_numbers_so_its_first_packets_are_not_taken_for_old_ones']  1 tests failed with an error and none by an assertion
+       caught  rs-absent-trade-time-always-kept  (21.0s) ['deriv_quotes::tests::an_unavailable_trade_time_is_unknown_and_is_never_taken_from_the_packet']  1 assertion failures
+       caught  rs-absent-trade-time-is-packet-time  (18.0s) ['deriv_quotes::tests::a_page_is_sent_each_change_once_and_an_identical_tick_is_no_change']  3 assertion failures (and 1 tests failed with an error)
+       caught  rs-delay-not-measured  (16.6s) ['deriv_quotes::tests::a_book_only_update_moves_the_packet_time_and_the_book_but_not_the_trade_time']  5 assertion failures
+       caught  rs-discard-not-counted  (15.5s) ['deriv_quotes::tests::a_new_connection_forgets_the_sequence_numbers_but_not_the_time_order']  7 assertion failures
+       caught  rs-duplicate-is-a-change  (16.2s) ['deriv_quotes::tests::a_duplicate_packet_is_no_change_with_or_without_a_time']  3 assertion failures (and 1 tests failed with an error)
+       caught  rs-fault-order-unsorted  (25.1s) ['deriv_quotes::tests::the_rows_of_real_packets_match_the_ui_fixture']  1 assertion failures
+D:\projects\learn-project\athena-the-fund-manager\docs\audit-2026-11-12\baselines\wp07-t3r-2026-11-16\runs\20261116-140403-mutation-rust-v2 {'caught': 19, 'error_only': 1}

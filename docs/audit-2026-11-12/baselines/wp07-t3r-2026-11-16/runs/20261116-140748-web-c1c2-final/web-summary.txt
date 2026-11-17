@@ -1,0 +1,4 @@
+RUN VALID (all green)
+tsc exit=0; npm test exit=0; files=76 files_not_passed=0 tests=1058 passed=1058 failed=0 failed_suites=0 pending=0
+guard v3 records: guard-installed, False=76; fetch, True=142
+denied fetch: 142; absolute: 0; other denied: 0; fs outside: 0

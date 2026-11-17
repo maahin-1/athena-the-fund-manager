@@ -1,0 +1,10 @@
+{
+  "web_files": 10,
+  "web_passed": 236,
+  "web_failed": 0,
+  "harness_passed": 16,
+  "harness_failed": 0,
+  "guard_records": 13536,
+  "denied": 0,
+  "scope": "focused web plus inert harness self-tests only; full suites and application mutations not repeated"
+}

@@ -1,0 +1,20 @@
+[
+ {
+  "name": "baseline-unmutated",
+  "command": [
+   "cargo",
+   "test",
+   "--offline",
+   "--locked",
+   "--",
+   "deriv_quotes::",
+   "angel::decode::",
+   "angel::stream::tests::a_new_connection",
+   "server::tests::the_derivative_quotes_route"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 40
+ }
+]

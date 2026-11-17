@@ -1,0 +1,6 @@
+2026-11-17 11:21:22  run 20261117-112122-rust-bodylimit-full-pre
+2026-11-17 11:21:27  cargo test --offline --locked --no-run
+2026-11-17 11:22:15  build exit 0
+2026-11-17 11:22:19  cargo test --offline --locked the_indicator_run_route_passes|a_body_with_no|the_handlers_own|a_three_megabyte
+2026-11-17 11:22:19  test exit 0
+2026-11-17 11:22:20  done

@@ -1,0 +1,300 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "bounded::",
+  "helper::",
+  "fundamentals::tests::",
+  "flow_board::",
+  "bars::join_tests::",
+  "server::tests::an_override",
+  "server::tests::a_failure_with",
+  "server::tests::the_work",
+  "server::tests::acknowledging"
+ ],
+ "mutations": [
+  {
+   "id": "t6r3-owner-ignores-shutdown",
+   "note": "R1: a running direct child is not cut by shutdown",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "_ = wait_closed(&mut closing) => Cut::Shutdown,",
+   "new": "_ = std::future::pending::<()>() => Cut::Shutdown,"
+  },
+  {
+   "id": "t6r3-shutdown-no-wait",
+   "note": "R1: shutdown returns without waiting for the owners",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if sh.state.lock().expect(\"admission state\").owners == 0 {",
+   "new": "if true {"
+  },
+  {
+   "id": "t6r3-shutdown-not-closed",
+   "note": "R1: shutdown does not close admission",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "sh.state.lock().expect(\"admission state\").closed = true;",
+   "new": "sh.state.lock().expect(\"admission state\").closed = false;"
+  },
+  {
+   "id": "t6r3-shutdown-unconfirmed-not-journalled",
+   "note": "R1: an unconfirmed child is not journalled at shutdown",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let (id, _) = shared.hold_direct(kind, pid);",
+   "new": "let id = 0u64; let _ = (kind, pid);"
+  },
+  {
+   "id": "t6r3-held-owner-no-free-at-shutdown",
+   "note": "R1: a held child confirmed at shutdown stays on file",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "shared.free_held(id, \"confirmed_at_shutdown\");",
+   "new": "let _ = id;"
+  },
+  {
+   "id": "t6r3-shutdown-counts-swapped",
+   "note": "R1: ended and unconfirmed are swapped in the report",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let counter = if confirmed { &self.ended_at_shutdown } else { &self.unconfirmed_at_shutdown };",
+   "new": "let counter = if confirmed { &self.unconfirmed_at_shutdown } else { &self.ended_at_shutdown };"
+  },
+  {
+   "id": "t6r3-owner-not-counted",
+   "note": "R1: an owner is not counted, so shutdown does not wait for it",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.state.lock().expect(\"admission state\").owners += 1;",
+   "new": "self.state.lock().expect(\"admission state\").owners += 0;"
+  },
+  {
+   "id": "t6r3-caller-told-timeout-at-shutdown",
+   "note": "R1: the caller is told a timeout, not a shutdown",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let _ = tx.send(Err(DirectError::Shutdown));",
+   "new": "let _ = tx.send(Err(DirectError::Timeout));"
+  },
+  {
+   "id": "t6r3-shutdown-child-not-ended",
+   "note": "R1: the child is not ended at shutdown",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let confirmed = end_direct(&mut child).await;\n            shared.note_end_at_shutdown(confirmed);\n            if !confirmed {",
+   "new": "let confirmed = true;\n            shared.note_end_at_shutdown(confirmed);\n            if !confirmed {"
+  },
+  {
+   "id": "t6r3-owner-keeps-handle",
+   "note": "R1: an owner that left keeps its handle on record, so a person cannot free it",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "h.origin = Origin::NoHandle;",
+   "new": "h.origin = Origin::ThisRun;"
+  },
+  {
+   "id": "t6r3-admit-open-after-shutdown",
+   "note": "R1: admit does not look at closed",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if st.closed {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r3-permits-stay-open",
+   "note": "R1: a waiting request is not told at shutdown",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "sh.permits.close(); // a request waiting for a place is told it is closed",
+   "new": "// the places stay open"
+  },
+  {
+   "id": "t6r3-command-ignores-closed",
+   "note": "R1: a command is started after shutdown began",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if self.shared.closed() {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r3-registry-skips-admission",
+   "note": "R1: the admission view has a no-op shutdown again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "Box::pin(Admission::shutdown(self))",
+   "new": "Box::pin(async { ShutdownReport::default() })"
+  },
+  {
+   "id": "t6r3-rebalance-always-adds",
+   "note": "R2: a freed reservation always adds a place",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "Some(other) => other.forgotten_permit = true,",
+   "new": "Some(_) => sh.permits.add_permits(1),"
+  },
+  {
+   "id": "t6r3-rebalance-never-gives-back",
+   "note": "R2: a freed reservation is never given back",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "None => sh.permits.add_permits(1),",
+   "new": "None => {}"
+  },
+  {
+   "id": "t6r3-expired-command-spawns",
+   "note": "R3: an expired budget still starts the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if budget.expired() {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r3-expired-not-counted",
+   "note": "R3: an expired request is not counted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "kinds.entry(kind).or_default().expired += 1;",
+   "new": "kinds.entry(kind).or_default().expired += 0;"
+  },
+  {
+   "id": "t6r3-enqueue-until-relative",
+   "note": "R3: an absolute deadline becomes the pool default",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "Deadline::At(at) => at.saturating_duration_since(self.inner.origin + now),",
+   "new": "Deadline::At(_) => self.inner.limits.deadline,"
+  },
+  {
+   "id": "t6r3-helper-deadline-stretched",
+   "note": "R3: the helper is given a deadline 3 s past the request's",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "self.pool.enqueue_until(op.kind(), json!({\"op\": op.kind(), \"args\": args}), budget.deadline())",
+   "new": "self.pool.enqueue_until(op.kind(), json!({\"op\": op.kind(), \"args\": args}), budget.deadline() + std::time::Duration::from_secs(3))"
+  },
+  {
+   "id": "t6r3-bars-rebudget",
+   "note": "R3: the adjusted command gets a fresh deadline longer than what was left",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+   "old": "let out = owner.run_command(permit, cmd, \"chart_bars\", budget).await.ok()?;",
+   "new": "let out = owner.run_command(permit, cmd, \"chart_bars\", &crate::bounded::Budget::new(budget.remaining() + Duration::from_secs(1))).await.ok()?;"
+  },
+  {
+   "id": "t6r3-fetch-fresh-budget",
+   "note": "R3: the command is given a fresh budget instead of the fetch's",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+   "old": "direct(permit, budget).await",
+   "new": "direct(permit, crate::bounded::Budget::new(limit)).await"
+  },
+  {
+   "id": "t6r3-teardown-drops-child-record",
+   "note": "R4: a worker stopping after its pool is gone loses the quarantine",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "remains.retain_idle(slot, running.info);",
+   "new": "let _ = (&remains, slot, running.info);"
+  },
+  {
+   "id": "t6r3-teardown-no-persist",
+   "note": "R4: the quarantine is held but not written",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "retain_idle(self.origin.elapsed(), slot, info);\n        self.persist();",
+   "new": "retain_idle(self.origin.elapsed(), slot, info);"
+  },
+  {
+   "id": "t6r3-undurable-ignored",
+   "note": "R5: a failed write does not block",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if self.undurable && self.has_held() {",
+   "new": "if false && self.has_held() {"
+  },
+  {
+   "id": "t6r3-undurable-blocks-when-empty",
+   "note": "R5: a failed write blocks even with nothing held",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if self.undurable && self.has_held() {",
+   "new": "if self.undurable {"
+  },
+  {
+   "id": "t6r3-undurable-flag-never-set",
+   "note": "R5: the pool never learns that the write failed",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "core.set_undurable(self.inner.recovery.error().is_some());",
+   "new": "core.set_undurable(false);"
+  },
+  {
+   "id": "t6r3-adm-undurable-ignored",
+   "note": "R5: the admission does not look at a failed write",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": " || (!st.held.is_empty() && sh.recovery.error().is_some())",
+   "new": ""
+  },
+  {
+   "id": "t6r3-adm-undurable-when-empty",
+   "note": "R5: the admission blocks on a failed write with nothing held",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "(!st.held.is_empty() && sh.recovery.error().is_some())",
+   "new": "sh.recovery.error().is_some()"
+  },
+  {
+   "id": "t6r3-retry-does-not-write",
+   "note": "R5: the retry writes nothing",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let written = journal.store(pool, &held);",
+   "new": "let written: Result<(), String> = Ok(());"
+  },
+  {
+   "id": "t6r3-retry-error-stays",
+   "note": "R5: the retry leaves the error in place",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "*self.error.lock().expect(\"journal state\") = written.err();",
+   "new": "let _ = &written;"
+  },
+  {
+   "id": "t6r3-retry-no-record",
+   "note": "R5: the retry is recorded under another name",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "action: Resolution::RetryJournal.name(),",
+   "new": "action: \"x\","
+  },
+  {
+   "id": "t6r3-pool-retry-noop",
+   "note": "R5: the pool's retry does nothing",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "return self.inner.recovery.retry(&self.inner.name, || self.inner.core.lock().expect(\"pool state\").held_entries(), note, ms(now), unix);",
+   "new": "return Ok(());"
+  },
+  {
+   "id": "t6r3-adm-retry-noop",
+   "note": "R5: the admission's retry does nothing",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "return sh.recovery.retry(&sh.name, || sh.held_entries(), note, ms(now), at_unix_ms);",
+   "new": "return Ok(());"
+  },
+  {
+   "id": "t6r3-hold-no-auto-retry",
+   "note": "R5: a held child's task never writes the journal again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if !woken && inner.recovery.error().is_some() {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r3-hold-retry-on-any-wake",
+   "note": "R5: the hold task writes again on a stray wake too",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if !woken && inner.recovery.error().is_some() {",
+   "new": "if inner.recovery.error().is_some() {"
+  },
+  {
+   "id": "t6r3-owner-no-auto-retry",
+   "note": "R5: a held direct owner never writes the journal again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "shared.retry_persist_if_failed(); // at every recheck",
+   "new": "let _ = (); // never"
+  },
+  {
+   "id": "t6r3-status-not-blocking",
+   "note": "R5: the status does not say admission is blocked",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "\"blocking\": error.is_some() && held",
+   "new": "\"blocking\": false"
+  },
+  {
+   "id": "t6r3-route-retry-journal-is-retry",
+   "note": "R5: the route maps retry_journal to retry",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+   "old": "\"retry_journal\" => Resolution::RetryJournal,",
+   "new": "\"retry_journal\" => Resolution::Retry,"
+  }
+ ]
+}

@@ -1,0 +1,24 @@
+[
+ {
+  "name": "baseline-unmutated",
+  "command": [
+   "cargo",
+   "test",
+   "--offline",
+   "--locked",
+   "--",
+   "helper::",
+   "fundamentals::tests::",
+   "flow_board::",
+   "bars::join_tests::",
+   "server::tests::"
+  ],
+  "exit_code": 101,
+  "problems": [
+   "exit code 101",
+   "2 tests failed"
+  ],
+  "clean": false,
+  "total": 89
+ }
+]

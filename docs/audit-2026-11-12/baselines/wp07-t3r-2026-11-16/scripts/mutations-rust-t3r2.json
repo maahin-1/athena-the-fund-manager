@@ -1,0 +1,17 @@
+{
+  "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+  "kind": "cargo",
+  "timeout": 900,
+  "env": {"CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t", "CARGO_NET_OFFLINE": "true"},
+  "command": ["cargo", "test", "--offline", "--locked", "--", "deriv_quotes::", "angel::decode::", "angel::stream::tests::a_new_connection", "server::tests::the_derivative_quotes_route"],
+  "mutations": [
+    {"id": "rs-future-limit-off-by-one", "note": "R6 (rerun of the survivor of mutation-rust: the test took its boundary from the constant it checked; the boundary is now written out and the constant pinned): the limit is a millisecond tighter", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "pub const MAX_EXCHANGE_AHEAD_MS: i64 = 60_000;", "new": "pub const MAX_EXCHANGE_AHEAD_MS: i64 = 59_999;"},
+    {"id": "rs-future-limit-one-wider", "note": "R6: the limit is a millisecond wider", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "pub const MAX_EXCHANGE_AHEAD_MS: i64 = 60_000;", "new": "pub const MAX_EXCHANGE_AHEAD_MS: i64 = 60_001;"},
+    {"id": "rs-future-comparison-boundary", "note": "R6: a time exactly at the limit is refused (the first comparison)", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "if let Some(t) = quote.exchange_ms.filter(|t| *t > limit) {", "new": "if let Some(t) = quote.exchange_ms.filter(|t| *t >= limit) {"},
+    {"id": "rs-future-trade-comparison-boundary", "note": "R6: a trade time exactly at the limit is refused", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+     "old": "if let Some(t) = quote.last_trade_ms.filter(|t| *t > limit) {", "new": "if let Some(t) = quote.last_trade_ms.filter(|t| *t >= limit) {"}
+  ]
+}

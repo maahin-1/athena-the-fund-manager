@@ -1,0 +1,6 @@
+2026-11-17 11:44:01  run 20261117-114401-rust-bodylimit-full-4
+2026-11-17 11:44:02  cargo test --offline --locked --no-run
+2026-11-17 11:44:25  build exit 0
+2026-11-17 11:44:29  cargo test --offline --locked
+2026-11-17 11:44:47  test exit 0
+2026-11-17 11:44:47  done

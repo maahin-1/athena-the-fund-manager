@@ -1,0 +1,3 @@
+cwd=D:\projects\learn-project\athena-the-fund-manager\terminal\web npm_config_offline=true
+npm exec -- tsc --noEmit
+npm test -- --config D:\projects\learn-project\athena-the-fund-manager\docs\audit-2026-11-12\baselines\wp07-t3r-2026-11-16\runs\20261116-131053-web-green-4\vitest.config.mjs --reporter=default --reporter=json --outputFile.json=D:\projects\learn-project\athena-the-fund-manager\docs\audit-2026-11-12\baselines\wp07-t3r-2026-11-16\runs\20261116-131053-web-green-4\web-results.json

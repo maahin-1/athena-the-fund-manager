@@ -1,0 +1,29 @@
+{
+    "cwd":  "C:/Users/LEGION/ath-wp07/w/terminal",
+    "kind":  "cargo",
+    "timeout":  900,
+    "env":  {
+                "CARGO_TARGET_DIR":  "C:/Users/LEGION/ath-wp07/t",
+                "CARGO_NET_OFFLINE":  "true"
+            },
+    "command":  [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--",
+                    "deriv_quotes::",
+                    "angel::decode::",
+                    "angel::stream::tests::a_new_connection",
+                    "server::tests::the_derivative_quotes_route"
+                ],
+    "mutations":  [
+                      {
+                          "id":  "rs-stream-does-not-reset",
+                          "note":  "R2: the stream does not tell the store a new connection began",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/angel/stream.rs",
+                          "old":  "derivs.reset_sequences();",
+                          "new":  "let _ = \u0026derivs;"
+                      }
+                  ]
+}

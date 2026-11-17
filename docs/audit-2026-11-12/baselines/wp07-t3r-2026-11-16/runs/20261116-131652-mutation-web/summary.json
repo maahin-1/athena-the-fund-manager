@@ -1,0 +1,12 @@
+{
+ "label": "mutation-web",
+ "total": 37,
+ "counts": {
+  "caught": 36,
+  "SURVIVED": 1,
+  "invalid": 0,
+  "pattern_error": 0,
+  "timeout": 0
+ },
+ "files_restored": true
+}

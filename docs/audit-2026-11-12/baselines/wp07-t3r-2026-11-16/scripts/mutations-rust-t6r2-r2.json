@@ -1,0 +1,48 @@
+﻿{
+    "cwd":  "C:/Users/LEGION/ath-wp07/w/terminal",
+    "kind":  "cargo",
+    "timeout":  900,
+    "env":  {
+                "CARGO_TARGET_DIR":  "C:/Users/LEGION/ath-wp07/t",
+                "CARGO_NET_OFFLINE":  "true"
+            },
+    "command":  [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--",
+                    "bounded::",
+                    "helper::",
+                    "fundamentals::tests::",
+                    "flow_board::",
+                    "bars::join_tests::",
+                    "server::tests::an_override",
+                    "server::tests::a_failure_with",
+                    "server::tests::the_work",
+                    "server::tests::acknowledging"
+                ],
+    "mutations":  [
+                      {
+                          "id":  "t6r2-direct-place-freed-before-exit",
+                          "note":  "R3: the place is freed at once and the command is not ended (rewritten: the first form did not compile)",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+                          "old":  "    if end_direct(\u0026mut child).await {\n        drop(permit);\n        return;\n    }\n    let (id, wake)",
+                          "new":  "    let _ = end_direct(\u0026mut child);\n    {\n        drop(permit);\n        return;\n    }\n    #[allow(unreachable_code)]\n    let (id, wake)"
+                      },
+                      {
+                          "id":  "t6r2-export-code-2",
+                          "note":  "R3: an export that found no data is told as a failure",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+                          "old":  "Ok(out) if out.code == Some(2) =\u003e Err(FundError::NoData),",
+                          "new":  "Ok(out) if out.code == Some(99) =\u003e Err(FundError::NoData),"
+                      },
+                      {
+                          "id":  "t6r2-bars-direct-unbudgeted",
+                          "note":  "R3: the adjusted-bars command is given an endless deadline",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+                          "old":  "    let out = owner.run_command(permit, cmd, \"chart_bars\", \u0026crate::bounded::Budget::new(left)).await.ok()?;",
+                          "new":  "    let out = owner.run_command(permit, cmd, \"chart_bars\", \u0026crate::bounded::Budget::new(Duration::from_secs(100_000))).await.ok()?;"
+                      }
+                  ]
+}

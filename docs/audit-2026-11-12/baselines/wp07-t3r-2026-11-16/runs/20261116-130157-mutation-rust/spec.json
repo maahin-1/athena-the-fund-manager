@@ -1,0 +1,162 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "deriv_quotes::",
+  "angel::decode::",
+  "angel::stream::tests::a_new_connection",
+  "server::tests::the_derivative_quotes_route"
+ ],
+ "mutations": [
+  {
+   "id": "rs-trade-time-from-packet-field",
+   "note": "R1: the last-trade time is read from the packet's exchange timestamp field",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/angel/decode.rs",
+   "old": "last_trade_ms: epoch_ms(i64_at(packet, 123)),",
+   "new": "last_trade_ms: exchange_epoch_ms(i64_at(packet, 35)),"
+  },
+  {
+   "id": "rs-sequence-not-read",
+   "note": "R2: the sequence number is not read",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/angel/decode.rs",
+   "old": "sequence: i64_at(packet, 27),",
+   "new": "sequence: 0,"
+  },
+  {
+   "id": "rs-seconds-read-as-ms",
+   "note": "R1: a last-traded time in seconds is taken as milliseconds",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/angel/decode.rs",
+   "old": "Some(raw * 1000)",
+   "new": "Some(raw)"
+  },
+  {
+   "id": "rs-epoch-floor-removed",
+   "note": "R1: a tiny value is a plausible epoch time",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/angel/decode.rs",
+   "old": "const EPOCH_2000_S: i64 = 946_684_800;",
+   "new": "const EPOCH_2000_S: i64 = 0;"
+  },
+  {
+   "id": "rs-watermark-is-the-payload-time",
+   "note": "R2: the ordering watermark is the nullable time of the held payload again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "let mut mark = g.marks.get(&key).copied().unwrap_or_default();",
+   "new": "let mut mark = Mark { watermark: held.as_ref().and_then(|h| h.exchange_ms), sequence: g.marks.get(&key).and_then(|m| m.sequence) };"
+  },
+  {
+   "id": "rs-future-not-refused",
+   "note": "R6: no packet time is too far ahead",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "let limit = now_ms + MAX_EXCHANGE_AHEAD_MS;",
+   "new": "let limit = i64::MAX;"
+  },
+  {
+   "id": "rs-future-limit-off-by-one",
+   "note": "R6: the limit is a millisecond tighter",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "pub const MAX_EXCHANGE_AHEAD_MS: i64 = 60_000;",
+   "new": "pub const MAX_EXCHANGE_AHEAD_MS: i64 = 59_999;"
+  },
+  {
+   "id": "rs-future-time-kept",
+   "note": "R6: a refused packet time is recorded but still used",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "            quote.exchange_ms = None;",
+   "new": "            let _ = 0;"
+  },
+  {
+   "id": "rs-future-fault-not-recorded",
+   "note": "R6: a refused packet time leaves no record",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "quote.time_faults.push(TimeFault { field: \"t\", value: t, reason: \"future\" });",
+   "new": "let _ = t;"
+  },
+  {
+   "id": "rs-same-time-sequence-ignored",
+   "note": "R2: at an equal packet time the sequence does not order packets",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "(Some(new), Some(mark_time)) if new == mark_time => earlier_sequence,",
+   "new": "(Some(new), Some(mark_time)) if new == mark_time => false,"
+  },
+  {
+   "id": "rs-timeless-sequence-ignored",
+   "note": "R2: a packet with no time is never older by its sequence",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "(None, _) => earlier_sequence,",
+   "new": "(None, _) => false,"
+  },
+  {
+   "id": "rs-sequence-not-remembered",
+   "note": "R2: the sequence of an applied packet is not kept",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "if quote.sequence.is_some() {",
+   "new": "if false {"
+  },
+  {
+   "id": "rs-reset-forgets-nothing",
+   "note": "R2: a new connection does not forget the sequences (in the store)",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "            mark.sequence = None;",
+   "new": "            let _ = &mark;"
+  },
+  {
+   "id": "rs-stream-does-not-reset",
+   "note": "R2: the stream does not tell the store a new connection began",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/angel/stream.rs",
+   "old": "derivs.reset_sequences();",
+   "new": "let _ = &derivs;"
+  },
+  {
+   "id": "rs-absent-trade-time-always-kept",
+   "note": "R1: an absent last-traded field keeps the held time even when the price changed",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "if quote.last == held.last {",
+   "new": "if true {"
+  },
+  {
+   "id": "rs-absent-trade-time-is-packet-time",
+   "note": "R1: an absent last-traded field is replaced by the packet's time",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "quote.last_trade_ms = held.last_trade_ms;",
+   "new": "quote.last_trade_ms = quote.exchange_ms;"
+  },
+  {
+   "id": "rs-delay-not-measured",
+   "note": "R1: the delivery delay is the receipt itself",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "(Some(new), Some(old)) if new > old => Some(now_ms - new),",
+   "new": "(Some(new), Some(old)) if new > old => Some(now_ms),"
+  },
+  {
+   "id": "rs-discard-not-counted",
+   "note": "R2: a discarded older packet is not counted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "kept.out_of_order += 1;",
+   "new": "kept.out_of_order += 0;"
+  },
+  {
+   "id": "rs-duplicate-is-a-change",
+   "note": "R2: an identical packet is a change (renews the receipt)",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "if held.same_market(&quote) {",
+   "new": "if false {"
+  },
+  {
+   "id": "rs-fault-order-unsorted",
+   "note": "R1: the faults are not put in a stable order",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "quote.time_faults.sort_by_key(|f| f.field != \"t\");",
+   "new": "let _ = 0;"
+  }
+ ]
+}

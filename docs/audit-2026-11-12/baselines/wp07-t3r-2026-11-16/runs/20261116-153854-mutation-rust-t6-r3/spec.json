@@ -1,0 +1,59 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "bounded::",
+  "analyse_worker::",
+  "helper::",
+  "server::tests::a_full_queue",
+  "server::tests::the_work",
+  "server::tests::resolving"
+ ],
+ "mutations": [
+  {
+   "id": "t6-start-deadline-misnamed",
+   "note": "T6: a deadline during start is called exceeded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "Step::Deadline if during_start =>",
+   "new": "Step::Deadline if false =>"
+  },
+  {
+   "id": "t6-running-cancel-missing",
+   "note": "T6: a running job cannot be cancelled",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "Slot::Busy { id: b, cancel } if *b == id => return Cancelled::Running(cancel.clone()),",
+   "new": "Slot::Busy { id: b, cancel } if *b == id => return Cancelled::Unknown,"
+  },
+  {
+   "id": "t6-enqueue-no-sweep",
+   "note": "T6: expired jobs still hold their places at submission",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.sweep(now); // a place held by a job that has already expired is free",
+   "new": ""
+  },
+  {
+   "id": "t6-queued-cancel-never-matches",
+   "note": "T6 (rerun, the first form did not compile): a queued job is never found by its ID",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if let Some(pos) = self.queue.iter().position(|e| e.id == id) {",
+   "new": "if let Some(pos) = self.queue.iter().position(|e| e.id == 0) {"
+  },
+  {
+   "id": "t6-start-limit-ignored",
+   "note": "T6 (replaces the redundant min with the deadline): the start limit is not applied",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let start_budget = limits.start_limit;",
+   "new": "let start_budget = Duration::from_secs(100_000);"
+  }
+ ]
+}

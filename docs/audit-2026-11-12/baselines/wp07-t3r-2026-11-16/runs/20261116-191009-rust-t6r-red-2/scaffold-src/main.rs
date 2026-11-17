@@ -1,0 +1,315 @@
+mod analyse_worker;
+mod bounded;
+mod analysis;
+mod angel;
+mod bars;
+mod calendar;
+mod config;
+mod deriv_quotes;
+mod derivs;
+mod fake;
+mod forensic_job;
+mod fund_fetch;
+mod indices;
+mod ipo;
+mod jobs;
+mod chart_explain;
+mod flow_board;
+mod fundamentals;
+mod hub;
+mod helper;
+mod layouts;
+mod live_bars;
+mod search;
+mod sentiment;
+mod poll;
+mod pyind;
+mod quote;
+mod server;
+mod snapshot;
+mod totp;
+mod verdict_job;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
+
+use crate::angel::stream::FeedStatus;
+use crate::hub::Hub;
+use crate::server::{router, AppState};
+
+struct Args {
+    settings_file: PathBuf,
+    check_login: bool,
+    fake_feed: bool,
+    port: u16,
+    web_dir: PathBuf,
+    warehouse: PathBuf,
+    layouts_dir: PathBuf,
+    fund_store: PathBuf,
+    fund_python: Option<String>,
+    python: String,
+    indicators_dir: PathBuf,
+    indicator_runner: PathBuf,
+    derivs_master: PathBuf,
+    derivs_store: PathBuf,
+    derivs_offline: bool,
+    no_jobs: bool,
+}
+
+fn args() -> Args {
+    let mut out = Args {
+        settings_file: PathBuf::from(".env"),
+        check_login: false,
+        fake_feed: false,
+        port: 8700,
+        web_dir: PathBuf::from("terminal/web/dist"),
+        warehouse: PathBuf::from(".athena/warehouse.duckdb"),
+        layouts_dir: PathBuf::from(".athena/terminal/layouts"),
+        fund_store: PathBuf::from(".athena/fundamentals.duckdb"),
+        fund_python: None,
+        python: ".venv/Scripts/python.exe".to_string(),
+        indicators_dir: PathBuf::from(".athena/indicators"),
+        indicator_runner: PathBuf::from("src/athena/indicators_user/runner.py"),
+        derivs_master: PathBuf::from(".athena/derivs_master.json"),
+        derivs_store: PathBuf::from(".athena/derivs.duckdb"),
+        derivs_offline: false,
+        no_jobs: false,
+    };
+    let mut it = std::env::args().skip(1);
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--env-file" => {
+                if let Some(v) = it.next() {
+                    out.settings_file = PathBuf::from(v);
+                }
+            }
+            "--check-login" => out.check_login = true,
+            "--fake-feed" => out.fake_feed = true,
+            "--port" => {
+                if let Some(v) = it.next().and_then(|v| v.parse().ok()) {
+                    out.port = v;
+                }
+            }
+            "--warehouse" => {
+                if let Some(v) = it.next() {
+                    out.warehouse = PathBuf::from(v);
+                }
+            }
+            "--python" => {
+                if let Some(v) = it.next() {
+                    out.python = v;
+                }
+            }
+            "--layouts-dir" => {
+                if let Some(v) = it.next() {
+                    out.layouts_dir = PathBuf::from(v);
+                }
+            }
+            "--fund-python" => out.fund_python = it.next(),
+            "--indicators-dir" => {
+                if let Some(v) = it.next() {
+                    out.indicators_dir = PathBuf::from(v);
+                }
+            }
+            "--indicator-runner" => {
+                if let Some(v) = it.next() {
+                    out.indicator_runner = PathBuf::from(v);
+                }
+            }
+            "--derivs-master" => {
+                if let Some(v) = it.next() {
+                    out.derivs_master = PathBuf::from(v);
+                }
+            }
+            "--derivs-offline" => out.derivs_offline = true,
+            "--no-jobs" => out.no_jobs = true,
+            "--derivs-store" => {
+                if let Some(v) = it.next() {
+                    out.derivs_store = PathBuf::from(v);
+                }
+            }
+            "--fund-store" => {
+                if let Some(v) = it.next() {
+                    out.fund_store = PathBuf::from(v);
+                }
+            }
+            "--web-dir" => {
+                if let Some(v) = it.next() {
+                    out.web_dir = PathBuf::from(v);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn now_unix() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Log in, load the instrument list and run the stream; if the feed stays down for ten minutes (an expired login, for instance) start over.
+/// Nothing here can stop the server: every failure is a short status phrase and a retry.
+async fn supervise(settings_file: PathBuf, hub: Hub, derivs: deriv_quotes::DerivQuotes, status: watch::Sender<FeedStatus>, shutdown: CancellationToken) {
+    let client = reqwest::Client::new();
+    let retry = Duration::from_secs(60);
+    while !shutdown.is_cancelled() {
+        let _ = status.send(FeedStatus::Connecting);
+        let attempt: Result<(angel::login::Session, Arc<angel::master::Master>), &'static str> = async {
+            let settings = config::read(&settings_file).map_err(|_| "settings missing")?;
+            let session = angel::login::login(&client, &settings, now_unix()).await.map_err(|_| "login failed")?;
+            let master = angel::master::load(&client, std::path::Path::new(".athena/angel_master.json"))
+                .await
+                .map_err(|_| "instrument list unavailable")?;
+            Ok((session, Arc::new(master)))
+        }
+        .await;
+        match attempt {
+            Err(reason) => {
+                let _ = status.send(FeedStatus::Off(reason));
+                tokio::select! { _ = shutdown.cancelled() => return, _ = tokio::time::sleep(retry) => {} }
+            }
+            Ok((session, master)) => {
+                let child = shutdown.child_token();
+                let stream = tokio::spawn(angel::stream::run_stream(session, master, hub.clone(), derivs.clone(), status.clone(), child.clone()));
+                let mut off_since: Option<Instant> = None;
+                loop {
+                    tokio::select! { _ = shutdown.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(30)) => {} }
+                    let down = matches!(*status.borrow(), FeedStatus::Off(_));
+                    off_since = if down { off_since.or(Some(Instant::now())) } else { None };
+                    if off_since.is_some_and(|t| t.elapsed() > Duration::from_secs(600)) {
+                        break;
+                    }
+                }
+                child.cancel();
+                let _ = stream.await;
+            }
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let args = args();
+    if args.check_login {
+        let settings = match config::read(&args.settings_file) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("error: {e}");
+                std::process::exit(1);
+            }
+        };
+        match angel::login::login(&reqwest::Client::new(), &settings, now_unix()).await {
+            Ok(session) => println!(
+                "login works for {}; feed token {}",
+                session.client_code,
+                if session.feed_token.is_empty() { "NOT received" } else { "received" }
+            ),
+            Err(e) => {
+                println!("error: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", args.port)).await {
+        Ok(l) => l,
+        Err(_) => {
+            println!("error: port {} is in use", args.port);
+            std::process::exit(1);
+        }
+    };
+    let port = listener.local_addr().map(|a| a.port()).unwrap_or(args.port);
+    let hub = Hub::new();
+    let (status, _keep) = watch::channel(if args.fake_feed { FeedStatus::On } else { FeedStatus::Connecting });
+    let shutdown = CancellationToken::new();
+    {
+        // one line per change of the broker feed's state, with the time, so a drop can be explained afterwards (the phrases are fixed, never a header or a token)
+        let mut watching = status.subscribe();
+        tokio::spawn(async move {
+            while watching.changed().await.is_ok() {
+                let line = format!("{:?}", *watching.borrow());
+                println!("[{}] feed {line}", chrono::Utc::now().with_timezone(&chrono::FixedOffset::east_opt(19_800).expect("offset")).format("%H:%M:%S"));
+            }
+        });
+    }
+    let index_store = indices::IndexStore::new();
+    let deriv_quotes = deriv_quotes::DerivQuotes::new();
+    if args.fake_feed {
+        tokio::spawn(fake::run_fake(hub.clone(), shutdown.clone()));
+        tokio::spawn(indices::run_fake(index_store.clone(), shutdown.clone()));
+    } else {
+        tokio::spawn(indices::run_refresher(index_store.clone(), reqwest::Client::new(), shutdown.clone()));
+        tokio::spawn(supervise(args.settings_file.clone(), hub.clone(), deriv_quotes.clone(), status.clone(), shutdown.clone()));
+        tokio::spawn(poll::run_poller(hub.clone(), reqwest::Client::new(), shutdown.clone()));
+    }
+    // the background data jobs: one supervisor, started with the terminal and ended with it (not under the fake feed, which is for trying the screen, nor with --no-jobs)
+    if !args.fake_feed && !args.no_jobs {
+        match jobs::spawn_supervisor(args.fund_python.as_deref().unwrap_or(&args.python)) {
+            Ok(_child) => println!("background data jobs: started (athena.ops.supervisor); see /api/jobs"),
+            Err(e) => println!("background data jobs: could not start ({e}); the data will not update by itself"),
+        }
+    }
+    // warm Python helpers for the Fundamentals page, the valuation and the adjusted daily bars, started now so the first page opened does not wait
+    let helpers = Arc::new(helper::Helpers::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
+    {
+        let h = helpers.clone();
+        tokio::spawn(async move { h.warm().await });
+    }
+    let bars = Arc::new(bars::Bars {
+        adjusted: bars::AdjustedDaily::python(args.python.clone(), args.warehouse.clone(), Some(helpers.clone())),
+        warehouse: args.warehouse,
+        intraday: bars::Intraday::new(bars::yahoo_fetcher(reqwest::Client::new())),
+    });
+    let lists = Arc::new(layouts::LayoutStore::new(args.layouts_dir.parent().map(|p| p.join("lists")).unwrap_or_else(|| PathBuf::from(".athena/terminal/lists"))));
+    let layouts = Arc::new(layouts::LayoutStore::new(args.layouts_dir));
+    let verdicts = verdict_job::VerdictJobs::standard(&args.python);
+    let analyse = Arc::new(analyse_worker::AnalyseWorker::standard(&args.python));
+    {
+        let a = analyse.clone();
+        tokio::spawn(async move { a.warm().await });
+    }
+    let fund_fetch = fund_fetch::FundFetch::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.fund_store.clone());
+    let fundamentals = Arc::new(
+        fundamentals::FundamentalsJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone(), args.fund_store.clone())
+            .with_helpers(helpers.clone())
+            .with_fetches(fund_fetch.finished.clone()),
+    );
+    // the board takes seconds to build: it has a helper of its own, so a Fundamentals page or a valuation never waits behind it
+    let board_helper = Arc::new(helper::Helpers::named("board_helper", vec![args.fund_python.as_deref().unwrap_or(&args.python).to_string(), "-m".into(), "athena.terminal_helper".into()], 1));
+    let board_helper_view = board_helper.pool_view();
+    {
+        let h = board_helper.clone();
+        tokio::spawn(async move { h.warm().await });
+    }
+    let flow_board = Arc::new(flow_board::FlowBoard::standard(args.fund_python.as_deref().unwrap_or(&args.python), args.derivs_store.clone()).with_helpers(board_helper));
+    let chart_explain = Arc::new(chart_explain::ChartExplain::standard(args.fund_python.as_deref().unwrap_or(&args.python)));
+    let ipo = Arc::new(ipo::IpoJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone()));
+    let forensic = forensic_job::ForensicJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".athena")));
+    let sentiment = Arc::new(sentiment::SentimentJobs::standard(args.fund_python.as_deref().unwrap_or(&args.python), bars.warehouse.clone()));
+    let search = Arc::new(search::SearchCache::new(bars.warehouse.clone()));
+    let pyind = pyind::PyInd::new(args.fund_python.as_deref().unwrap_or(&args.python), &args.indicator_runner, &args.indicators_dir);
+    let derivs = derivs::DerivsStore::new();
+    tokio::spawn(derivs::run_loader(derivs.clone(), reqwest::Client::new(), args.derivs_master.clone(), args.derivs_offline, shutdown.clone()));
+    let work = Arc::new(bounded::WorkRegistry::new());
+    work.register(analyse.pool_view());
+    work.register(helpers.pool_view());
+    work.register(board_helper_view);
+    let state = AppState { hub, status, port, web_dir: args.web_dir, bars, layouts, verdicts, analyse, work, fundamentals, flow_board, chart_explain, sentiment, ipo, forensic, indices: index_store, lists, search, fund_fetch, pyind, derivs, deriv_quotes, live_derivs: !args.fake_feed };
+    println!("athena-terminal on http://127.0.0.1:{port}{}", if args.fake_feed { " (fake feed)" } else { "" });
+    let stop = shutdown.clone();
+    let result = axum::serve(listener, router(state))
+        .with_graceful_shutdown(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            stop.cancel();
+        })
+        .await;
+    if result.is_err() {
+        println!("error: the server stopped");
+    }
+}

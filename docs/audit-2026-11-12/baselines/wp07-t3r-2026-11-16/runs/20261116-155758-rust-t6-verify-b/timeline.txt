@@ -1,0 +1,6 @@
+2026-11-16 15:57:58  run 20261116-155758-rust-t6-verify-b
+2026-11-16 15:57:59  cargo test --offline --locked --no-run
+2026-11-16 15:58:25  build exit 0
+2026-11-16 15:58:31  cargo test --offline --locked
+2026-11-16 15:58:46  test exit 0
+2026-11-16 15:58:46  done

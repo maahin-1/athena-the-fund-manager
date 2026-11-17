@@ -1,0 +1,2 @@
+cwd=C:\Users\LEGION\ath-wp07\w\terminal CARGO_TARGET_DIR=C:\Users\LEGION\ath-wp07\t CARGO_NET_OFFLINE=true
+cargo test --offline --locked server::tests::

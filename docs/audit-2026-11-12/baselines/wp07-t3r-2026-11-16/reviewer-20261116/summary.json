@@ -1,0 +1,8 @@
+{
+  "files": 7,
+  "passed": 159,
+  "failed": 0,
+  "guard_records": 9477,
+  "denied": 0,
+  "scope": "focused web verification only; full suites and actual mutation reruns not repeated"
+}

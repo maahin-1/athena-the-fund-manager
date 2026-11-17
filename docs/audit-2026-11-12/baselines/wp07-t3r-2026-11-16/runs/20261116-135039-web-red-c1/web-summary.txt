@@ -1,0 +1,4 @@
+RUN NOT GREEN: a suite did not load, a test failed, tsc failed or npm test exited non-zero (a red run is evidence, never a pass)
+tsc exit=0; npm test exit=1; files=1 files_not_passed=1 tests=24 passed=3 failed=21 failed_suites=4 pending=0
+guard v3 records: guard-installed, False=1
+denied fetch: 0; absolute: 0; other denied: 0; fs outside: 0

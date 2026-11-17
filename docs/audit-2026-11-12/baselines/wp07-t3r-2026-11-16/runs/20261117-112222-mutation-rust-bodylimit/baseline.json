@@ -1,0 +1,15 @@
+[
+ {
+  "name": "baseline-unmutated",
+  "command": [
+   "cargo",
+   "test",
+   "--offline",
+   "--locked"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 419
+ }
+]

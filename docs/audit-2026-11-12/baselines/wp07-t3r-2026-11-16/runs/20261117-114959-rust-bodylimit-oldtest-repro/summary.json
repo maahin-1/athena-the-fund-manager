@@ -1,0 +1,15 @@
+{
+    "binary":  "athena_terminal-100fc3628a770ac3.exe",
+    "sequential_runs":  200,
+    "sequential_failed":  3,
+    "sequential_kinds":  [
+                             "pass: 197",
+                             "connection aborted (10053): 3"
+                         ],
+    "parallel_runs":  200,
+    "parallel_failed":  10,
+    "parallel_kinds":  [
+                           "pass: 190",
+                           "connection aborted (10053): 10"
+                       ]
+}

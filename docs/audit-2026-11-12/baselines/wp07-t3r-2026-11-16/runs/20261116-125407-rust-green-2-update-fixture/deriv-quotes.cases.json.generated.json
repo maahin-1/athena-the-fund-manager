@@ -1,0 +1,192 @@
+{
+  "fresh_book_old_trade": {
+    "note": "a book that changed 2 s ago beside a last trade two hours old: the book is fresh and the trade is old",
+    "now": 1760000600000,
+    "rows": [
+      {
+        "ask": 100.1,
+        "bid": 100.0,
+        "bs": 1760000598000,
+        "dly": 1000,
+        "last": 100.0,
+        "lt": 1759993400000,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 0,
+        "pc": 90.0,
+        "r": 1760000598000,
+        "seg": "NFO",
+        "t": 1760000597000,
+        "token": "40",
+        "volume": 0
+      }
+    ]
+  },
+  "known_missing_older": {
+    "note": "a packet time known, then none, then an older one: the older packet is discarded and counted",
+    "now": 1760000600000,
+    "rows": [
+      {
+        "ask": 101.05,
+        "bid": 100.95,
+        "bs": 1760000400000,
+        "dly": null,
+        "last": 101.0,
+        "lt": 1760000299000,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 1,
+        "pc": 90.0,
+        "r": 1760000400000,
+        "seg": "NFO",
+        "t": null,
+        "token": "43",
+        "volume": 0
+      }
+    ]
+  },
+  "live": {
+    "note": "a packet received 2 s ago with a time 1 s before its receipt",
+    "now": 1760000600000,
+    "rows": [
+      {
+        "ask": 100.05,
+        "bid": 99.95,
+        "bs": 1760000598000,
+        "dly": null,
+        "last": 100.0,
+        "lt": 1760000597000,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 0,
+        "pc": 90.0,
+        "r": 1760000598000,
+        "seg": "NFO",
+        "t": 1760000597000,
+        "token": "47",
+        "volume": 0
+      }
+    ]
+  },
+  "no_trade_time": {
+    "note": "the last-traded field is empty: the trade's time is unknown and is not taken from the packet",
+    "now": 1760000600000,
+    "rows": [
+      {
+        "ask": 100.1,
+        "bid": 100.0,
+        "bs": 1760000598000,
+        "dly": 1000,
+        "last": 100.1,
+        "lt": null,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 0,
+        "pc": 90.0,
+        "r": 1760000598000,
+        "seg": "NFO",
+        "t": 1760000597000,
+        "token": "41",
+        "volume": 0
+      }
+    ]
+  },
+  "refused_times": {
+    "note": "a packet time an hour ahead and a last-traded field of 5: neither is used, both are on record",
+    "now": 1760000600000,
+    "rows": [
+      {
+        "ask": 100.05,
+        "bid": 99.95,
+        "bs": 1760000598000,
+        "dly": null,
+        "last": 100.0,
+        "lt": null,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 0,
+        "pc": 90.0,
+        "r": 1760000598000,
+        "seg": "NFO",
+        "t": null,
+        "tf": [
+          {
+            "f": "t",
+            "v": 1760004200000,
+            "why": "future"
+          },
+          {
+            "f": "lt",
+            "v": 5,
+            "why": "implausible"
+          }
+        ],
+        "token": "42",
+        "volume": 0
+      }
+    ]
+  },
+  "replay": {
+    "note": "packets received just now that carry yesterday's exchange times: a replay or a closed market, not current activity",
+    "now": 1760000600000,
+    "rows": [
+      {
+        "ask": 100.05,
+        "bid": 99.95,
+        "bs": 1760000599000,
+        "dly": null,
+        "last": 100.0,
+        "lt": 1759914195000,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 0,
+        "pc": 90.0,
+        "r": 1760000599000,
+        "seg": "NFO",
+        "t": 1759914195000,
+        "token": "44",
+        "volume": 0
+      },
+      {
+        "ask": 100.05,
+        "bid": 99.95,
+        "bs": 1760000599000,
+        "dly": null,
+        "last": 100.0,
+        "lt": 1759914195000,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 0,
+        "pc": 90.0,
+        "r": 1760000599000,
+        "seg": "NFO",
+        "t": 1759914195000,
+        "token": "45",
+        "volume": 0
+      }
+    ]
+  },
+  "stopped": {
+    "note": "the last packet was received ten minutes ago and carried a time close to its receipt: a feed that has gone quiet or stopped",
+    "now": 1760000600000,
+    "rows": [
+      {
+        "ask": 100.05,
+        "bid": 99.95,
+        "bs": 1760000000000,
+        "dly": null,
+        "last": 100.0,
+        "lt": 1759999999000,
+        "oi": 1000,
+        "oip": 0.0,
+        "ooo": 0,
+        "pc": 90.0,
+        "r": 1760000000000,
+        "seg": "NFO",
+        "t": 1759999999000,
+        "token": "46",
+        "volume": 0
+      }
+    ]
+  }
+}

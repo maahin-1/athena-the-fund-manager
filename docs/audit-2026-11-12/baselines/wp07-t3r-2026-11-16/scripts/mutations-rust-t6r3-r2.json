@@ -1,0 +1,34 @@
+{
+    "cwd":  "C:/Users/LEGION/ath-wp07/w/terminal",
+    "kind":  "cargo",
+    "timeout":  900,
+    "env":  {
+                "CARGO_TARGET_DIR":  "C:/Users/LEGION/ath-wp07/t",
+                "CARGO_NET_OFFLINE":  "true"
+            },
+    "command":  [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--",
+                    "bounded::",
+                    "helper::",
+                    "fundamentals::tests::",
+                    "flow_board::",
+                    "bars::join_tests::",
+                    "server::tests::an_override",
+                    "server::tests::a_failure_with",
+                    "server::tests::the_work",
+                    "server::tests::acknowledging"
+                ],
+    "mutations":  [
+                      {
+                          "id":  "t6r3-shutdown-counts-swapped",
+                          "note":  "R1: ended and unconfirmed are swapped in the admission report (rerun: the first pattern also matched the pool)",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+                          "old":  "fn note_end_at_shutdown(\u0026self, confirmed: bool) {\n        let counter = if confirmed { \u0026self.ended_at_shutdown } else { \u0026self.unconfirmed_at_shutdown };",
+                          "new":  "fn note_end_at_shutdown(\u0026self, confirmed: bool) {\n        let counter = if confirmed { \u0026self.unconfirmed_at_shutdown } else { \u0026self.ended_at_shutdown };"
+                      }
+                  ]
+}

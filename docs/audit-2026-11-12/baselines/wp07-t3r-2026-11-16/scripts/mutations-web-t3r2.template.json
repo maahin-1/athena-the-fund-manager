@@ -1,0 +1,21 @@
+{
+  "cwd": "D:/projects/learn-project/athena-the-fund-manager/terminal/web",
+  "kind": "vitest",
+  "timeout": 600,
+  "env": {"npm_config_offline": "true", "npm_config_update_notifier": "false", "npm_config_audit": "false", "npm_config_fund": "false"},
+  "command": ["C:/Program Files/nodejs/npm.cmd", "test", "--", "--config", "@@CONFIG@@", "--reporter=default", "test/optiontimes.test.ts", "test/optionsession.test.ts", "test/optionquality.test.ts", "test/optionslive.test.ts", "test/assemble.test.ts"],
+  "mutations": [
+    {"id": "ts-forward-unfit-input-ignored", "note": "R4 (rerun of the survivor of the first valid web mutation run: no test pinned `forward_input_withheld`): an unfit input does not make the forward unfit", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "if (unfit) flags.push('forward_input_withheld');", "new": "void 0;"},
+    {"id": "ts-forward-unfit-not-computed", "note": "R4: an input is never unfit", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "const unfit = decisions.some((d) => d.withheld.some((f) => f !== 'invalid_book_time' && f !== 'stale_book'));", "new": "const unfit = false;"},
+    {"id": "ts-forward-stale-ignored", "note": "R4: a stale input does not make the forward stale", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "if (stale) flags.push('forward_stale');", "new": "void 0;"},
+    {"id": "ts-forward-age-unknown-ignored", "note": "R4: an input with no book time does not make the forward's age unknown", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "if (unknown) flags.push('forward_age_unknown');", "new": "void 0;"},
+    {"id": "ts-forward-time-is-newest", "note": "R4: the forward is dated by its newest input", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "at = Math.min(...times);", "new": "at = Math.max(...times);"},
+    {"id": "ts-labels-session-observation-carried", "note": "R4: an input's session label is carried as an input label (noise on every last-session forward)", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "f !== 'book_time_unknown' && f !== 'session_observation' && f !== 'session_unverified'", "new": "f !== 'book_time_unknown'"}
+  ]
+}

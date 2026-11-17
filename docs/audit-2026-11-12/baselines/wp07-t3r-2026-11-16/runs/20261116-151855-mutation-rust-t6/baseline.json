@@ -1,0 +1,22 @@
+[
+ {
+  "name": "baseline-unmutated",
+  "command": [
+   "cargo",
+   "test",
+   "--offline",
+   "--locked",
+   "--",
+   "bounded::",
+   "analyse_worker::",
+   "helper::",
+   "server::tests::a_full_queue",
+   "server::tests::the_work",
+   "server::tests::resolving"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 41
+ }
+]

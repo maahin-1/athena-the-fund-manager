@@ -1,0 +1,40 @@
+[
+ {
+  "name": "baseline-unmutated",
+  "command": [
+   "C:/Program Files/nodejs/npm.cmd",
+   "test",
+   "--",
+   "--config",
+   "D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/baselines/wp07-t3r-2026-11-16/runs/20261116-135254-web-c1-green/vitest.config.mjs",
+   "--reporter=default",
+   "test/optioninvalidtimes.test.ts",
+   "test/optiontimes.test.ts",
+   "test/optionsession.test.ts",
+   "test/optionquality.test.ts",
+   "test/optionslive.test.ts",
+   "test/assemble.test.ts"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 127
+ },
+ {
+  "name": "baseline-1-unmutated",
+  "command": [
+   "C:/Program Files/nodejs/npm.cmd",
+   "test",
+   "--",
+   "--config",
+   "D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/baselines/wp07-t3r-2026-11-16/runs/20261116-135254-web-c1-green/vitest.config.mjs",
+   "--reporter=default",
+   "test/provenance.test.ts",
+   "test/datasource-fixtures.test.ts"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 53
+ }
+]

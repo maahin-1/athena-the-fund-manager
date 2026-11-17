@@ -1,0 +1,240 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "helper::",
+  "fundamentals::tests::",
+  "flow_board::",
+  "bars::join_tests::",
+  "server::tests::"
+ ],
+ "mutations": [
+  {
+   "id": "t6r-helper-refused-as-failed",
+   "note": "R2: a refusal is reported as an ordinary failure",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "Err(refusal) => return HelperResult::Refused(refusal),",
+   "new": "Err(_) => return HelperResult::Failed(\"not_started\"),"
+  },
+  {
+   "id": "t6r-helper-expired-as-failed",
+   "note": "R2: an expiry is reported as an ordinary failure",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "Outcome::Expired(_) => HelperResult::Expired { job },",
+   "new": "Outcome::Expired(_) => HelperResult::Failed(\"expired\"),"
+  },
+  {
+   "id": "t6r-helper-unconfirmed-as-failed",
+   "note": "R2: an unconfirmed failure is reported as an ordinary failure",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "Outcome::Unconfirmed(_) => HelperResult::Unconfirmed { job },",
+   "new": "Outcome::Unconfirmed(_) => HelperResult::Failed(\"x\"),"
+  },
+  {
+   "id": "t6r-helper-cancelled-as-failed",
+   "note": "R2: a cancellation is reported as an ordinary failure",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "Outcome::Cancelled => HelperResult::Cancelled { job },",
+   "new": "Outcome::Cancelled => HelperResult::Failed(\"c\"),"
+  },
+  {
+   "id": "t6r-command-failure-not-named",
+   "note": "R2: a command that failed is not told apart from an unusable reply",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "Outcome::Reply(_) => HelperResult::Failed(\"command_failed\"),",
+   "new": "Outcome::Reply(_) => HelperResult::Failed(\"bad_reply\"),"
+  },
+  {
+   "id": "t6r-next-failed-stops",
+   "note": "R2: a finished helper never leaves room for the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Failed(_) => Next::RunCommand,",
+   "new": "HelperResult::Failed(_) => Next::Stop(Why::TimedOut),"
+  },
+  {
+   "id": "t6r-next-expired-runs",
+   "note": "R2: an expired helper job invites the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Expired { .. } => Next::Stop(Why::TimedOut),",
+   "new": "HelperResult::Expired { .. } => Next::RunCommand,"
+  },
+  {
+   "id": "t6r-next-refused-runs",
+   "note": "R2: a refused helper job invites the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Refused(Refusal::QueueFull { .. }) => Next::Stop(Why::Overloaded),",
+   "new": "HelperResult::Refused(Refusal::QueueFull { .. }) => Next::RunCommand,"
+  },
+  {
+   "id": "t6r-next-unconfirmed-runs",
+   "note": "R2: an unconfirmed helper job invites the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Unconfirmed { .. } => Next::Stop(Why::Unconfirmed),",
+   "new": "HelperResult::Unconfirmed { .. } => Next::RunCommand,"
+  },
+  {
+   "id": "t6r-next-held-runs",
+   "note": "R2: a held helper pool invites the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Refused(Refusal::Held { .. }) => Next::Stop(Why::Held),",
+   "new": "HelperResult::Refused(Refusal::Held { .. }) => Next::RunCommand,"
+  },
+  {
+   "id": "t6r-next-closed-runs",
+   "note": "R2: a closed helper pool invites the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Refused(Refusal::Closed) | HelperResult::Cancelled { .. } => Next::Stop(Why::ShuttingDown),",
+   "new": "HelperResult::Refused(Refusal::Closed) | HelperResult::Cancelled { .. } => Next::RunCommand,"
+  },
+  {
+   "id": "t6r-fund-stop-falls-back",
+   "note": "R2: a stopped helper request is followed by the module",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "Next::Stop(why) => return Err(stopped(why, what)),",
+   "new": "Next::Stop(_) => self.run_module(base, symbol, basis, what, &budget).await?,"
+  },
+  {
+   "id": "t6r-fund-overloaded-is-busy",
+   "note": "R2: an overloaded request is told the store is busy",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "Why::Overloaded => FundError::Overloaded,",
+   "new": "Why::Overloaded => FundError::Busy,"
+  },
+  {
+   "id": "t6r-fund-timedout-is-overloaded",
+   "note": "R2: a timed out request is told it is overloaded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "Why::TimedOut => FundError::TimedOut,",
+   "new": "Why::TimedOut => FundError::Overloaded,"
+  },
+  {
+   "id": "t6r-fund-shutdown-is-timeout",
+   "note": "R2: a shutdown is reported as a timeout",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "Why::ShuttingDown => FundError::Failed(\"the terminal is shutting down\".into()),",
+   "new": "Why::ShuttingDown => FundError::TimedOut,"
+  },
+  {
+   "id": "t6r-fund-module-fresh-limit",
+   "note": "R2: the module run after a helper failure gets a whole new limit",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "tokio::time::timeout(budget.remaining(), async { cmd.spawn()?.wait_with_output().await })",
+   "new": "tokio::time::timeout(self.limit, async { cmd.spawn()?.wait_with_output().await })"
+  },
+  {
+   "id": "t6r-fund-helper-full-limit",
+   "note": "R2: the helper is given the whole limit although the wait for a place used some",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "h.run(op, &args, budget.remaining()).await",
+   "new": "h.run(op, &args, self.limit).await"
+  },
+  {
+   "id": "t6r-fund-admission-unbudgeted",
+   "note": "R2: the wait for a place does not draw on the request's deadline",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "self.admission.admit(op.kind(), &budget).await.map_err(admit_error)?;",
+   "new": "self.admission.admit(op.kind(), &Budget::new(Duration::from_secs(100_000))).await.map_err(admit_error)?;"
+  },
+  {
+   "id": "t6r-fund-full-is-busy",
+   "note": "R2: a full admission is reported as the store being busy",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "AdmitError::Full { .. } => FundError::Overloaded,",
+   "new": "AdmitError::Full { .. } => FundError::Busy,"
+  },
+  {
+   "id": "t6r-board-stop-falls-back",
+   "note": "R2: a stopped helper request is followed by the board module",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/flow_board.rs",
+   "old": "Next::Stop(why) => return Err(stopped(why)),",
+   "new": "Next::Stop(_) => self.run_module(&args, &budget).await?,"
+  },
+  {
+   "id": "t6r-board-overloaded-is-busy",
+   "note": "R2: an overloaded board is told the file is being loaded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/flow_board.rs",
+   "old": "Why::Overloaded => BoardError::Overloaded,",
+   "new": "Why::Overloaded => BoardError::Busy,"
+  },
+  {
+   "id": "t6r-board-module-fresh-limit",
+   "note": "R2: the board module gets a whole new limit",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/flow_board.rs",
+   "old": "tokio::time::timeout(budget.remaining(), async { cmd.spawn()?.wait_with_output().await })",
+   "new": "tokio::time::timeout(self.limit, async { cmd.spawn()?.wait_with_output().await })"
+  },
+  {
+   "id": "t6r-board-full-is-busy",
+   "note": "R2: a full board place is reported as the file being loaded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/flow_board.rs",
+   "old": "AdmitError::Full { .. } => BoardError::Overloaded,",
+   "new": "AdmitError::Full { .. } => BoardError::Busy,"
+  },
+  {
+   "id": "t6r-bars-stop-falls-back",
+   "note": "R2: a stopped helper request is followed by the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+   "old": "Next::Stop(_) => return None,",
+   "new": "Next::Stop(_) => {}"
+  },
+  {
+   "id": "t6r-bars-direct-fresh-limit",
+   "note": "R2: the direct fetch is given the whole limit",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+   "old": "direct(budget.remaining()).await",
+   "new": "direct(limit).await"
+  },
+  {
+   "id": "t6r-bars-helper-full-limit",
+   "note": "R2: the helper is given the whole limit",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+   "old": "h.run(crate::helper::HelperOp::ChartBars, &args, budget.remaining()).await.next()",
+   "new": "h.run(crate::helper::HelperOp::ChartBars, &args, limit).await.next()"
+  },
+  {
+   "id": "t6r-bars-admission-ignored",
+   "note": "R2: the admission of the fetch is not applied",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+   "old": "let _permit = admission.admit(\"chart_bars\", &budget).await.ok()?;",
+   "new": "let _permit = admission.admit(\"chart_bars\", &budget).await.ok();"
+  },
+  {
+   "id": "t6r-server-reason-not-required",
+   "note": "R3: an override with no reason is accepted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+   "old": "Err(NoteError::Reason) => return (StatusCode::BAD_REQUEST,",
+   "new": "Err(NoteError::Reason) => return (StatusCode::NO_CONTENT,"
+  },
+  {
+   "id": "t6r-server-operator-not-required",
+   "note": "R3: an override with no operator is accepted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+   "old": "Err(NoteError::Operator) => return (StatusCode::BAD_REQUEST,",
+   "new": "Err(NoteError::Operator) => return (StatusCode::NO_CONTENT,"
+  },
+  {
+   "id": "t6r-server-overloaded-status",
+   "note": "R2: an overloaded fundamentals service answers with the wrong status",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+   "old": "FundError::Overloaded => (StatusCode::SERVICE_UNAVAILABLE,",
+   "new": "FundError::Overloaded => (StatusCode::BAD_GATEWAY,"
+  },
+  {
+   "id": "t6r-server-unconfirmed-reason",
+   "note": "R2: an unconfirmed analysis answers with the wrong reason",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+   "old": "\"reason\": \"unconfirmed\", \"job\": job",
+   "new": "\"reason\": \"deadline\", \"job\": job"
+  }
+ ]
+}

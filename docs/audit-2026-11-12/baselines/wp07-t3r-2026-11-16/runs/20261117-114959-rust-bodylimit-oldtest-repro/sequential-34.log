@@ -1,0 +1,18 @@
+
+running 1 test
+test server::tests::the_indicator_run_route_takes_a_body_between_two_and_four_megabytes_and_refuses_a_larger_one ... FAILED
+
+failures:
+
+---- server::tests::the_indicator_run_route_takes_a_body_between_two_and_four_megabytes_and_refuses_a_larger_one stdout ----
+
+thread 'server::tests::the_indicator_run_route_takes_a_body_between_two_and_four_megabytes_and_refuses_a_larger_one' (52348) panicked at src\server.rs:1752:48:
+called `Result::unwrap()` on an `Err` value: reqwest::Error { kind: Request, url: "http://127.0.0.1:61096/api/pyind/run", source: hyper_util::client::legacy::Error(SendRequest, hyper::Error(Io, Os { code: 10053, kind: ConnectionAborted, message: "An established connection was aborted by the software in your host machine." })) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    server::tests::the_indicator_run_route_takes_a_body_between_two_and_four_megabytes_and_refuses_a_larger_one
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 415 filtered out; finished in 0.89s
+

@@ -1,0 +1,6 @@
+2026-11-16 14:33:23  run 20261116-143323-rust-t6-red
+2026-11-16 14:33:25  cargo test --offline --locked --no-run
+2026-11-16 14:34:23  build exit 0
+2026-11-16 14:34:26  cargo test --offline --locked
+2026-11-16 14:34:38  test exit 101
+2026-11-16 14:34:38  done
