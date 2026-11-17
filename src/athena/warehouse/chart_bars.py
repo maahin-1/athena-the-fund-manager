@@ -15,7 +15,7 @@ from typing import Any
 
 from athena.trading_calendar import ist_date
 from athena.warehouse.history import adjusted_history
-from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse
+from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse, WarehouseUnavailable
 
 WAIT_SECONDS = 20.0
 
@@ -35,7 +35,7 @@ def chart_bars(warehouse: Warehouse, symbol: str, limit: int) -> dict[str, Any]:
         }
         for bar in bars[-limit:]
     ]
-    return {"bars": out, "flags": list(history.price_flags(symbol)), "notes": list(history.notes(symbol)), "joined": joined_notes(warehouse, symbol)}
+    return {"bars": out, "flags": list(history.price_flags(symbol)), "notes": list(history.notes(symbol)), "joined": joined_notes(warehouse, symbol), "provenance": dict(warehouse.provenance) if getattr(warehouse, "provenance", None) else None}
 
 
 def joined_notes(warehouse: Warehouse, symbol: str) -> list[dict[str, str]]:
@@ -55,8 +55,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=5000)
     parser.add_argument("--warehouse", default=str(DEFAULT_PATH))
     args = parser.parse_args(argv)
-    with Warehouse(args.warehouse, read_only=True, wait_seconds=WAIT_SECONDS) as warehouse:
-        json.dump(chart_bars(warehouse, args.symbol.upper(), max(1, args.limit)), sys.stdout)
+    try:
+        with Warehouse(args.warehouse, read_only=True, wait_seconds=WAIT_SECONDS) as warehouse:
+            json.dump(chart_bars(warehouse, args.symbol.upper(), max(1, args.limit)), sys.stdout)
+    except WarehouseUnavailable as exc:
+        # no data, and the reason: the real file's and the snapshot's. Empty bars with a `failure` provenance, a non-zero exit; never an empty success.
+        json.dump({"bars": [], "flags": [], "notes": [], "joined": [], "provenance": {"failure": exc.failure}}, sys.stdout)
+        print(f"warehouse unavailable: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
