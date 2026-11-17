@@ -1,0 +1,227 @@
+{
+    "note":  "Python-backed Rust tests: each, run alone, started at least one Python process on the intended interpreter. Derived by derive_rust_python_tests.ps1 (re-derive when Rust tests change). Each needs at least min_python_processes (1) when the gate re-runs it alone; processes_when_derived is information (kill and cancellation timing can change it by one). full_run_min_processes is a sanity floor for the whole run: half of the derived total.",
+    "derived_from_run":  "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\runs\\20261117-183126-rust-derive-after-order-fix",
+    "tests_run_alone":  417,
+    "not_exactly_one_pass_when_run_alone":  [
+
+                                            ],
+    "tests":  [
+                  {
+                      "id":  "analyse_worker::tests::a_backtest_goes_through_the_same_worker",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "analyse_worker::tests::a_dead_worker_is_reported_and_replaced_on_the_next_request",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "analyse_worker::tests::a_full_queue_is_refused_at_once_and_the_accepted_requests_still_finish",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "analyse_worker::tests::a_request_gets_its_own_answer_and_a_failure_keeps_the_worker",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "analyse_worker::tests::a_request_past_its_deadline_has_its_child_ended_and_confirmed_before_the_next_gets_a_worker",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "analyse_worker::tests::a_strategy_is_passed_on_whole_and_a_bad_or_huge_one_is_refused_before_the_worker_hears_of_it",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "analyse_worker::tests::the_deadline_includes_the_wait_so_a_second_request_behind_a_long_one_times_out_on_the_same_clock",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "bars::join_tests::an_adjusted_fetch_refused_by_a_full_helper_queue_does_not_run_the_command_either",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "bars::join_tests::an_adjusted_fetch_whose_helper_expired_does_not_run_the_command_beside_it",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "bars::join_tests::the_adjusted_command_is_bound_by_the_fetchs_original_deadline_however_long_the_start_takes",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "bars::join_tests::the_adjusted_command_that_overruns_is_cut_at_the_deadline_it_was_given_and_ended",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "bars::join_tests::the_direct_fetch_after_a_helper_failure_is_given_only_what_is_left_of_the_deadline",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "bars::join_tests::the_helper_is_given_what_is_left_after_the_wait_for_a_place_in_the_adjusted_fetch",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "bounded::tests::a_real_command_that_overruns_is_ended_and_really_gone_before_its_place_is_free",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "flow_board::tests::a_board_refused_by_a_full_helper_queue_is_overloaded_and_starts_nothing",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "flow_board::tests::a_board_whose_helper_expired_does_not_start_the_module_a_second_time",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "flow_board::tests::the_board_module_run_after_a_helper_failure_gets_only_what_is_left_of_the_deadline",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "flow_board::tests::the_place_for_the_board_is_bounded_and_the_wait_for_it_counts_against_the_deadline",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "forensic_job::tests::a_report_of_the_known_schema_is_carried_whole_to_the_page",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "forensic_job::tests::the_jobs_own_error_is_shown_short_and_anything_else_is_a_fixed_message",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  4
+                  },
+                  {
+                      "id":  "forensic_job::tests::the_same_document_may_be_asked_twice_but_another_waits_and_the_arguments_reach_the_job",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "fundamentals::tests::a_module_that_overran_its_deadline_is_really_gone_and_its_place_is_free_afterwards",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "fundamentals::tests::a_request_refused_by_a_full_helper_queue_does_not_start_the_module_and_is_told_it_is_overloaded",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "fundamentals::tests::a_request_that_waits_past_its_deadline_for_a_place_gives_up_at_the_deadline_and_does_not_run_on_past_it",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "fundamentals::tests::a_request_whose_helper_expired_does_not_start_the_module_a_second_time",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "fundamentals::tests::an_export_returns_the_files_bytes_and_removes_the_file",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "fundamentals::tests::an_export_that_exits_with_code_2_is_no_data_and_one_that_fails_is_a_failure_and_a_good_one_is_read",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  3
+                  },
+                  {
+                      "id":  "fundamentals::tests::no_price_is_passed_when_the_warehouse_has_none",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "fundamentals::tests::the_child_gets_the_symbol_basis_store_and_price_and_its_document_comes_back",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "fundamentals::tests::the_childs_failures_become_fixed_errors",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  4
+                  },
+                  {
+                      "id":  "fundamentals::tests::the_helper_is_given_what_is_left_after_the_wait_for_a_place_not_the_whole_limit",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "fundamentals::tests::the_module_run_after_a_helper_failure_gets_only_what_is_left_of_the_deadline",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "fundamentals::tests::the_valuation_runs_its_own_module_with_the_same_arguments_and_is_refused_when_not_configured",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  3
+                  },
+                  {
+                      "id":  "fundamentals::tests::waiting_for_a_place_counts_against_the_deadline_and_the_wait_itself_is_bounded",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "helper::tests::a_call_past_the_queue_capacity_gets_none_at_once_and_the_accepted_calls_are_answered",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "helper::tests::a_command_that_failed_and_a_helper_that_could_not_start_leave_the_command_free_to_run",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "helper::tests::a_helper_answers_with_what_the_command_prints_and_a_failure_or_silence_is_none",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  2
+                  },
+                  {
+                      "id":  "helper::tests::a_refused_request_is_a_refusal_and_does_not_invite_the_command_to_be_run_again",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "helper::tests::after_shutdown_the_helpers_are_ended_and_a_request_is_refused_as_closed",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "helper::tests::an_expired_request_names_its_job_and_does_not_invite_the_command_to_be_run_again",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "helper::tests::the_callers_limit_covers_the_wait_for_a_free_helper",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "server::tests::a_client_that_disconnects_from_a_running_analysis_lets_it_finish_and_the_worker_keeps_its_child",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  },
+                  {
+                      "id":  "server::tests::a_client_that_disconnects_while_its_analysis_is_queued_cancels_the_queued_job_and_the_running_one_is_untouched",
+                      "min_python_processes":  1,
+                      "processes_when_derived":  1
+                  }
+              ],
+    "derived_total_processes":  62,
+    "full_run_min_processes":  31
+}
