@@ -9,6 +9,7 @@ from athena.brokers.audit import AuditLog
 from athena.brokers.desk import Desk, Refused
 from athena.brokers.model import Price
 from athena.brokers.paper import PaperBroker
+from athena.trading_calendar import TradingCalendar
 from test_brokers import CHARGES, Clock, req
 
 KEY = b"k" * 32
@@ -98,11 +99,14 @@ class LiveFake(PaperBroker):
 
 
 def live_desk(tmp_path, human_fn=None, pinned=True, key=KEY):
+    """A live desk as an owner would have to set it up since WP03: the daily-loss limit cannot be measured for a real broker, so the owner has chosen "advisory" (the default "enforced" refuses live
+    orders: see test_brokers_daily_loss), and the exchange's holiday calendar is loaded (without it a live order is refused)."""
     clock = Clock()
     quote = lambda s, e: Price(100.0, 99.9, 100.1, "stream", 0.5)  # noqa: E731
     broker = LiveFake(quote, tmp_path / "p.json", 100_000.0, CHARGES, clock)
-    limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",))
-    desk = Desk(broker, limits, quote, AuditLog(tmp_path / "a.jsonl", clock, key=key), safety.Tokens(tmp_path / "t.json", clock), clock, tmp_path / "KILL", CHARGES, human=human_fn, limits_pinned=lambda: pinned)
+    limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",), daily_loss_enforcement="advisory")
+    desk = Desk(broker, limits, quote, AuditLog(tmp_path / "a.jsonl", clock, key=key), safety.Tokens(tmp_path / "t.json", clock), clock, tmp_path / "KILL", CHARGES, human=human_fn, limits_pinned=lambda: pinned,
+                calendar=TradingCalendar(frozenset()))
     return desk, broker
 
 

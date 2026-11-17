@@ -7,11 +7,12 @@ preview, never for a looser limit. Every number has a conservative default, and 
   max_order_value      rupees one order may be worth
   max_orders_per_day   orders placed today (filled or open)
   max_deployed         rupees held in shares after a buy
-  max_daily_loss       once today's realised loss reaches this, no new order is allowed today
+  max_daily_loss       once today's realised loss reaches this, no new order is allowed today (paper only: a real broker reports no loss per order, so for it this is UNAVAILABLE)
+  daily_loss_enforcement  "enforced" (default): a live order is refused because that limit cannot be measured; "advisory": the owner accepts watching the broker's report, and the desk says it is not enforced
   max_price_deviation  a limit more than this share away from the live price is refused (a slipped decimal point)
   broker               live_delivery only: which adapter (groww, zerodha, angelone, icici, upstox)
   allowlist            symbols a live order may name; empty means none (paper ignores it)
-  trading hours        09:20 to 15:20 India time on weekdays; exchange holidays are not known here
+  trading hours        09:20 to 15:20 India time on trading days: the holiday file (.athena/broker/holidays.json) says which weekdays are holidays; without it paper trading uses weekdays and a live order is refused
 The kill switch is a file, `.athena/broker/KILL`: while it exists every order is refused. `python -m athena.brokers kill` creates it, `resume` removes it."""
 from __future__ import annotations
 
@@ -21,16 +22,19 @@ import os
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, fields
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from athena.brokers.model import Broker, Findings, OrderRequest, Price
+from athena.trading_calendar import TradingCalendar
 
 LIMITS_PATH = Path(".athena") / "broker.json"
 KILL_PATH = Path(".athena") / "broker" / "KILL"
 TOKENS_PATH = Path(".athena") / "broker" / "tokens.json"
 MODES = ("read_only", "paper", "live_delivery")
+ENFORCEMENT = ("enforced", "advisory")
+HOLIDAYS_PATH = Path(".athena") / "broker" / "holidays.json"  # {"dates": ["2026-10-02", ...]}: the exchange's trading holidays, kept by the owner (the exchange publishes them each year)
 IST = timezone(timedelta(hours=5, minutes=30))
 TOKEN_SECONDS = 120
 MAX_QUOTE_AGE = 10.0  # seconds: the exchange time on a quote may lag the clock by a few seconds, a minute-old price is not a live one
@@ -53,10 +57,15 @@ class Limits:
     close_time: str = "15:20"
     enforce_hours: bool = True
     broker: str = ""  # live_delivery only: the key of the adapter in athena.brokers.live (groww, zerodha, angelone, icici, upstox)
+    # A real broker reports no realised loss per order, so max_daily_loss cannot be measured for it. "enforced" (the default) refuses live orders for that reason; "advisory" is the owner's
+    # decision to watch the broker's own report instead, and the desk then says plainly that the limit is NOT enforced. Paper trading measures it and is unaffected.
+    daily_loss_enforcement: str = "enforced"
 
     def __post_init__(self) -> None:
         if self.mode not in MODES:
             raise LimitsError(f"mode must be one of {MODES}")
+        if self.daily_loss_enforcement not in ENFORCEMENT:
+            raise LimitsError(f"daily_loss_enforcement must be one of {ENFORCEMENT}")
         for name in ("max_order_value", "max_deployed", "max_daily_loss", "max_price_deviation"):
             if not isinstance(getattr(self, name), (int, float)) or getattr(self, name) < 0:
                 raise LimitsError(f"{name} must be a number that is not negative")
@@ -86,8 +95,23 @@ def _clock_time(text: str) -> time:
     return time(int(hour), int(minute))
 
 
-def check(request: OrderRequest, broker: Broker, limits: Limits, price: Price | None, now: datetime, kill_path: Path = KILL_PATH) -> Findings:
-    """Every rule on one request, as findings. The request is refused when any rule is a breach."""
+def load_holidays(path: Path | str = HOLIDAYS_PATH) -> TradingCalendar | None:
+    """The exchange's holidays from the owner's file, or None when they are not known (no file, or one that cannot be read). An unreadable file is an unknown calendar, never an empty one:
+    an empty list would say that every weekday is a trading day."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        return TradingCalendar(frozenset(date.fromisoformat(str(d)) for d in data["dates"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def check(
+    request: OrderRequest, broker: Broker, limits: Limits, price: Price | None, now: datetime, kill_path: Path = KILL_PATH, calendar: TradingCalendar | None = None
+) -> Findings:
+    """Every rule on one request, as findings. The request is refused when any rule is a breach.
+
+    `calendar` is the exchange's holidays. With it, a holiday is outside trading hours. Without it the answer is explicit: paper trading falls back to weekdays and says the holidays are not
+    loaded; a live order is refused, since an open market cannot be confirmed."""
     f = Findings()
     f.add("kill switch", not kill_path.exists(), "the kill switch is on: no order is allowed" if kill_path.exists() else "off")
     f.add("mode", limits.mode != "read_only", "orders are off (mode read_only)" if limits.mode == "read_only" else f"mode {limits.mode}")
@@ -96,8 +120,14 @@ def check(request: OrderRequest, broker: Broker, limits: Limits, price: Price | 
     placed = [o for o in broker.orders() if o.placed_at and datetime.fromisoformat(o.placed_at).astimezone(IST).date() == today]
     f.add("orders today", len(placed) < limits.max_orders_per_day, f"{len(placed)} placed today against a limit of {limits.max_orders_per_day}")
     lost = -sum(o.realised for o in placed if o.realised < 0)
-    if getattr(broker, "live", False):  # a real broker reports no realised result per order, so this rule would read Rs 0 for ever: say that it is not measured rather than pass it as if it were
-        f.add("daily loss", True, "not measured for a real broker (it reports no realised loss per order): watch your broker's own report; the order, count and deployed limits still apply")
+    if getattr(broker, "live", False):
+        # A real broker reports no realised result per order, so the loss cannot be measured here (and per-order zeros are not a measurement). It is UNAVAILABLE: a breach when the owner requires
+        # the limit ("enforced", the default), otherwise listed apart as not enforced. It is never shown as passed.
+        required = limits.daily_loss_enforcement == "enforced"
+        text = (f"a daily loss limit of Rs {limits.max_daily_loss:,.0f} cannot be measured or enforced for a real broker (it reports no realised loss per order)"
+                + ("; set \"daily_loss_enforcement\": \"advisory\" in the limits file to accept watching your broker's own report instead" if required
+                   else " and is NOT enforced: watch your broker's own report; the order, count and deployed limits still apply"))
+        f.add_unavailable("daily loss", text, blocking=required)
     else:
         f.add("daily loss", lost < limits.max_daily_loss if limits.max_daily_loss > 0 else lost == 0, f"Rs {lost:,.2f} realised loss today against a limit of Rs {limits.max_daily_loss:,.2f}")
     if request.side == "SELL" and getattr(broker, "live", False):  # long only: a real sale needs shares that are held and not already offered
@@ -125,8 +155,18 @@ def check(request: OrderRequest, broker: Broker, limits: Limits, price: Price | 
         f.add("live broker", bool(getattr(broker, "live", False)), "a live adapter is connected" if getattr(broker, "live", False) else "no live broker adapter is built in this release")
     if limits.enforce_hours:
         local = now.astimezone(IST)
-        inside = local.weekday() < 5 and _clock_time(limits.open_time) <= local.time().replace(second=0, microsecond=0) <= _clock_time(limits.close_time)
-        f.add("trading hours", inside, f"{local:%a %H:%M} India time" + ("" if inside else f" is outside {limits.open_time} to {limits.close_time} on weekdays"))
+        in_hours = _clock_time(limits.open_time) <= local.time().replace(second=0, microsecond=0) <= _clock_time(limits.close_time)
+        live_order = bool(getattr(broker, "live", False))
+        if calendar is not None:
+            day_open = calendar.is_trading_day(local.date())
+            inside = day_open and in_hours
+            why = "" if inside else (f" is an exchange holiday or weekend ({local.date().isoformat()})" if not day_open else f" is outside {limits.open_time} to {limits.close_time}")
+            f.add("trading hours", inside, f"{local:%a %H:%M} India time{why}")
+        elif live_order:
+            f.add("trading hours", False, f"{local:%a %H:%M} India time: the exchange holiday calendar is not loaded ({HOLIDAYS_PATH}), so whether the market is open today cannot be confirmed")
+        else:
+            inside = local.weekday() < 5 and in_hours
+            f.add("trading hours", inside, f"{local:%a %H:%M} India time" + ("" if inside else f" is outside {limits.open_time} to {limits.close_time} on weekdays") + " (exchange holiday calendar not loaded: weekdays only)")
     return f
 
 

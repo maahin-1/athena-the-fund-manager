@@ -7,6 +7,7 @@ from athena.brokers.desk import BrokerError, Desk
 from athena.brokers.live.base import BrokerApiError, LiveBroker, OutcomeUnknown
 from athena.brokers.model import Funds, Holding, Order, OrderRequest, Price
 from athena.brokers.paper import PaperBroker
+from athena.trading_calendar import TradingCalendar
 from test_brokers import CHARGES, Clock, req
 
 
@@ -91,8 +92,9 @@ def live_desk(tmp_path, broker, holdings=()):
     clock = Clock()
     quote = lambda s, e: Price(100.0, 99.9, 100.1, "stream", 0.5)  # noqa: E731
     broker._holdings = lambda: list(holdings)
-    limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",), max_order_value=100000.0, max_deployed=100000.0)
-    return Desk(broker, limits, quote, AuditLog(tmp_path / "a.jsonl", clock, key=b"k" * 32), safety.Tokens(tmp_path / "t.json", clock), clock, tmp_path / "KILL", CHARGES, human=lambda phrase, summary: True, limits_pinned=lambda: True)
+    limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",), max_order_value=100000.0, max_deployed=100000.0, daily_loss_enforcement="advisory")  # the owner's explicit choice (WP03): a real broker's daily loss cannot be measured
+    return Desk(broker, limits, quote, AuditLog(tmp_path / "a.jsonl", clock, key=b"k" * 32), safety.Tokens(tmp_path / "t.json", clock), clock, tmp_path / "KILL", CHARGES, human=lambda phrase, summary: True, limits_pinned=lambda: True,
+                calendar=TradingCalendar(frozenset()))
 
 
 def test_kill_cancels_every_order_it_can_and_says_which_it_could_not(tmp_path):
@@ -117,19 +119,21 @@ def test_a_real_sale_needs_shares_that_are_held_and_not_already_offered(tmp_path
     assert not desk.preview(req("SELL", 5, 101.0)).ok and desk.preview(req("SELL", 4, 101.0)).ok
 
 
-def test_the_daily_loss_rule_says_it_is_not_measured_for_a_real_broker(tmp_path):
+def test_the_daily_loss_rule_is_unavailable_for_a_real_broker_and_never_a_passed_check(tmp_path):
     desk = live_desk(tmp_path, Fake(tmp_path))
-    text = [t for r, ok, t in desk.preview(req()).findings.items if r == "daily loss"][0]
-    assert "not measured" in text
+    findings = desk.preview(req()).findings
+    assert not [r for r, ok, t in findings.items if r == "daily loss"]  # not among the checks, passed or failed
+    (rule, text), = findings.unavailable
+    assert rule == "daily loss" and "cannot be measured or enforced" in text and "NOT enforced" in text
 
 
 def test_a_buy_filled_today_counts_toward_the_deployed_cap_even_if_holdings_do_not_show_it_yet(tmp_path):
     b = Fake(tmp_path)
     b.book.append(Order("B1", "c", req(qty=100, price=101.0), status="filled", filled_quantity=100, average_price=100.0, placed_at="2026-10-26T04:30:00+00:00"))
     desk = live_desk(tmp_path, b)
-    desk.limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",), max_order_value=100000.0, max_deployed=10_500.0)
+    desk.limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",), max_order_value=100000.0, max_deployed=10_500.0, daily_loss_enforcement="advisory")
     assert not desk.preview(req("BUY", 5, 101.0)).ok  # 10,000 filled today + 505 = 10,505 is over
-    desk.limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",), max_order_value=100000.0, max_deployed=11_000.0)
+    desk.limits = safety.Limits(mode="live_delivery", broker="groww", allowlist=("SBIN",), max_order_value=100000.0, max_deployed=11_000.0, daily_loss_enforcement="advisory")
     assert desk.preview(req("BUY", 5, 101.0)).ok
 
 
