@@ -1,0 +1,8 @@
+{
+ "schema": "athena.snapshot-pointer/1",
+ "generation_id": "20261115T101500Z-8ad848",
+ "file": "w.snap.20261115T101500Z-8ad848.duckdb",
+ "manifest": "w.snap.20261115T101500Z-8ad848.json",
+ "size": 536576,
+ "sha1": "9b4d236ec33ad39de0430bab80987a6489ac33b3"
+}

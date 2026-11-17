@@ -1,0 +1,3 @@
+files=71 tests=684 passed=684 failed=0 pending=0
+guard v3 records: guard-installed, False=52
+denied fetch: 0; absolute: 0; other denied: 0; fs outside: 0

@@ -1,0 +1,27 @@
+﻿node : file:///C:/Users/LEGION/AppData/Local/Temp/claude/ed5e936a5cc19168/608bc073-258a-4e5c-b2f1-60f2be42ba55/scratchp
+ad/baseline/guard.setup.v3.mjs:26
+At line:6 char:1
++ node "$o\guard_selftest_v3.mjs" *> "$o\runs\$id\guard-selftest-v3-out ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (file:///C:/User...setup.v3.mjs:26:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+const deny = (kind, detail) => { hit(kind, detail, true); throw new Error(`blocked by the offline guard: ${kind} 
+${String(detail).slice(0, 120)}`); };
+                                                                ^
+
+Error: blocked by the offline guard: fs.existsSync C:/Users/LEGION/AppData/Local/Temp/guard-selftest-v3-8XB5N2/.env
+    at deny (file:///C:/Users/LEGION/AppData/Local/Temp/claude/ed5e936a5cc19168/608bc073-258a-4e5c-b2f1-60f2be42ba55/sc
+ratchpad/baseline/guard.setup.v3.mjs:26:65)
+    at check (file:///C:/Users/LEGION/AppData/Local/Temp/claude/ed5e936a5cc19168/608bc073-258a-4e5c-b2f1-60f2be42ba55/s
+cratchpad/baseline/guard.setup.v3.mjs:64:25)
+    at checkArgs (file:///C:/Users/LEGION/AppData/Local/Temp/claude/ed5e936a5cc19168/608bc073-258a-4e5c-b2f1-60f2be42ba
+55/scratchpad/baseline/guard.setup.v3.mjs:69:43)
+    at Object.existsSync (file:///C:/Users/LEGION/AppData/Local/Temp/claude/ed5e936a5cc19168/608bc073-258a-4e5c-b2f1-60
+f2be42ba55/scratchpad/baseline/guard.setup.v3.mjs:70:54)
+    at missing (file:///C:/Users/LEGION/AppData/Local/Temp/claude/ed5e936a5cc19168/608bc073-258a-4e5c-b2f1-60f2be42ba55
+/scratchpad/baseline/guard_selftest_v3.mjs:20:28)
+    at file:///C:/Users/LEGION/AppData/Local/Temp/claude/ed5e936a5cc19168/608bc073-258a-4e5c-b2f1-60f2be42ba55/scratchp
+ad/baseline/guard_selftest_v3.mjs:47:86
+
+Node.js v24.18.0

@@ -1,0 +1,1 @@
+collected 3150 ids now; 2 from test_snapshot_crosslang.py removed (the file was added after this run collected); 3148 ids saved. The run's own collect step wrote 0 ids because the shared -q collapsed the per-test lines (a defect of the script, kept as found).

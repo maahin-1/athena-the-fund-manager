@@ -1,0 +1,1 @@
+INVALID: the build took 1 second because Copy-Item kept the repo files' old timestamps and cargo reused the previous binary, which was the last mutation build (a mutated server.rs that drops the provenance field). The 3 failures are those mutation-caught tests. Kept as evidence; superseded by the next t5-rust run.

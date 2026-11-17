@@ -1,0 +1,8 @@
+17:23:39  regular Rust run: C:\Users\LEGION\AppData\Local\Temp\claude\ed5e936a5cc19168\608bc073-258a-4e5c-b2f1-60f2be42ba55\scratchpad\baseline\runs\20261115-172303-t5-rust-5
+test result: ok. 226 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 7.84s
+17:23:40  1 python writes: exit 0
+17:23:41  2 rust reads python: exit 0
+17:23:43  3 rust writes: exit 0
+17:23:44  4 python reads rust: exit 0
+files Python published: w.duckdb, w.snap.20261115T101500Z-8ad848.duckdb, w.snap.20261115T101500Z-8ad848.json, w.snap.current, w.snap.status.json
+files Rust published: w.duckdb, w.snap.20261115T101500Z-a1b2c3.duckdb, w.snap.20261115T101500Z-a1b2c3.json, w.snap.20261115T101501Z-a1b2c4.duckdb, w.snap.20261115T101501Z-a1b2c4.json, w.snap.current

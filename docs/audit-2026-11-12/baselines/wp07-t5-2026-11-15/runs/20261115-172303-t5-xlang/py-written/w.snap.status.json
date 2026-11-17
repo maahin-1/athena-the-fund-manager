@@ -1,0 +1,18 @@
+{
+ "schema": "athena.snapshot-status/1",
+ "updated_at": "2026-11-15T10:15:00Z",
+ "last_attempt": {
+  "at": "2026-11-15T10:15:00Z",
+  "outcome": "published",
+  "generation_id": "20261115T101500Z-8ad848"
+ },
+ "last_success": {
+  "at": "2026-11-15T10:15:00Z",
+  "generation_id": "20261115T101500Z-8ad848"
+ },
+ "current_generation": "20261115T101500Z-8ad848",
+ "cleanup": {
+  "removed": [],
+  "deferred": []
+ }
+}
