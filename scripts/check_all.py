@@ -36,7 +36,10 @@ def main(argv: list[str] | None = None) -> int:
     for name, command, cwd in steps(args.fast):
         started = time.time()
         shell = command[0] == "npm"  # npm is a script on Windows
-        result = subprocess.run(command, cwd=cwd, shell=shell, capture_output=True, text=True)
+        try:
+            result = subprocess.run(command, cwd=cwd, shell=shell, capture_output=True, text=True)
+        except OSError as exc:  # the tool is not installed or not on PATH: a failed step, and the steps after it still run
+            result = subprocess.CompletedProcess(command, 127, "", f"{command[0]} could not be started: {exc}")
         ok = result.returncode == 0
         tail = (result.stdout or result.stderr).strip().splitlines()[-1:] or [""]
         print(f"{'ok  ' if ok else 'FAIL'} {name:<24} {time.time() - started:5.0f}s  {tail[0][:100]}")
