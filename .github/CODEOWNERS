@@ -1,0 +1,49 @@
+# PROPOSED code ownership. A CODEOWNERS file asks for review; it enforces nothing by itself: the ruleset must also require code-owner review (SETTINGS-MATRIX.md, row R6).
+# The owner below is taken from the repository's own remote URL (github.com/maahin-1/...) and is UNVERIFIED as a GitHub login with write access: confirm it, and add a second trusted reviewer when one
+# exists, before turning on code-owner review (a sole owner cannot give an independent approval of their own change; see the solo-maintainer decision in README.md).
+# Later lines win. Sensitive paths are listed explicitly so that moving a line is itself a visible, reviewed change to this file.
+
+# Everything, by default
+*                                   @maahin-1
+
+# The repository's own controls: workflows, ownership, templates, security policy
+/.github/                           @maahin-1
+/SECURITY.md                        @maahin-1
+/CONTRIBUTING.md                    @maahin-1
+/.gitattributes                     @maahin-1
+/.gitignore                         @maahin-1
+
+# Access guard and agent instructions; audit policy and approved test exclusions (the named list of excluded Python modules lives under verify/)
+/AGENTS.md                          @maahin-1
+/scripts/block_env_access.py        @maahin-1
+/tests/test_env_access_hook.py      @maahin-1
+/docs/audit-2026-11-12/             @maahin-1
+/ci/                                @maahin-1
+
+# Dependency manifests and locks; install, build and start-up scripts
+/pyproject.toml                     @maahin-1
+/terminal/Cargo.toml                @maahin-1
+/terminal/Cargo.lock                @maahin-1
+/terminal/web/package.json          @maahin-1
+/terminal/web/package-lock.json     @maahin-1
+/scripts/                           @maahin-1
+
+# Broker and order execution
+/src/athena/brokers/                @maahin-1
+/src/athena/live/                   @maahin-1
+
+# Research, backtest and evaluation accounting
+/src/athena/backtest/               @maahin-1
+/src/athena/evaluation/             @maahin-1
+/src/athena/verdicts/               @maahin-1
+/src/athena/llm/                    @maahin-1
+
+# Financial storage, snapshots and migrations
+/src/athena/warehouse/              @maahin-1
+/src/athena/fundamentals/store.py   @maahin-1
+/src/athena/ops/snapshot.py         @maahin-1
+/terminal/src/snapshot.rs           @maahin-1
+
+# Process and lock ownership
+/src/athena/ops/                    @maahin-1
+/terminal/src/bounded.rs            @maahin-1
