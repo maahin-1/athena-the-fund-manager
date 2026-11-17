@@ -1,0 +1,12 @@
+{
+ "label": "mutation-python",
+ "total": 11,
+ "counts": {
+  "caught": 0,
+  "SURVIVED": 0,
+  "invalid": 11,
+  "pattern_error": 0,
+  "timeout": 0
+ },
+ "files_restored": true
+}

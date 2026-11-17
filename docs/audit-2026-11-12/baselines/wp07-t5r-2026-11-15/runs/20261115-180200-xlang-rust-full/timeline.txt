@@ -1,0 +1,6 @@
+2026-11-15 18:02:00  run 20261115-180200-xlang-rust-full
+2026-11-15 18:02:01  cargo test --offline --locked --no-run
+2026-11-15 18:02:20  build exit 0
+2026-11-15 18:02:23  cargo test --offline --locked
+2026-11-15 18:02:36  test exit 0
+2026-11-15 18:02:36  done

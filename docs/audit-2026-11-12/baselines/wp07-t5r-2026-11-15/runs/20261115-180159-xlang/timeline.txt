@@ -1,0 +1,8 @@
+18:02:36  regular Rust run: D:\projects\learn-project\athena-the-fund-manager\docs\audit-2026-11-12\baselines\wp07-t5r-2026-11-15\runs\20261115-180200-xlang-rust-full
+test result: ok. 243 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 11.63s
+18:02:37  1 python writes: exit 0
+18:02:38  2 rust reads python: exit 0
+18:02:39  3 rust writes: exit 0
+18:02:40  4 python reads rust: exit 0
+files Python published: w.duckdb, w.snap.20261115T101500Z-55d694.duckdb, w.snap.20261115T101500Z-55d694.json, w.snap.current, w.snap.status.json
+files Rust published: w.duckdb, w.snap.20261115T101500Z-a1b2c3.duckdb, w.snap.20261115T101500Z-a1b2c3.json, w.snap.20261115T101501Z-a1b2c4.duckdb, w.snap.20261115T101501Z-a1b2c4.json, w.snap.current

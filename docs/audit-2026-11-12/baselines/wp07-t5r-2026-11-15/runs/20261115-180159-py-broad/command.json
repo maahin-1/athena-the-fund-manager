@@ -1,0 +1,22 @@
+{
+ "cwd": "D:\\projects\\learn-project\\athena-the-fund-manager",
+ "argv": [
+  "d:\\projects\\learn-project\\athena-the-fund-manager\\.venv\\Scripts\\python.exe",
+  "-m",
+  "pytest",
+  "-p",
+  "no:cacheprovider",
+  "--junitxml=D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\baselines\\wp07-t5r-2026-11-15\\runs\\20261115-180159-py-broad\\junit.xml",
+  "-q",
+  "tests",
+  "--ignore=tests/test_dashboard_app.py",
+  "--ignore=tests/test_live_panel.py",
+  "--ignore=tests/test_market.py",
+  "--ignore=tests/test_verdict_panel.py",
+  "--ignore=tests/test_llm_basics.py",
+  "--ignore=tests/test_llm_probe.py",
+  "--ignore=tests/test_llm_router.py",
+  "--ignore=tests/test_angel_login.py",
+  "--ignore=tests/test_kite_login.py"
+ ]
+}

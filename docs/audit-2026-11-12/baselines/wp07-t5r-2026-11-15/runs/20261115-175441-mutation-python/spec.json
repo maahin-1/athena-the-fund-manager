@@ -1,0 +1,97 @@
+{
+ "cwd": "d:/projects/learn-project/athena-the-fund-manager",
+ "kind": "pytest",
+ "timeout": 600,
+ "command": [
+  "python",
+  "-m",
+  "pytest",
+  "-p",
+  "no:cacheprovider",
+  "-x",
+  "-q",
+  "tests/test_snapshot_integration.py",
+  "tests/test_snapshot_generations.py",
+  "tests/test_snapshot_provenance.py",
+  "tests/test_snapshot.py"
+ ],
+ "mutations": [
+  {
+   "id": "py-open-validated-no-fresh-pointer-retry",
+   "note": "T5-R1: a generation removed between validation and opening is not retried",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/generations.py",
+   "old": "    for attempt in range(2):\n        gen = resolve(src)\n        if attempt == 0 and after_validate is not None:",
+   "new": "    for attempt in range(1):\n        gen = resolve(src)\n        if attempt == 0 and after_validate is not None:"
+  },
+  {
+   "id": "py-open-failure-reported-as-vanished",
+   "note": "T5-R1: a present generation DuckDB cannot open is not reported as open_failed",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/generations.py",
+   "old": "            if gen.path.exists():\n                raise SnapshotUnavailable(OPEN_FAILED,",
+   "new": "            if False:\n                raise SnapshotUnavailable(OPEN_FAILED,"
+  },
+  {
+   "id": "py-warehouse-swallows-snapshot-failure",
+   "note": "T5-R1: the snapshot's reason is dropped and the real file's bare error raised",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/warehouse.py",
+   "old": "                    raise WarehouseUnavailable(*refused) from exc",
+   "new": "                    raise exc"
+  },
+  {
+   "id": "py-snapshot-detail-dropped",
+   "note": "T5-R1: the failure payload loses what disagreed",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/warehouse.py",
+   "old": "\"snapshot_detail\": snapshot.detail}",
+   "new": "\"snapshot_detail\": \"\"}"
+  },
+  {
+   "id": "py-warehouse-unavailable-not-an-ioexception",
+   "note": "T5-R1: exception compatibility: callers that catch duckdb.IOException",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/warehouse.py",
+   "old": "class WarehouseUnavailable(duckdb.IOException):",
+   "new": "class WarehouseUnavailable(Exception):"
+  },
+  {
+   "id": "py-chart-helper-exits-zero-on-no-data",
+   "note": "T5-R1: no data must not be an empty success",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/chart_bars.py",
+   "old": "        return 2",
+   "new": "        return 0"
+  },
+  {
+   "id": "py-unchanged-does-not-check-the-hash",
+   "note": "T5-R2: a damaged same-sized generation is advertised as unchanged",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/generations.py",
+   "old": "            resolve(src, verify_hash=True)\n            return PublishResult(\"unchanged\"",
+   "new": "            resolve(src, verify_hash=False)\n            return PublishResult(\"unchanged\""
+  },
+  {
+   "id": "py-publish-does-not-remember-its-own-hash",
+   "note": "T5-R2: the healthy unchanged fast path hashes the whole file again",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/generations.py",
+   "old": "_VERIFIED[(str(a.data), st.st_size, st.st_mtime_ns)] = sha1.hexdigest()",
+   "new": "pass"
+  },
+  {
+   "id": "py-failed-attempt-forgets-the-damage",
+   "note": "T5-R2: a failed replacement does not say the generation in place is unusable",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/generations.py",
+   "old": "\"generation_attempted\": gen, \"current_unusable\": unusable}",
+   "new": "\"generation_attempted\": gen, \"current_unusable\": None}"
+  },
+  {
+   "id": "py-lock-recognised-by-bare-substring",
+   "note": "T5-R5: the review's own failure: any path containing 'lock' is a writer",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/generations.py",
+   "old": "    return \"locked_by_writer\" if any(p in text for p in LOCK_PHRASES) else \"main_unreadable\"",
+   "new": "    return \"locked_by_writer\" if \"lock\" in str(error).lower() else \"main_unreadable\""
+  },
+  {
+   "id": "py-no-lock-is_recognised-at-all",
+   "note": "T5-R5: a real lock message is no longer a writer",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/src/athena/warehouse/generations.py",
+   "old": "    return \"locked_by_writer\" if any(p in text for p in LOCK_PHRASES) else \"main_unreadable\"",
+   "new": "    return \"main_unreadable\""
+  }
+ ]
+}
