@@ -1,5 +1,5 @@
 {
- "note": "Allowlist manifest for verify/compare_manifest.py: every file the maintenance branch adds or changes, with the SHA-256 of the verified source bytes (looked up by source_path or path under the backup trees). A file is accepted only if the candidate holds what the declared line-ending policy makes of those bytes. Additions, changes AND removals are checked against the reference: the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip). A baseline file absent from the candidate fails unless it is listed under deleted (none is planned). Protected names never appear here. Revision after the first hosted run: M06 (one follow-up maintenance commit) adds the guard v4 files, the checkout-identity script and its tests, and changes ci.yml, ci/expected-counts.json, web_gate.ps1, final_gate.ps1 and test_final_gate.ps1; this file is self_exempt because it changes in that commit and cannot hold its own hash.",
+ "note": "Allowlist manifest for verify/compare_manifest.py: every file the maintenance branch adds or changes, with the SHA-256 of the verified source bytes (looked up by source_path or path under the backup trees). A file is accepted only if the candidate holds what the declared line-ending policy makes of those bytes. Additions, changes AND removals are checked against the reference: the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip). A baseline file absent from the candidate fails unless it is listed under deleted (none is planned). Protected names never appear here. Revision after the first hosted run: M06 (one follow-up maintenance commit) adds the guard v4 files, the checkout-identity script and its tests, and changes ci.yml, ci/expected-counts.json, web_gate.ps1, final_gate.ps1 and test_final_gate.ps1; Revision after the dependency remediation: M07 adds terminal/Cargo.lock and terminal/Cargo.toml (the two commits that update the locked dependencies and the follow-up that narrows the duckdb requirement). This file is self_exempt because it changes in that commit and cannot hold its own hash.",
  "baseline_head": "37f1fc19846a178083d9ced7a7a25aeffe65b1f9",
  "compared_against": "the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip)",
  "branch": "maintenance",
@@ -297,6 +297,16 @@
    "path": "docs/audit-2026-11-12/git-prep/expected-maintenance.json",
    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
    "group": "M06 (self_exempt: the file cannot hold its own hash)"
+  },
+  {
+   "path": "terminal/Cargo.lock",
+   "sha256": "326a434b829e76c870ae4ad8149330dd18be7f9cac90234c1323060fc03c35fe",
+   "group": "M07 (dependency remediation: rustls 0.23.46, duckdb 1.10506.1, zip 9.0.5)"
+  },
+  {
+   "path": "terminal/Cargo.toml",
+   "sha256": "43bfcba84e17dfc4a212e107928693a5a98faf504acae5fa31a39149bd3b4dcd",
+   "group": "M07 (duckdb requirement narrowed to ~1.10506.1)"
   }
  ],
  "deleted": [],
