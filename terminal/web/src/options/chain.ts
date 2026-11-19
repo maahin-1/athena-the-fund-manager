@@ -27,6 +27,8 @@ export interface Quote {
   deliveryDelayMs?: number;
   /** Packets for the contract that were discarded because their exchange time was older than the held quote's. */
   outOfOrder?: number;
+  /** When the server last discarded such a packet (its receipt, ms in the server's clock); absent when none was, or from a server that does not say. */
+  outOfOrderAt?: number;
 }
 
 export interface StrikeRow {

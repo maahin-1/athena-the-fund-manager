@@ -180,12 +180,17 @@ describe('R1 end to end: real packets, decoded and stored by the Rust code, read
     expect(d.inputs.timeFaults.map((x) => [x.field, x.reason, x.origin])).toEqual([['packetTime', 'future', 'server'], ['tradeTime', 'implausible', 'server']]);
   });
 
-  it('a packet time known, then none, then an older one: the older packet was discarded by the store and the page labels the count', async () => {
+  it('a packet time known, then none, then an older one: the older packet was discarded by the store and the page notes it while the discard is recent (policy 4: a note, not a label)', async () => {
     const c = fixture().known_missing_older;
     expect(c.rows[0].ooo).toBe(1);
-    const { d } = await judged(c, '43', LIVE(c.now));
-    expect(d.flags).toEqual(['out_of_order_discarded']);
-    expect(d.state).toBe('labelled');
+    const at = c.rows[0].oooAt!;
+    expect(c.now - at).toBeGreaterThan(60_000); // the store's case is judged 100 s after its discard
+    const recent = await judged({ ...c, now: at + 1_000 }, '43', LIVE(at + 1_000));
+    expect(recent.d.flags).toEqual(['out_of_order_discarded']);
+    expect(recent.d.state).toBe('ok');
+    const later = await judged(c, '43', LIVE(c.now));
+    expect(later.d.flags).toEqual([]);
+    expect(later.d.state).toBe('ok');
   });
 
   it('replayed packets (received now, stamped yesterday) are the last session; a silent feed is the last session for another reason; a live one is live', async () => {

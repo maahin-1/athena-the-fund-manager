@@ -25,8 +25,8 @@ const flagsOf = (q: Partial<Quote>, c: Partial<AssessContext> = {}) => assessQuo
 
 // ---- the four probes of the review, and the edges of the declared limits ----
 describe('T3-C1: an invalid receipt or packet time has a consequence on its own contract', () => {
-  it('the policy declares the consequences, and they are the ones applied (version 3)', () => {
-    expect(POLICY_V3.version).toBe(3);
+  it('the policy declares the consequences, and they are the ones applied (version 4)', () => {
+    expect(POLICY_V3.version).toBe(4);
     const c = POLICY_V3.consequences as Record<string, string>;
     expect([c.invalid_receipt_time, c.invalid_packet_time, c.session_unverified]).toEqual(['label', 'label', 'label']);
     for (const f of ['invalid_receipt_time', 'invalid_packet_time', 'session_unverified']) expect(wording(f as QualityFlag), `${f} has words for the cell and the badge`).toMatch(/\w/);

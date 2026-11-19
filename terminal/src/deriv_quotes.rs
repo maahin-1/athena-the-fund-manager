@@ -61,6 +61,9 @@ pub struct DerivQuote {
     /// Packets for this contract discarded because their exchange time was older than the held quote's.
     #[serde(rename = "ooo")]
     pub out_of_order: u32,
+    /// When the server last discarded such a packet (its receipt, milliseconds since the epoch); null when none was. The count is for the whole session; this says whether a discard is recent.
+    #[serde(rename = "oooAt")]
+    pub out_of_order_ms: Option<i64>,
 }
 
 /// A time a packet carried that was not used: `field` is `t` (the packet's time) or `lt` (the last trade's), `value` as received, `reason` `implausible` (not an epoch time in the stream's units)
@@ -131,6 +134,7 @@ impl DerivQuote {
             book_seen_ms: None,
             delivery_delay_ms: None,
             out_of_order: 0,
+            out_of_order_ms: None,
         }
     }
 
@@ -259,6 +263,7 @@ impl DerivQuotes {
         if older {
             if let Some(mut kept) = held {
                 kept.out_of_order += 1;
+                kept.out_of_order_ms = Some(now_ms);
                 g.rev += 1;
                 let rev = g.rev;
                 g.quotes.insert(key, (kept, rev));
@@ -294,6 +299,7 @@ impl DerivQuotes {
                     _ => held.delivery_delay_ms,
                 };
                 quote.out_of_order = held.out_of_order;
+                quote.out_of_order_ms = held.out_of_order_ms;
             }
         }
         g.marks.insert(key.clone(), mark);
@@ -502,11 +508,13 @@ mod tests {
         store.update_at(T0 + 12_000, 2, at("10", T0 + 4_000, 9_000, 8_995, 9_005)); // an older snapshot arriving after a newer one
         let q = held(&store, "10");
         assert_eq!((q.last, q.bid, q.exchange_ms, q.received_ms, q.book_seen_ms), (Some(100.0), Some(99.95), Some(T0 + 10_000), Some(T0 + 100), Some(T0 + 100)), "the older packet is not applied: {q:?}");
-        assert_eq!(q.out_of_order, 1);
+        assert_eq!((q.out_of_order, q.out_of_order_ms), (1, Some(T0 + 12_000)), "counted, with when the discard happened");
         assert_eq!(store.changed(&[key.clone()], &mut sent).len(), 1, "the page learns of the discard once");
         store.update_at(T0 + 13_000, 2, at("10", T0 + 10_000, 10_100, 10_095, 10_105)); // the same exchange time is not older: a book and price update
         let q = held(&store, "10");
-        assert_eq!((q.last, q.received_ms, q.out_of_order), (Some(101.0), Some(T0 + 13_000), 1));
+        assert_eq!((q.last, q.received_ms, q.out_of_order, q.out_of_order_ms), (Some(101.0), Some(T0 + 13_000), 1, Some(T0 + 12_000)), "a newer packet keeps the count and the time of the last discard");
+        let v = serde_json::to_value(&q).unwrap();
+        assert_eq!((v["ooo"].clone(), v["oooAt"].clone()), (serde_json::json!(1), serde_json::json!(T0 + 12_000)));
     }
 
     #[test]
@@ -515,6 +523,7 @@ mod tests {
         store.update_at(T0 + 100, 2, at("11", T0, 10_000, 9_995, 10_005));
         let v = serde_json::to_value(held(&store, "11")).unwrap();
         assert_eq!((v["r"].clone(), v["bs"].clone(), v["t"].clone(), v["dly"].clone(), v["ooo"].clone()), (serde_json::json!(T0 + 100), serde_json::json!(T0 + 100), serde_json::json!(T0), serde_json::Value::Null, serde_json::json!(0)));
+        assert_eq!(v["oooAt"], serde_json::Value::Null, "no discard, no discard time");
     }
 
     // ---- T3 review corrections (R1, R2, R6 server side): real packets through the decoder into the store; the packet's time, the last trade's time and the sequence are three things ----

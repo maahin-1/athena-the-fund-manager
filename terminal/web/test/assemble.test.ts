@@ -32,6 +32,16 @@ describe('the keys a chain needs prices for', () => {
     expect(keys.some((k) => k.kind === 'put' && k.strike === 23_500)).toBe(false);
     expect(chainKeys(structure(false)).some((k) => k.kind === 'future')).toBe(false);
   });
+
+  it('come most needed first: the future, then the strikes nearest the price outwards (the middle strike when no price is known)', () => {
+    const keys = chainKeys(structure(), 25_140);
+    expect(keys[0].kind).toBe('future');
+    expect(keys.slice(1, 5).map((k) => `${k.kind} ${k.strike}`)).toEqual(['call 25100', 'put 25100', 'call 25200', 'put 25200']);
+    const strikes = keys.slice(1).map((k) => Math.abs(k.strike - 25_140));
+    expect(strikes).toEqual([...strikes].sort((a, b) => a - b));
+    const unknown = chainKeys(structure());
+    expect(unknown[1].strike).toBe(25_000); // the middle of 23,500..26,500
+  });
 });
 
 describe('a chain assembled from a synthetic market', () => {

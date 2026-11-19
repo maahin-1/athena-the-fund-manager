@@ -341,7 +341,10 @@ export class OptionsView {
     this.note.textContent = 'loading…';
     try {
       const structure = await this.api.chain(underlying, expiry);
-      const [quotes, spot] = await Promise.all([this.feed.quotes(chainKeys(structure)), this.feed.spot(underlying)]);
+      // the price first, so the contracts nearest the money are asked for first (a live feed streams only so many)
+      const spot = await this.feed.spot(underlying);
+      const before = this.view && this.structure?.underlying === underlying ? (this.view.forward ?? this.view.spot) : null;
+      const quotes = await this.feed.quotes(chainKeys(structure, spot ?? before));
       if (mine !== this.token) return;
       this.structure = structure;
       this.view = assemble(structure, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
@@ -469,7 +472,8 @@ export class OptionsView {
     this.refreshing = true;
     const mine = this.token;
     try {
-      const [quotes, spot] = await Promise.all([this.feed.quotes(chainKeys(s)), this.feed.spot(s.underlying)]);
+      const spot = await this.feed.spot(s.underlying);
+      const quotes = await this.feed.quotes(chainKeys(s, this.view?.forward ?? spot));
       if (mine !== this.token) return;
       this.view = assemble(s, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
       this.paintChain(false);

@@ -22,7 +22,7 @@ const fwd = (o: Partial<ForwardDecision> = {}): ForwardDecision => ({
 describe('one contract: its book and its last trade are judged separately', () => {
   it('a fresh two-sided book with a recent trade is ok, read from the middle, and records its inputs and the policy', () => {
     const d = assessQuote(quote(), ctx());
-    expect(d).toMatchObject({ state: 'ok', flags: [], priceBasis: 'mid', book: 'fresh', trade: 'recent', policy: { id: 'option_quote_quality', version: 3 } }); // (T3-C1, intentional change: version 3)
+    expect(d).toMatchObject({ state: 'ok', flags: [], priceBasis: 'mid', book: 'fresh', trade: 'recent', policy: { id: 'option_quote_quality', version: 4 } }); // (T3-C1 made it 3; 4 is the out-of-order window)
     expect(d.inputs).toMatchObject({ now: NOW, ageBase: NOW, receivedAt: NOW - 1_000, bookSeenAt: NOW - 1_000, tradeTime: NOW - 1_000, bookTimeBasis: 'book_seen', bookAgeMs: 1_000, tradeAgeMs: 1_000, bid: 99.5, ask: 100.5 });
   });
 
@@ -72,10 +72,19 @@ describe('one contract: its book and its last trade are judged separately', () =
     expect(assessQuote(quote({ bid: null, time: NOW - 20 * MIN }), ctx({ policy: lax }))).toMatchObject({ state: 'withheld', flags: ['old_trade_price'], priceBasis: 'last' });
   });
 
-  it('a delayed trade and a discarded out-of-order packet are labelled, not withheld', () => {
+  it('a delayed trade is labelled, not withheld; a discarded out-of-order packet is a note (policy 4): recorded, the contract still fit', () => {
     expect(assessQuote(quote({ deliveryDelayMs: 60_000 }), ctx())).toMatchObject({ state: 'labelled', flags: ['delayed_feed'] });
     expect(assessQuote(quote({ deliveryDelayMs: POLICY_V3.maxDeliveryDelayMs }), ctx()).state, 'at the limit').toBe('ok');
-    expect(assessQuote(quote({ outOfOrder: 2 }), ctx())).toMatchObject({ state: 'labelled', flags: ['out_of_order_discarded'] });
+    expect(POLICY_V3.consequences.out_of_order_discarded).toBe('note');
+    expect(assessQuote(quote({ outOfOrder: 2 }), ctx())).toMatchObject({ state: 'ok', flags: ['out_of_order_discarded'], labelled: [], withheld: [] });
+  });
+
+  it('(version 4) a discarded out-of-order packet labels the contract only while the discard is recent; with no discard time it is labelled', () => {
+    expect(POLICY_V3.outOfOrderWindowMs).toBe(60_000);
+    expect(assessQuote(quote({ outOfOrder: 2, outOfOrderAt: NOW - POLICY_V3.outOfOrderWindowMs }), ctx()).flags, 'at the limit').toEqual(['out_of_order_discarded']);
+    expect(assessQuote(quote({ outOfOrder: 2, outOfOrderAt: NOW - POLICY_V3.outOfOrderWindowMs - 1 }), ctx()).state, 'an old discard').toBe('ok');
+    expect(assessQuote(quote({ outOfOrder: 2 }), ctx()).flags, 'age unknown').toEqual(['out_of_order_discarded']);
+    expect(assessQuote(quote({ outOfOrder: 0, outOfOrderAt: NOW }), ctx()).state, 'no discard').toBe('ok');
   });
 
   it('a quote with no book time at all (an older server, a test feed) is labelled, never judged fresh, and its trade time is not used for the book', () => {
@@ -182,7 +191,7 @@ describe('a chain: one fresh option beside a stale wing or a stale future', () =
     expect(v.quality.status).toBe('ok');
     expect(v.quality.forward).toMatchObject({ source: 'future', state: 'ok' });
     for (const r of v.rows) expect([r.call?.iv != null, r.put?.iv != null, r.call?.greeks != null]).toEqual([true, true, true]);
-    expect(v.quality.policy).toEqual({ id: 'option_quote_quality', version: 3 });
+    expect(v.quality.policy).toEqual({ id: 'option_quote_quality', version: 4 });
     expect(rowAt(v, 24_200).call?.quality.inputs.now).toBe(NOW);
   });
 
@@ -299,7 +308,7 @@ describe('a chain: one fresh option beside a stale wing or a stale future', () =
 
   it('every row records the inputs and the policy that produced its decision', () => {
     const d = rowAt(view(), 24_000).put!.quality;
-    expect(d.policy).toEqual({ id: 'option_quote_quality', version: 3 });
+    expect(d.policy).toEqual({ id: 'option_quote_quality', version: 4 });
     // (review: version 2 adds the valid book time used, how far ahead of the clock it was, the packet time and every time that was not valid)
     expect(Object.keys(d.inputs).sort()).toEqual(['ageBase', 'ask', 'bid', 'bookAgeMs', 'bookAheadMs', 'bookAt', 'bookSeenAt', 'bookTime', 'bookTimeBasis', 'deliveryDelayMs', 'forwardAt', 'last', 'now', 'outOfOrder', 'packetTime', 'receivedAt', 'spreadPct', 'syncGapMs', 'timeFaults', 'tradeAgeMs', 'tradeTime']);
   });

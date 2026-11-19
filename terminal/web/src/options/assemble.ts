@@ -62,14 +62,17 @@ export interface AssembleQuality {
 
 const refOf = (s: ChainStructure, c: { token: string; lot: number }): Pick<ContractKey, 'ref'> => (s.segment ? { ref: { segment: s.segment, token: c.token, lot: c.lot } } : {});
 
-/** The feed keys of everything a chain needs prices for. */
-export function chainKeys(s: ChainStructure): ContractKey[] {
+/** The feed keys of everything a chain needs prices for, most needed first: the future (the forward is read from it), then the strikes nearest `centre` (the price of the underlying when
+ *  known, else the middle strike), outwards. A live feed can stream only so many contracts; this order is what decides which. */
+export function chainKeys(s: ChainStructure, centre: number | null = null): ContractKey[] {
   const keys: ContractKey[] = [];
-  for (const row of s.strikes) {
+  if (s.future) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'future', strike: 0, ...refOf(s, s.future) });
+  const mid = centre !== null && Number.isFinite(centre) ? centre : (s.strikes[Math.floor(s.strikes.length / 2)]?.strike ?? 0);
+  const rows = [...s.strikes].sort((a, b) => Math.abs(a.strike - mid) - Math.abs(b.strike - mid) || a.strike - b.strike);
+  for (const row of rows) {
     if (row.call) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'call', strike: row.strike, ...refOf(s, row.call) });
     if (row.put) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'put', strike: row.strike, ...refOf(s, row.put) });
   }
-  if (s.future) keys.push({ underlying: s.underlying, expiry: s.expiry, kind: 'future', strike: 0, ...refOf(s, s.future) });
   return keys;
 }
 

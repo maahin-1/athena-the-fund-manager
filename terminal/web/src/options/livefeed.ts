@@ -76,7 +76,7 @@ export function quoteOf(r: LiveQuoteRow, lot = 1): Quote {
   const oi = Math.round(r.oi / per);
   return {
     last: r.last, bid: r.bid, ask: r.ask, volume: Math.round(r.volume / per), oi, oiChange: oiChange(oi, r.oip), time: raw(r.lt), packetTime: raw(r.t),
-    receivedAt: raw(r.r), bookSeenAt: raw(r.bs), deliveryDelayMs: raw(r.dly), outOfOrder: r.ooo ? r.ooo : undefined, timeFaults: r.tf?.length ? r.tf : undefined,
+    receivedAt: raw(r.r), bookSeenAt: raw(r.bs), deliveryDelayMs: raw(r.dly), outOfOrder: r.ooo ? r.ooo : undefined, outOfOrderAt: raw(r.oooAt), timeFaults: r.tf?.length ? r.tf : undefined,
   };
 }
 
@@ -101,18 +101,21 @@ export function liveFeed(o: LiveOptions): LiveFeed {
     observed.set(`${row.seg}:${row.token}`, { receivedAt: typeof row.r === 'number' ? row.r : null, eventTime: typeof row.t === 'number' ? row.t : null });
   }
 
-  /** Contracts named on the socket, with when each was last asked for. */
-  const asked = new Map<string, number>();
+  /** Contracts named on the socket, with when each was last asked for and its place in that ask. */
+  const asked = new Map<string, { at: number; rank: number }>();
+  /** The order last named, so an unchanged list is not named again. */
+  let lastNamed = '';
   function name(refs: string[]): void {
     const t = now();
-    let added = false;
-    for (const r of refs) {
-      if (!asked.has(r)) added = true;
-      asked.set(r, t);
+    refs.forEach((r, rank) => asked.set(r, { at: t, rank }));
+    for (const [r, a] of asked) if (t - a.at > PUSH_KEEP_MS) asked.delete(r);
+    // the order is the priority when the socket's limit is reached: the contracts of the newest ask first, in the order asked (the caller puts the ones nearest the money first), then older asks
+    const ordered = [...asked].sort((a, b) => b[1].at - a[1].at || a[1].rank - b[1].rank).map(([r]) => r);
+    const named = ordered.join(',');
+    if (named !== lastNamed) {
+      lastNamed = named;
+      o.push?.needDerivs(OWNER, ordered);
     }
-    let dropped = false;
-    for (const [r, at] of asked) if (t - at > PUSH_KEEP_MS) (asked.delete(r), (dropped = true));
-    if (added || dropped) o.push?.needDerivs(OWNER, [...asked.keys()]);
   }
 
   const serverNow = (): number => now() + skew;
@@ -130,6 +133,7 @@ export function liveFeed(o: LiveOptions): LiveFeed {
       observed.clear();
       if (asked.size === 0) return;
       asked.clear();
+      lastNamed = '';
       o.push?.needDerivs(OWNER, []);
     },
     async probe() {

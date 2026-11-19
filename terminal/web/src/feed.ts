@@ -48,6 +48,8 @@ export interface DerivRow {
   bs?: number | null;
   dly?: number | null;
   ooo?: number;
+  /** When the server last discarded such a packet (ms, server clock); absent when none was. */
+  oooAt?: number;
 }
 
 /** A tick older than this is the last session's, not a measure of the feed's delay. */
@@ -173,9 +175,11 @@ export class Feed {
       this.lastSent = key;
       this.socket.send(JSON.stringify({ type: 'watch', symbols }));
     }
+    // over the server's limit, the contracts kept are the first named, in each panel's own order (its priority), never the first in alphabetical order: sorting first dropped whichever contracts
+    // happened to have the larger token numbers, the at-the-money pair included. The list sent is sorted, so the same set is the same message.
     const all = new Set<string>();
     this.derivNeeds.forEach((set) => set.forEach((k) => all.add(k)));
-    const keys = [...all].sort().slice(0, MAX_DERIVS).join(',');
+    const keys = [...all].slice(0, MAX_DERIVS).sort().join(',');
     if (keys !== this.lastDerivs) {
       this.lastDerivs = keys;
       this.socket.send(JSON.stringify({ type: 'derivs', keys }));

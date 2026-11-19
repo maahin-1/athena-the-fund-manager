@@ -19,7 +19,7 @@ const ctx = (o: Partial<AssessContext> = {}): AssessContext => ({ now: NOW, sess
 // ---- R6: a time in the future is not a fresh time ----
 describe('R6: future-dated and invalid times are never counted as fresh', () => {
   it('the declared limits are the ones the tests below and the server rely on (the server\'s `MAX_EXCHANGE_AHEAD_MS` is 60,000 as well: a Rust test pins it)', () => {
-    expect([POLICY_V3.version, POLICY_V3.maxReceiptAheadMs, POLICY_V3.maxExchangeAheadMs, POLICY_V3.maxSyncGapMs, POLICY_V3.maxBookAgeMs]).toEqual([3, 5_000, 60_000, 5 * MIN, 15 * MIN]); // (T3-C1, intentional change: version 3 declares the consequences of an invalid receipt time, an invalid packet time and an unverified session)
+    expect([POLICY_V3.version, POLICY_V3.maxReceiptAheadMs, POLICY_V3.maxExchangeAheadMs, POLICY_V3.maxSyncGapMs, POLICY_V3.maxBookAgeMs]).toEqual([4, 5_000, 60_000, 5 * MIN, 15 * MIN]); // (T3-C1, intentional change: version 3 declares the consequences of an invalid receipt time, an invalid packet time and an unverified session)
   });
 
   it('a book time an hour after the decision is invalid: withheld, never ok, with the value and the reason recorded', () => {
@@ -207,8 +207,10 @@ describe('R4: forward construction keeps its inputs\' labels and checks that its
     const f = v.quality.forward;
     expect(f).toMatchObject({ source: 'future', state: 'labelled' });
     expect(f.flags).toEqual(['forward_input_labelled']);
-    expect(f.inputFlags).toEqual(expect.arrayContaining(['wide_book', 'delayed_feed', 'out_of_order_discarded']));
+    expect(f.inputFlags).toEqual(expect.arrayContaining(['wide_book', 'delayed_feed']));
+    expect(f.inputFlags, '(policy 4) a discard is a note on the future, not a label it passes on').not.toContain('out_of_order_discarded');
     expect(f.inputs).toEqual([expect.objectContaining({ role: 'future', strike: null, state: 'labelled' })]);
+    expect(f.inputs[0].flags, 'still recorded on the input itself').toContain('out_of_order_discarded');
     expect(v.quality.status).toBe('labelled');
     expect(v.quality.required[0]).toMatchObject({ input: 'forward', state: 'labelled', flags: ['forward_input_labelled'] });
     const atm = rowAt(v, 24_200).call!;
@@ -229,10 +231,18 @@ describe('R4: forward construction keeps its inputs\' labels and checks that its
     expect(v.quality.status).toBe('labelled');
   });
 
-  it('no input warning disappears because the input became a forward: every label of every input is in the forward\'s record', () => {
+  it('no input warning disappears because the input became a forward: every label of every input is in the forward\'s record (a note stays on the input)', () => {
     const f = decideForward({ now: NOW, session: live, source: 'future', value: 24_200, used: [quote({ bid: 20, ask: 60, deliveryDelayMs: 45_000, outOfOrder: 1, time: NOW + 60 * MIN })], rejected: [] });
     expect(f.state).toBe('labelled');
-    expect([...f.inputFlags].sort()).toEqual(['delayed_feed', 'invalid_trade_time', 'out_of_order_discarded', 'wide_book']);
+    expect([...f.inputFlags].sort()).toEqual(['delayed_feed', 'invalid_trade_time', 'wide_book']);
+    expect(f.inputs[0].flags).toContain('out_of_order_discarded');
+  });
+
+  it('(policy 4) a future whose only event is a discarded late packet gives a fit forward, and the chain is not marked', () => {
+    const f = decideForward({ now: NOW, session: live, source: 'future', value: 24_200, used: [quote({ outOfOrder: 30, outOfOrderAt: NOW - 1_000 })], rejected: [] });
+    expect(f.state).toBe('ok');
+    expect(f.inputFlags).toEqual([]);
+    expect(f.inputs[0]).toMatchObject({ state: 'ok', flags: ['out_of_order_discarded'] });
   });
 
   it('call and put of a parity pair 10 minutes apart, each under the 15-minute limit, are not in step: the forward is withheld', () => {
@@ -286,8 +296,8 @@ describe('R4: forward construction keeps its inputs\' labels and checks that its
     expect(oneSided.inputs.map((i) => i.state)).toEqual(['ok', 'withheld']);
   });
 
-  it('the decision carries the policy that judged it, version 3', () => {
-    expect(view().quality.policy).toEqual({ id: 'option_quote_quality', version: 3 });
-    expect(view().quality.forward.policy).toEqual({ id: 'option_quote_quality', version: 3 });
+  it('the decision carries the policy that judged it, version 4', () => {
+    expect(view().quality.policy).toEqual({ id: 'option_quote_quality', version: 4 });
+    expect(view().quality.forward.policy).toEqual({ id: 'option_quote_quality', version: 4 });
   });
 });

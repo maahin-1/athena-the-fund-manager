@@ -50,7 +50,8 @@ export type QualityFlag =
   | 'atm_side_absent'
   | 'no_atm';
 
-export type Consequence = 'withhold' | 'label';
+/** `withhold`: no volatility or Greeks. `label`: shown, marked. `note`: recorded on the decision (its flags and the cell) but not a mark: for an event that did not change the quote. */
+export type Consequence = 'withhold' | 'label' | 'note';
 
 export interface QualityPolicy {
   id: 'option_quote_quality';
@@ -71,13 +72,20 @@ export interface QualityPolicy {
   maxReceiptAheadMs: number;
   /** The same for an **exchange-clock** time (a trade time, a book time a source gives): another clock, so a wider tolerance. */
   maxExchangeAheadMs: number;
+  /** A discarded out-of-order packet is recorded (with the policy's consequence for it) while the last discard is at most this old (server clock). The discard never changed the quote; an old one says
+   *  nothing about it now. A quote that gives no discard time is recorded whenever it has a discard (the age cannot be told). */
+  outOfOrderWindowMs: number;
   /** What each failure does to the volatility and Greeks of the contract it affects. The consequence is the only thing that differs between labelling and withholding. */
   consequences: Record<QualityFlag, Consequence>;
 }
 
 export const POLICY_V3: QualityPolicy = {
   id: 'option_quote_quality',
-  version: 3,
+  // version 4: an out-of-order discard is a note, recorded while it is recent (`outOfOrderWindowMs`), not a label. The server keeps the newer packet, so a discard never changes the quote; the live
+  // broker stream interleaves its packet types and has about one discard per update on a busy future (measured 19 Nov 2026: 23 to 49 a minute against ~55 updates), so as a label it marked every
+  // option of every chain all session (through the forward). Version 3 labelled it for the rest of the session.
+  version: 4,
+  outOfOrderWindowMs: 60_000,
   maxBookAgeMs: 15 * 60_000,
   maxTradeAgeMs: 15 * 60_000,
   maxSpreadPct: 0.25,
@@ -99,7 +107,7 @@ export const POLICY_V3: QualityPolicy = {
     invalid_packet_time: 'label',
     old_trade_price: 'withhold',
     delayed_feed: 'label',
-    out_of_order_discarded: 'label',
+    out_of_order_discarded: 'note',
     session_observation: 'label',
     session_unverified: 'label',
     no_forward: 'withhold',
@@ -376,7 +384,8 @@ export function assessQuote(q: Quote | null, ctx: AssessContext): QuoteDecision 
 
   const delay = orNull(q?.deliveryDelayMs);
   if (delay !== null && delay > policy.maxDeliveryDelayMs) flags.push('delayed_feed');
-  if ((q?.outOfOrder ?? 0) > 0) flags.push('out_of_order_discarded');
+  const discardAt = orNull(q?.outOfOrderAt);
+  if ((q?.outOfOrder ?? 0) > 0 && (discardAt === null || ctx.now - discardAt <= policy.outOfOrderWindowMs)) flags.push('out_of_order_discarded');
   if (receiptInvalid) flags.push('invalid_receipt_time');
   if (packetInvalid) flags.push('invalid_packet_time');
   if (ctx.session.state === 'last_session') flags.push('session_observation');
