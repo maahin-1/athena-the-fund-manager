@@ -5,16 +5,45 @@
 ![Rust](https://img.shields.io/badge/rust-axum-000000?logo=rust)
 ![TypeScript](https://img.shields.io/badge/typescript-web%20terminal-3178C6?logo=typescript&logoColor=white)
 ![DuckDB](https://img.shields.io/badge/storage-DuckDB-FFF000?logo=duckdb&logoColor=black)
+![Tests](https://img.shields.io/badge/tests-4%2C600%2B%20offline-brightgreen)
+![Data](https://img.shields.io/badge/data-free%20public%20sources%20only-blue)
 
 **Athena is a self-hosted, multi-agent AI research desk for Indian equities and ETFs.** A team of specialist LLM analysts (valuation, moat and quality, earnings, technicals, news, derivatives flow) reads figures that are computed in code from free NSE data. A council debates any disagreement, and a judge writes one dated, auditable verdict. The verdicts show up in a fast, Bloomberg-style trading terminal with live prices, an options chain with Greeks, charts, a fundamentals page and a stock screener.
 
 It is built for one independent investor who wants an institutional-style research process at home. It is **not** investment advice, it places **no** orders, and it has **not** yet been shown to beat the market. See [Honest status](#honest-status).
+
+![Athena trading terminal: live SBIN chart with order-book depth, quote, technicals gauge and seasonality](assets/terminal.png)
+
+### Why Athena is different
+
+- **Code computes, models interpret.** Every ratio, growth rate and valuation is arithmetic done in code. The language models only read the results, and a check rejects any number they cite that is not in the data.
+- **Valuation on Aswath Damodaran's method.** Cost of capital, industry benchmarks, country risk, distress and option dilution follow his published workbooks, and every input is listed on the page. See [Built on Damodaran's valuation method](#built-on-damodarans-valuation-method).
+- **Free data only.** NSE and BSE archives, the exchange's XBRL filings, AMFI, Yahoo Finance and Damodaran's datasets. No paid data vendor. See [Free data only](#free-data-only-no-paid-vendors).
+- **Negative results are published.** The analysts, a time-series forecasting model and 21 valuation rules were tested against plain baselines. None showed reliable skill, so conviction is capped. See [What we tested, and what did not work](#what-we-tested-and-what-did-not-work).
+- **Built like production software.** More than 4,600 offline tests across Python, Rust and TypeScript, point-in-time data so nothing from the future leaks in, and a CI gate that pins the test counts.
+
+## Screenshots
+
+Captured from a running terminal on 26 October 2026 with live Angel One prices. Nothing is mocked.
+
+**Research.** The stored verdict with one card per analyst, each quoting the figures it used. The top screenshot above is the live terminal: chart with indicators, order-book depth, quote, tape, technicals gauge and ten-year seasonality.
+
+![Research page with verdict and analyst cards](assets/research-verdict.png)
+
+**Fundamentals and valuation.** Peers ranked against the stock, then a value *range* (bear, base, bull) with the return the market price implies and the alternatives that move the answer most.
+
+![Fundamentals page with price history, peer table and valuation range](assets/fundamentals-valuation.png)
+
+The verdict in the Research screenshot says "conviction 14 (raw 60)" on purpose: the analysts have not yet beaten a plain baseline in tests, so the conviction shown is scaled down by their measured trust. That is the design working, not a bug.
 
 ---
 
 ## Contents
 
 - [What Athena does](#what-athena-does)
+- [Built on Damodaran's valuation method](#built-on-damodarans-valuation-method)
+- [Free data only, no paid vendors](#free-data-only-no-paid-vendors)
+- [What we tested, and what did not work](#what-we-tested-and-what-did-not-work)
 - [How it works](#how-it-works)
 - [Design principles](#design-principles)
 - [Quick start](#quick-start)
@@ -52,6 +81,89 @@ It is built for one independent investor who wants an institutional-style resear
 - **Walk-forward tests:** momentum, reversal and low-volatility tests with costs applied, so any analyst has a base rate to beat. The analysts are also scored on their hit rate, information coefficient and settled excess return.
 - **Derivatives flow:** five years of F&O bhavcopy. Long or short build-up, short covering, open-interest spikes, put-call shifts and max-pain drift are scored against each stock's own history.
 - **Document search:** BM25 plus optional embeddings with a published-by-date filter. A red-flag review keeps a finding only if its quote is really in the cited passage.
+
+---
+
+## Built on Damodaran's valuation method
+
+Athena's valuation does not use a black box or a model's opinion. It follows the published method and workbooks of [Aswath Damodaran](https://pages.stern.nyu.edu/~adamodar/) (NYU Stern), step by step, in code that is tested against his own spreadsheets. All credit for the method is his. Athena applies it to Indian companies and shows its working.
+
+```mermaid
+flowchart LR
+    D1[Industry workbooks: betas, margins, growth, multiples] --> R[(Reference store, dated)]
+    D2[Country risk workbook: India premium and default spread] --> R
+    D3[US 10-year yield, tax rate, inflation inputs] --> R
+    F[(Company filings: XBRL)] --> C
+    R --> C[Cost of capital in rupees]
+    C --> V[Three-scenario DCF or excess-return model]
+    F --> V
+    V --> O[Value range: bear, base, bull]
+    O --> S[Implied return at today's price, plus the alternatives that move it most]
+```
+
+| Step | What the code does | Where |
+| --- | --- | --- |
+| **Industry benchmarks** | Reads his India industry workbooks (the "Industry Averages" sheet) and uses his aggregates, such as industry market value over total earnings, not the average of company P/Es. A figure outside what a multiple can sensibly be is set aside and flagged. | `src/athena/reference/damodaran.py`, `src/athena/valuation/industry.py` |
+| **Country risk** | Loads his country-risk workbook (equity risk premium, country risk premium, default spread). Each revision is kept under its own date, and a valuation for a past date reads the newest one published on or before it. | `src/athena/reference/country.py` |
+| **Cost of capital** | His steps, worked in dollars and turned into rupees with the two inflation rates: risk-free rate (US 10-year yield less the US default spread), equity premium (mature market plus India), the industry's unlevered beta corrected for cash and relevered at the company's own debt to equity, and cost of debt from a synthetic rating based on interest cover. A low and a high case move every driver by its band. | `src/athena/valuation/wacc.py`, `capital.py`, `ratings.py` |
+| **Cash-flow model** | A ten-year free-cash-flow-to-the-firm valuation in the shape of his `fcffsimpleginzu.xlsx`. A golden test feeds the workbook's sample company through the code and checks each of the ten years. | `src/athena/valuation/dcf.py` |
+| **Distress and options** | Blends the going-concern value with a failure value using his default-rate tables, and values employee options the way his `employeeoption.xls` does. Both are written inputs shown on the page, not forecasts. | `distress.py`, `dilution.py` |
+| **Banks and lenders** | Valued by the excess-return model on equity, because a lender's debt is raw material and free cash flow means nothing for it. | `scenarios.py` |
+| **Sensitivities** | Shows what the base value would be with the India premium left out, with rupee inflation one point higher, and with no rupee conversion, so a reader sees what each assumption is worth. | `sensitivity.py` |
+
+**Two safeguards stand on top of it.**
+- **No silent defaults.** A figure the filings or the reference store do not hold is listed as missing and no value is given. The only defaults are dated inputs you can read and change (`python -m athena.reference input`).
+- **A cross-check against his tables.** Athena builds its own industry tables from the NSE filings as they stood on a given day, in the same way his aggregates are built, and writes a divergence report against his India tables (`python -m athena.valuation own-divergence`). Nothing switches over to Athena's own tables automatically; the report is for the owner to read first.
+
+**Using his data.** Athena does not ship his workbooks. Download the India industry workbooks and the country-risk workbook from his site into `.athena/damodaran`, then run `python -m athena.reference load` and `python -m athena.reference audit`. Without them, the valuation page says what is missing rather than guessing.
+
+---
+
+## Free data only, no paid vendors
+
+Athena runs on public data. The only cost is the optional language-model calls, and free tiers (NVIDIA NIM, OpenRouter) work.
+
+| Source | What it feeds |
+| --- | --- |
+| NSE daily archive files (bhavcopy) | Raw prices for about 2,700 symbols from 2010 in the DuckDB warehouse, adjusted for splits and bonuses by Athena's own corporate-action code. |
+| NSE F&O bhavcopy | Five years of futures and options history for the derivatives-flow analyst and the options views. |
+| Exchange XBRL filings | Quarterly and annual income statement, balance sheet and cash flow for about 2,300 companies, plus shareholding patterns and filing documents. |
+| NSE index files and corporate actions | Index levels and P/E, the event calendar, symbol renames and the price-adjustment events. |
+| Damodaran's datasets | Industry benchmarks and country risk for the valuation (see above). |
+| Yahoo Finance | Intraday bars. |
+| US 10-year Treasury yield | The risk-free input for the cost of capital (`python -m athena.reference rates`). |
+| Angel One SmartAPI | The live price and options stream, read-only. A free Angel One account is enough. |
+
+Every dataset carries an as-of date and a coverage label. A stale dataset produces a refusal rather than a quiet guess, and an analyst abstains when its data is too thin.
+
+---
+
+## What we tested, and what did not work
+
+Most AI-trading projects show only the wins. Athena measures every claim against a plain baseline, and these are the results so far. The analyst figures are read from the calibration file the verdicts use.
+
+**Analysts against "give the same answer every time".** Each analyst's accuracy at 63, 126 and 252 trading days, against the best single answer given for every case:
+
+| Analyst | Cases (63 / 126 / 252 d) | Accuracy at 63 / 126 / 252 d | Best fixed answer |
+| --- | --- | --- | --- |
+| Earnings intelligence | 612 / 564 / 564 | 38.6% / 33.2% / 32.3% | 39.2% / 37.8% / 38.5% |
+| Moat and quality | 740 / 620 / 580 | 33.4% / 33.1% / 39.3% | 40.0% / 40.2% / 38.1% |
+| Quant and technical | 1,269 at 63 d | 30.6% at 63 d | 35.2% at 63 d |
+
+Only one cell edges above its baseline (moat and quality at 252 days, 39.3% against 38.1%). The rest are at or below it.
+
+| Test | Result | What we did about it |
+| --- | --- | --- |
+| Technical analyst on stored prices (40 stocks, blind, 2,400 runs) | 30 / 32 / 33% against about 35% for the best fixed answer. It never says bullish. | Treated like the other analysts: its conviction is scaled by measured trust. |
+| **Kronos-small**, a time-series forecasting model | 35 / 34% against 39%. Rank correlation with later returns is about zero (+0.001 at 63 days, -0.084 at 126). | Kept out of the verdicts. |
+| **21 valuation rule variants**, point-in-time, seven dates from December 2022 to December 2025 | None, not even plain earnings yield or book-to-price, ranks later returns reliably (rank correlation about +0.02 at six months). The median price is about 2.3 times the model's base value. | Rules are chosen on first principles and shown as ranges. They are never tuned to close the gap with the price. |
+| **14 forensic accounting measures**, two start dates | Weak and inconclusive. A pre-registered cash-flow composite was not replicated at the second date. | Weights and bands are not tuned. The one clean test left is a forward log, first snapshot taken on 6 November 2026 and not gradable before 6 November 2027. |
+
+**What the design does about it.**
+- Conviction is capped at 50 and scaled by each analyst's measured trust, so a raw 60 is shown as 14 until the analysts beat a baseline in tests.
+- The council runs beside the blended verdict and is promoted only if it beats the blend on settled outcomes.
+- Values are ranges, and the page shows the return the market price implies, so a reader can disagree with the model on its own terms.
+- Samples are small and the periods overlap. Read these as "no evidence of skill yet", not as proof that none exists.
 
 ---
 
@@ -95,7 +207,7 @@ flowchart LR
 - **Ranges, not points.** Values are given as low, base and high, and conviction is capped until it is calibrated against outcomes.
 - **Point-in-time honesty.** A backtest or verdict only sees data published by its as-of date, so nothing from the future leaks in.
 - **Honest coverage.** Missing data is named, and a stale dataset produces a refusal rather than a quiet guess.
-- **No order placement.** The broker connection is read-only market data.
+- **Research never places orders.** Verdicts and the live stream are read-only. An optional broker desk exists, but it is off by default, paper trading comes first, and a real order needs limits you write by hand and a confirmation typed at a console.
 - **Generic fixes.** A defect is fixed for every symbol, never patched for one ticker.
 
 ---
@@ -184,12 +296,12 @@ Market data comes from free public sources: NSE and BSE archives, the exchange's
 ## Testing
 
 ```powershell
-python -m pytest -q                      # about 1,800 Python tests
-cd terminal; cargo test                  # about 185 Rust tests
-cd terminal\web; npx vitest run          # about 800 web tests
+python -m pytest -q                      # about 3,200 Python tests
+cd terminal; cargo test                  # about 420 Rust tests
+cd terminal\web; npx vitest run          # about 1,060 web tests
 ```
 
-The tests run offline against fixtures, so they need no network access and no keys.
+The tests run offline against fixtures, so they need no network access and no keys. A CI gate pins the exact Python and Rust counts (`ci/expected-counts.json`), so a test cannot be dropped without the change being explained. The Damodaran golden tests need his workbooks and are skipped when they are absent.
 
 ---
 
@@ -197,7 +309,7 @@ The tests run offline against fixtures, so they need no network access and no ke
 
 Athena is a working research tool, still at the research stage.
 
-- **Not yet shown to beat the market:** on the verdicts and logs held so far, no analyst has shown statistically meaningful skill against a plain baseline. That is why conviction is capped and damped until calibration says otherwise.
+- **Not yet shown to beat the market:** on the verdicts and logs held so far, no analyst has shown statistically meaningful skill against a plain baseline. That is why conviction is capped and damped until calibration says otherwise. The numbers are in [What we tested, and what did not work](#what-we-tested-and-what-did-not-work).
 - **Council on trial:** the council runs beside the blended verdict and does not replace it. It will only be promoted if it beats the blend on settled outcomes.
 - **Cost estimates unverified:** trading-cost rates follow the broker's published schedule. They still have to be checked against a real contract note.
 - **Indian markets only:** coverage is Indian equities, ETFs and F&O. Bonds and mutual funds are planned.
@@ -213,7 +325,7 @@ Athena is an open-source, self-hosted AI fund manager and research terminal for 
 Yes. The code is open source under the MIT licence and the market data comes from free public sources. The only costs are optional LLM API calls, and the free NVIDIA NIM and OpenRouter tiers work.
 
 ### Does Athena trade automatically or place orders?
-No. The broker connection only reads market data. Athena produces research verdicts; any trade is placed by a person, elsewhere.
+No. Athena produces research verdicts and its live connection only reads market data. An optional broker desk exists but is off by default (paper trading first, hand-written limits, a confirmation typed at a console), and none of its adapters has been tried with a real account yet. See [docs/brokers/README.md](docs/brokers/README.md).
 
 ### Which markets and instruments does it cover?
 NSE-listed stocks and ETFs, plus index and stock futures and options (NFO) for the derivatives views. Bonds and mutual funds are on the roadmap.
