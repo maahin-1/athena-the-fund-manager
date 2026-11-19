@@ -88,6 +88,10 @@ fn parse_row(row: &Value) -> Option<Contract> {
         return None;
     };
     let name = row.get("name")?.as_str()?.trim().to_string();
+    // a contract the list gives no underlying for (seen on BFO) cannot be chosen by name; kept, it became a nameless underlying the page picked first
+    if name.is_empty() {
+        return None;
+    }
     let expiry = NaiveDate::parse_from_str(row.get("expiry")?.as_str()?.trim(), "%d%b%Y").ok()?;
     let strike = if kind == Kind::Future { None } else { Some(number(row, "strike")? / 100.0) };
     Some(Contract {
@@ -446,6 +450,21 @@ mod tests {
         let f = t.by_token("1").unwrap();
         assert_eq!((f.kind, f.strike, f.lot), (Kind::Future, None, 65));
         assert!((f.tick - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_contract_with_no_underlying_name_is_not_kept_and_lists_no_nameless_underlying() {
+        let rows = json!([
+            row("1", "360ONE26NOV1180CE", "", "26NOV2026", "118000.000000", "500", "OPTSTK", "BFO", "5.000000"),
+            row("2", "360ONE26NOV26FUT", "  ", "26NOV2026", "-1.000000", "500", "FUTSTK", "BFO", "5.000000"),
+            row("3", "NIFTY24NOV2623000CE", "NIFTY", "24NOV2026", "2300000.000000", "65", "OPTIDX", "NFO", "5.000000")
+        ]);
+        let t = Derivs::from_rows(&rows, d(2026, 10, 19));
+        assert_eq!(t.len(), 1);
+        assert!(t.by_token("1").is_none() && t.by_token("2").is_none());
+        let names: Vec<String> = t.underlyings("ALL")["underlyings"].as_array().unwrap().iter().map(|u| u["underlying"].as_str().unwrap().to_string()).collect();
+        assert_eq!(names, vec!["NIFTY"]);
+        assert_eq!(Derivs::compact_rows(&rows, d(2026, 10, 19)).as_array().unwrap().len(), 1);
     }
 
     #[test]

@@ -285,10 +285,12 @@ export class OptionsView {
       } catch (e) {
         return this.failed(e, () => void this.start(underlying));
       }
-      this.datalist.replaceChildren(...this.underlyings.filter((u) => !u.odd && u.options).map((u) => new Option(`${u.underlying} · ${u.class}`, u.underlying)));
+      this.datalist.replaceChildren(...this.underlyings.filter((u) => u.underlying && !u.odd && u.options).map((u) => new Option(`${u.underlying} · ${u.class}`, u.underlying)));
     }
-    const wanted = (underlying ?? '').toUpperCase();
-    const pick = this.underlyings.find((u) => u.underlying === wanted && u.options) ?? this.underlyings.find((u) => u.underlying === (this.underlying || this.settings.underlying) && u.options) ?? this.underlyings.find((u) => u.options && !u.odd);
+    // an empty name is no request: it must not match a nameless row, so the page falls back to the one shown or saved (NIFTY by default)
+    const wanted = (underlying ?? '').trim().toUpperCase();
+    const named = (name: string) => (name ? this.underlyings.find((u) => u.underlying === name && u.options) : undefined);
+    const pick = named(wanted) ?? named(this.underlying || this.settings.underlying) ?? this.underlyings.find((u) => u.underlying && u.options && !u.odd);
     if (!pick) {
       this.note.textContent = 'No option contracts are listed.';
       return;
@@ -305,7 +307,7 @@ export class OptionsView {
   /** Choose an underlying: its expiries, then the chain of the first. An underlying that is not listed says so and leaves the page as it was. */
   private async choose(text: string): Promise<void> {
     const name = text.trim().toUpperCase();
-    const info = this.underlyings.find((u) => u.underlying === name);
+    const info = name ? this.underlyings.find((u) => u.underlying === name) : undefined;
     if (!info || !info.options) {
       this.note.textContent = name ? `${name} has no option contracts in the list.` : '';
       return;
