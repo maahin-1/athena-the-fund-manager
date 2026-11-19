@@ -1,0 +1,28 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "fundamentals::",
+  "snapshot::",
+  "search::"
+ ],
+ "mutations": [
+  {
+   "id": "rs-failure-written-over-served",
+   "note": "T5-F1 (rerun after the survivor of mutation-rust-f: a regression for a symbol the held closes lack was added): a failed refresh with closes held is registered as what was served",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "                    if cache.is_none() {\n                        crate::snapshot::record_served(",
+   "new": "                    if true {\n                        crate::snapshot::record_served("
+  }
+ ]
+}

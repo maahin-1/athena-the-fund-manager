@@ -15,6 +15,7 @@ import duckdb
 from athena.contracts import Bar
 from athena.pit.bhavcopy import SOURCE, Row
 from athena.price_integrity.actions import CorporateAction, parse_subject
+from athena.warehouse import generations
 from athena.warehouse.screen import SCREEN_COLUMNS
 
 DEFAULT_PATH = Path(".athena") / "warehouse.duckdb"
@@ -57,27 +58,53 @@ def weekdays(first: date, last: date) -> list[date]:
 
 
 def snapshot_path(path: str | Path) -> Path:
-    """`.athena/warehouse.duckdb` -> `.athena/warehouse.snap.duckdb`."""
+    """`.athena/warehouse.duckdb` -> `.athena/warehouse.snap.duckdb`: the single-file copy of the earlier scheme. Nothing reads it any more; the readers use a validated generation
+    (`athena.warehouse.generations`), and the next publication removes this file."""
     return Path(path).with_suffix(".snap.duckdb")
 
 
-def _open(path: str | Path, read_only: bool, wait_seconds: float, sleep: Callable[[float], None]) -> duckdb.DuckDBPyConnection:
+class WarehouseUnavailable(duckdb.IOException):
+    """The real file could not be opened and no validated snapshot generation could replace it. It is still a `duckdb.IOException` (callers that catch that keep working), and its message starts with the real
+    file's own error. `failure` carries both reasons: `main_reason` (`main_missing`, `locked_by_writer`, `main_unreadable`) with `main_error`, and `snapshot_reason` (one of the reasons in
+    `athena.warehouse.generations`, or `open_failed`) with `snapshot_detail`. The terminal's reader reports the same two reasons in the same names."""
+
+    def __init__(self, main: BaseException, main_reason: str, snapshot: generations.SnapshotUnavailable):
+        text = str(main)
+        super().__init__(f"{text}\n[athena] no validated snapshot to fall back to: {snapshot.reason}" + (f" ({snapshot.detail})" if snapshot.detail else ""))
+        self.failure = {"main_reason": main_reason, "main_error": text[:300], "snapshot_reason": snapshot.reason, "snapshot_detail": snapshot.detail}
+
+
+def _open_with(path: str | Path, read_only: bool, wait_seconds: float, sleep: Callable[[float], None]) -> tuple[duckdb.DuckDBPyConnection, dict[str, Any]]:
     """DuckDB lets one process write, or many read, never both. A process that finds the file in use for the other purpose waits
-    and tries again for up to `wait_seconds` (a long job holds the file only for its short writes), then raises."""
+    and tries again for up to `wait_seconds` (a long job holds the file only for its short writes), then raises.
+
+    Returns the connection and its provenance: the real file (`source: main`), or a validated snapshot generation with the reason the real file could not be used. A generation that cannot be
+    validated is never used: the busy file stays an error, and it is a `WarehouseUnavailable` that says why the snapshot could not stand in as well as why the file could not be opened."""
     waited = 0.0
+    refused: tuple[BaseException, str, generations.SnapshotUnavailable] | None = None
     while True:
         try:
-            return duckdb.connect(str(path), read_only=read_only)
-        except duckdb.IOException:
-            if read_only and snapshot_path(path).is_file():  # a long job is writing: read the copy it saved when it began, at once rather than after waiting (see athena.ops.snapshot)
+            con = duckdb.connect(str(path), read_only=read_only)
+            return con, (generations.main_provenance(path) if str(path) != ":memory:" else {"source": "memory", "source_path": ":memory:", "generation_id": "memory", "generation_basis": "observed",
+                                                                                           "snapshot_created_at": None, "data_as_of": None, "fallback_reason": None, "validated": False, "snapshot_status": None})
+        except duckdb.IOException as exc:
+            if read_only:  # a long job is writing: read the generation it published when it began, at once rather than after waiting (see athena.ops.snapshot)
+                reason = generations.classify_main_failure(path, exc)
                 try:
-                    return duckdb.connect(str(snapshot_path(path)), read_only=True)
-                except duckdb.IOException:
-                    pass
+                    con, gen = generations.open_validated(path)  # validated and opened as one step, with a fresh-pointer retry if cleanup removes it in between
+                    return con, generations.snapshot_provenance(path, gen, reason)
+                except generations.SnapshotUnavailable as unavailable:
+                    refused = (exc, reason, unavailable)  # no validated generation: the busy file stays an error the caller reports, with this reason beside it
             if waited >= wait_seconds:
+                if refused is not None:
+                    raise WarehouseUnavailable(*refused) from exc
                 raise
             sleep(1.0)
             waited += 1.0
+
+
+def _open(path: str | Path, read_only: bool, wait_seconds: float, sleep: Callable[[float], None]) -> duckdb.DuckDBPyConnection:
+    return _open_with(path, read_only, wait_seconds, sleep)[0]
 
 
 class Warehouse:
@@ -87,7 +114,7 @@ class Warehouse:
         """`read_only` for charts, screens and reports, which may run beside a job that writes in short bursts: open, read, close."""
         if str(path) != ":memory:" and not read_only:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._con = _open(path, read_only, wait_seconds, sleep)
+        self._con, self.provenance = _open_with(path, read_only, wait_seconds, sleep)  # which source answered: the file, or a validated snapshot generation and why
         if not read_only:
             self._create_tables()
 
@@ -139,6 +166,10 @@ class Warehouse:
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS index_members (index_name VARCHAR NOT NULL, symbol VARCHAR NOT NULL, industry VARCHAR, "
             "fetched_at TIMESTAMP NOT NULL, PRIMARY KEY (index_name, symbol))"
+        )
+        self._con.execute(  # WP04: `index_members` is replaced at each refresh; this keeps every snapshot, so a past date can read the membership observed by then
+            "CREATE TABLE IF NOT EXISTS index_member_versions (index_name VARCHAR NOT NULL, symbol VARCHAR NOT NULL, industry VARCHAR, observed_at TIMESTAMP NOT NULL, "
+            "PRIMARY KEY (index_name, symbol, observed_at))"
         )
         self._con.execute(
             "CREATE TABLE IF NOT EXISTS events (symbol VARCHAR NOT NULL, event_date DATE NOT NULL, purpose VARCHAR NOT NULL, description VARCHAR, "
@@ -331,6 +362,10 @@ class Warehouse:
         """The index's closing level by trading date: the benchmark series the risk and outcome figures read."""
         return {d: c for d, c in self._con.execute("SELECT day, close FROM index_bars WHERE index_name = ? AND close IS NOT NULL ORDER BY day", [name]).fetchall()}
 
+    def index_open_close(self, name: str) -> dict[date, tuple[float | None, float | None]]:
+        """The index's (open, close) by trading date, either of which can be missing: the benchmark series for outcomes measured from an open (see `athena.timing.ENTRY_POLICY`)."""
+        return {d: (o, c) for d, o, c in self._con.execute("SELECT day, open, close FROM index_bars WHERE index_name = ? ORDER BY day", [name]).fetchall()}
+
     def index_valuation(self, name: str) -> dict[date, dict[str, float]]:
         """The index's P/E, P/B and dividend yield by trading date, in the shape the fundamentals packet reads. Days the exchange
         gives no figure for are left out."""
@@ -478,11 +513,25 @@ class Warehouse:
             self._con.execute("DELETE FROM index_members")
             if data:
                 self._con.executemany("INSERT OR REPLACE INTO index_members VALUES (?, ?, ?, ?)", data)
+                self._con.executemany("INSERT OR REPLACE INTO index_member_versions VALUES (?, ?, ?, ?)", data)
             self._con.execute("COMMIT")
         except Exception:
             self._con.execute("ROLLBACK")
             raise
         return len(data)
+
+    def members_as_of(self, index_name: str, day: date) -> set[str] | None:
+        """The symbols the index held in the newest snapshot this warehouse took on or before `day` (end of day), or None when it had taken none by then. Membership before the first snapshot is
+        not known and is not read from today's table. A snapshot is the list as the exchange gave it when it was fetched, not the date the changes took effect."""
+        try:
+            at = self._con.execute(
+                "SELECT max(observed_at) FROM index_member_versions WHERE index_name = ? AND observed_at < ?", [index_name, datetime.combine(day + timedelta(days=1), datetime.min.time())]
+            ).fetchone()[0]
+            if at is None:
+                return None
+            return {r[0] for r in self._con.execute("SELECT symbol FROM index_member_versions WHERE index_name = ? AND observed_at = ?", [index_name, at]).fetchall()}
+        except duckdb.CatalogException:
+            return None
 
     def symbol_industries(self) -> dict[str, str]:
         """symbol -> its industry as the largest index that holds it gives it (the broad lists carry the exchange's current classification, the

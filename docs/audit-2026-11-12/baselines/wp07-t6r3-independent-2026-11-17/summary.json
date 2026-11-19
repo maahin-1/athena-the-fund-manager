@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-17",
+  "disposition": "T6 open; T8 paused",
+  "saved_reviewer_probes_passed": 9,
+  "new_reviewer_probes_failed": 3,
+  "combined_reviewer_exit": 101,
+  "existing_fake_tests_passed": 88,
+  "collected_ids": 101,
+  "excluded_real_python_tests": 1,
+  "source_sha256": "E34CD7CB2D2041641C270405AEFD9B650AF1A0D21F6DD5F4DF2E2625743AC744",
+  "full_406_suite_rerun": false,
+  "findings": {
+    "runtime_reproduced": [
+      "U1 concurrent shutdown waiter hangs",
+      "U2 deadline cleanup omitted from shutdown count",
+      "U3 direct admission journal.blocking missing"
+    ],
+    "source_inspected": [
+      "U4 managed startup and shutdown owner registration race"
+    ]
+  },
+  "application_code_changed": false
+}

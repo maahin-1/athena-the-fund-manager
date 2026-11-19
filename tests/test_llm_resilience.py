@@ -77,7 +77,7 @@ def test_a_degraded_model_is_skipped_by_the_next_chain_without_a_call(tmp_path):
     assert second.last_failures[0][0] == "nvidia:m" and "degraded" in second.last_failures[0][1]
 
 
-def test_failed_calls_and_the_models_tried_first_are_logged_and_failed_calls_do_not_count_against_the_ceiling(tmp_path):
+def test_failed_calls_and_the_models_tried_first_are_logged_and_only_failures_known_to_be_declined_stay_off_the_ceiling(tmp_path):
     clock = lambda: datetime(2026, 10, 28, tzinfo=timezone.utc)  # noqa: E731
     meter = Meter(tmp_path / "u.jsonl", tmp_path / "b.json", clock)
     (tmp_path / "b.json").write_text(json.dumps({"mid": {"calls_per_month": 5}}))
@@ -91,7 +91,15 @@ def test_failed_calls_and_the_models_tried_first_are_logged_and_failed_calls_do_
 
     with pytest.raises(AthenaError):
         MeteredLLM(Dead(), "mid", meter).complete("s", "u")
-    assert meter.calls_this_month("mid") == 0 and meter.rows()[0]["failed"] is True and "HTTP 404" in meter.rows()[0]["error"]
+    # a client that says nothing of its attempts: whether the provider processed anything is unknown, and unknown provider work is not free
+    assert meter.calls_this_month("mid") == 1 and meter.rows()[0]["failed"] is True and "HTTP 404" in meter.rows()[0]["error"] and meter.summary()["mid"]["unknown_outcome"] == 1
+
+    class Declined(Dead):
+        last_attempts = [{"n": 1, "model": "a", "outcome": "http_error", "status": 404, "retry": False}]
+
+    with pytest.raises(AthenaError):
+        MeteredLLM(Declined(), "mid", meter).complete("s", "u")
+    assert meter.calls_this_month("mid") == 1  # every attempt was an HTTP answer declining the request: nothing was processed, nothing is counted
 
     class Second:
         last_failures = (("nvidia:gone", "skipped, degraded: HTTP 404"),)
@@ -102,8 +110,8 @@ def test_failed_calls_and_the_models_tried_first_are_logged_and_failed_calls_do_
             return "hello"
 
     MeteredLLM(Second(), "mid", meter).complete("s", "u")
-    row = meter.rows()[1]
-    assert row["model"] == "openrouter:m" and row["failures"] == ["nvidia:gone: skipped, degraded: HTTP 404"] and meter.calls_this_month("mid") == 1
+    row = meter.rows()[2]
+    assert row["model"] == "openrouter:m" and row["failures"] == ["nvidia:gone: skipped, degraded: HTTP 404"] and meter.calls_this_month("mid") == 2  # the unknown-outcome failure and this answer
     assert meter.summary()["mid"]["calls"] == 1
 
 

@@ -86,24 +86,38 @@ def with_predecessors(members: Sequence[Member], table: Mapping[str, tuple[Prede
     return out
 
 
-def wanted(refs: Sequence[FilingRef], quarters: int = 13, standalone: bool = False) -> list[FilingRef]:
+def wanted(refs: Sequence[FilingRef], quarters: int = 13, standalone: bool = False, all_versions: bool = False) -> list[FilingRef]:
     """The filings worth fetching, newest first: consolidated ones (every annual, the latest `quarters` quarterly), or standalone ones when the
-    company has no consolidated filing or `standalone` is set. For one period and basis only the latest filing is kept (a revision replaces its original)."""
-    latest: dict[tuple[Any, ...], FilingRef] = {}
+    company has no consolidated filing or `standalone` is set. For one period and basis only the latest filing is kept (a revision replaces its original), unless `all_versions` is set:
+    then every filing of the period is kept, so the original and each revision are stored as separate versions (WP04). That costs one fetch per extra filing; it is off by default."""
+    latest: dict[tuple[Any, ...], list[FilingRef]] = {}
     for r in refs:
         key = (r.period_end, r.annual, r.consolidated)
-        if key not in latest or r.filed > latest[key].filed:
-            latest[key] = r
-    pool = list(latest.values())
+        held = latest.setdefault(key, [])
+        if all_versions:
+            if all(h.url != r.url for h in held):
+                held.append(r)
+        elif not held or r.filed > held[0].filed:
+            held[:] = [r]
+    pool = [r for group in latest.values() for r in sorted(group, key=lambda x: x.filed, reverse=True)]
     consolidated = [r for r in pool if r.consolidated]
     use = pool if standalone or not consolidated else consolidated
     annual = [r for r in use if r.annual]
-    quarterly = sorted((r for r in use if not r.annual), key=lambda r: r.period_end, reverse=True)[:quarters]
+    if all_versions:  # the `quarters` latest quarterly PERIODS, each with all its filings
+        recent = set(sorted({r.period_end for r in use if not r.annual}, reverse=True)[:quarters])
+        quarterly = [r for r in use if not r.annual and r.period_end in recent]
+    else:
+        quarterly = sorted((r for r in use if not r.annual), key=lambda r: r.period_end, reverse=True)[:quarters]
     return sorted(annual + quarterly, key=lambda r: r.period_end, reverse=True)
 
 
+def raw_path(cache_dir: Path, url: str) -> Path:
+    """Where the raw copy of a filing is kept: the cache the point-in-time code uses, named by the filing's url."""
+    return cache_dir / (hashlib.sha1(url.encode()).hexdigest()[:20] + ".xml")
+
+
 def _text(results: Any, ref: FilingRef, cache_dir: Path) -> str:
-    path = cache_dir / (hashlib.sha1(ref.url.encode()).hexdigest()[:20] + ".xml")  # the same cache the point-in-time code uses
+    path = raw_path(cache_dir, ref.url)
     if path.exists():
         return path.read_text(encoding="utf-8")
     text = results.text(ref)
@@ -114,7 +128,7 @@ def _text(results: Any, ref: FilingRef, cache_dir: Path) -> str:
 
 def ingest_symbol(
     member: Member, results: Any, store_path: str | Path, *, quarters: int = 13, standalone: bool = False, refresh: bool = False,
-    cache_dir: Path = CACHE_DIR,
+    cache_dir: Path = CACHE_DIR, all_versions: bool = False,
 ) -> Report:
     """Fetch and store one company's filings. Raises `Blocked` when the exchange refuses; any other failure is counted and the run goes on."""
     report = Report(member.symbol)
@@ -126,7 +140,7 @@ def ingest_symbol(
         report.notes.append(str(exc))
         report.failed += 1
         return report
-    for ref in wanted(refs, quarters, standalone):
+    for ref in wanted(refs, quarters, standalone, all_versions):
         basis = "consolidated" if ref.consolidated else "standalone"
         with FundamentalsStore(store_path) as store:
             status, when = store.filing_state(ref.url)
@@ -159,7 +173,7 @@ def ingest_symbol(
         with FundamentalsStore(store_path) as store:
             if refresh:
                 store.forget_filing(ref.url)
-            store.save_statements(statements, ref.url, ref.filed)
+            store.save_statements(statements, ref.url, ref.filed, source_hash=hashlib.sha256(text.encode("utf-8")).hexdigest())
             store.record_filing(ref.url, member.symbol, basis, ref.period_end, ref.annual, ref.filed, "ok")
             store.save_company(member.symbol, member.name, member.isin, member.industry, statements.layout, statements.shares)
             store.save_share_count(ref.url, member.symbol, basis, ref.period_end, ref.filed, statements.shares_declared, statements.shares_from_profit)
@@ -175,13 +189,13 @@ def ingest_symbol(
 
 def run(
     members: Sequence[Member], results: Any, store_path: str | Path, *, resume: bool, max_age_days: int, limit: int | None,
-    quarters: int, standalone: bool, refresh: bool = False, out: TextIO = sys.stdout, cache_dir: Path = CACHE_DIR, job: str | None = None,
+    quarters: int, standalone: bool, refresh: bool = False, out: TextIO = sys.stdout, cache_dir: Path = CACHE_DIR, job: str | None = None, all_versions: bool = False,
 ) -> int:
     """Ingest each member in turn (the loop is `athena.fundamentals.runner.run_each`). Returns 0 when done, 3 when the exchange blocked it (or a block is still running)."""
     from athena.fundamentals.runner import run_each
 
     return run_each(
-        members, lambda m: ingest_symbol(m, results, store_path, quarters=quarters, standalone=standalone, refresh=refresh, cache_dir=cache_dir), store_path,
+        members, lambda m: ingest_symbol(m, results, store_path, quarters=quarters, standalone=standalone, refresh=refresh, cache_dir=cache_dir, all_versions=all_versions), store_path,
         key=lambda m: m.symbol, resume=resume, max_age_days=max_age_days, limit=limit, refresh=refresh, out=out, job=job,
     )
 
@@ -196,6 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--standalone", action="store_true", help="also fetch standalone filings")
     parser.add_argument("--no-history", action="store_true", help="do not also fetch the earlier symbols of renamed companies")
     parser.add_argument("--refresh", action="store_true", help="read filings already stored again with the current mapping (uses the kept copies)")
+    parser.add_argument("--all-versions", action="store_true", help="also fetch the ORIGINAL filing of a period that has been revised, so each filing is kept as its own version (one more request per revision)")
     parser.add_argument("--store", default=str(DEFAULT_PATH))
     args = parser.parse_args(argv)
     members = universe(args.universe)
@@ -204,7 +219,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"{len(members)} companies in {args.universe}", flush=True)
     return run(
         members, FundamentalsResults(), args.store, resume=args.resume, max_age_days=args.max_age_days, limit=args.limit, quarters=args.quarters,
-        standalone=args.standalone, refresh=args.refresh, job="fundamentals_ingest",
+        standalone=args.standalone, refresh=args.refresh, job="fundamentals_ingest", all_versions=args.all_versions,
     )
 
 

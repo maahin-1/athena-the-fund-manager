@@ -1,0 +1,17 @@
+{
+ "label": "mutation-rust-bodylimit",
+ "harness": "mutate.py v2",
+ "total": 5,
+ "counts": {
+  "caught": 5,
+  "SURVIVED": 0,
+  "mixed": 0,
+  "error_only": 0,
+  "unattributed": 0,
+  "invalid": 0,
+  "timeout": 0,
+  "pattern_error": 0,
+  "harness_error": 0
+ },
+ "files_restored": true
+}

@@ -28,7 +28,7 @@ function api(): OptionsApi {
 }
 
 /** A server stand-in: answers the quotes route from a price level it can move, and counts the requests. */
-function server(opts: { live?: boolean | (() => boolean); at?: number | (() => number); level?: () => number } = {}) {
+function server(opts: { live?: boolean | (() => boolean); at?: number | (() => number); level?: () => number; patch?: (token: string, row: LiveQuoteRow) => LiveQuoteRow; skewMs?: number } = {}) {
   const requests: string[] = [];
   const level = opts.level ?? (() => 24_200);
   const fetcher = (async (url: string) => {
@@ -42,9 +42,14 @@ function server(opts: { live?: boolean | (() => boolean); at?: number | (() => n
       const strike = Number(token.slice(1));
       const intrinsic = kind === 'C' ? Math.max(0, spot - strike) : kind === 'P' ? Math.max(0, strike - spot) : 0;
       const last = kind === 'F' ? spot + 30 : Math.round((intrinsic + 40 * Math.exp(-Math.abs(spot - strike) / 120)) * 20) / 20;
-      return { seg, token, last, bid: last - 0.05, ask: last + 0.05, volume: 1000, oi: 650_000, oip: -2, t: typeof opts.at === 'function' ? opts.at() : opts.at ?? nowMs - 5_000 };
+      // (T3: the server also says when it received each quote and when its book last changed, in its own clock: 5 s ago unless a test says otherwise)
+      const rcv = nowMs + (opts.skewMs ?? 0) - 5_000; // the server's clock, which a test may set apart from the page's
+      // (review R1/R3: the packet's exchange time `t` is 1 s before its receipt unless a test says otherwise, and the last trade `lt` is a separate field; the exchange's clock agrees with the server's)
+      const t = typeof opts.at === 'function' ? opts.at() : opts.at ?? rcv - 1_000;
+      const row = { seg, token, last, bid: last - 0.05, ask: last + 0.05, volume: 1000, oi: 650_000, oip: -2, t, lt: t, r: rcv, bs: rcv, dly: 50, ooo: 0 };
+      return opts.patch ? opts.patch(token, row) : row;
     });
-    return { ok: true, status: 200, json: async () => ({ live: isLive, quotes: isLive ? rows : [] }) } as unknown as Response;
+    return { ok: true, status: 200, json: async () => ({ live: isLive, quotes: isLive ? rows : [], now: nowMs + (opts.skewMs ?? 0) }) } as unknown as Response;
   }) as unknown as typeof fetch;
   return { fetcher, requests };
 }
@@ -76,14 +81,37 @@ describe('the live feed', () => {
 
   it('maps a server row to a quote', () => {
     const q = quoteOf({ seg: 'NFO', token: '1', last: 10, bid: 9.9, ask: 10.1, volume: 7, oi: 200, oip: 100, t: 5 });
-    expect(q).toEqual({ last: 10, bid: 9.9, ask: 10.1, volume: 7, oi: 200, oiChange: 100, time: 5 });
+    expect(q).toEqual({ last: 10, bid: 9.9, ask: 10.1, volume: 7, oi: 200, oiChange: 100, packetTime: 5 }); // (review R1: `t` is the packet's time; the trade's time is `lt`, absent here)
     // NSE and BSE derivatives give open interest and volume as a quantity (a whole number of lots); the page shows lots. MCX gives lots already.
     const nifty = quoteOf({ seg: 'NFO', token: '1', last: 10, bid: null, ask: null, volume: 596_245, oi: 542_685, oip: -2, t: 5 }, 65);
     expect([nifty.oi, nifty.volume]).toEqual([8349, 9173]);
     expect(nifty.oiChange).toBe(oiChange(8349, -2));
     const crude = quoteOf({ seg: 'MCX', token: '1', last: 10, bid: null, ask: null, volume: 934, oi: 673, oip: 0, t: 5 }, 100);
     expect([crude.oi, crude.volume]).toEqual([673, 934]);
-    expect(quoteOf({ seg: 'NFO', token: '1', last: null, bid: null, ask: null, volume: 0, oi: 0, oip: 0, t: null }).time).toBeUndefined();
+    expect(quoteOf({ seg: 'NFO', token: '1', last: null, bid: null, ask: null, volume: 0, oi: 0, oip: 0, t: null, lt: null }).time).toBeUndefined();
+  });
+
+  it('T3: maps the server\'s receipt, book and delivery fields, and leaves them out when the server sends none', () => {
+    const q = quoteOf({ seg: 'NFO', token: '1', last: 10, bid: 9.9, ask: 10.1, volume: 7, oi: 200, oip: 100, t: 5, lt: 4, r: 9, bs: 8, dly: 40, ooo: 2 });
+    expect(q).toMatchObject({ packetTime: 5, time: 4, receivedAt: 9, bookSeenAt: 8, deliveryDelayMs: 40, outOfOrder: 2 }); // (review R1: the trade time is `lt`, the packet time `t`)
+    const bare = quoteOf({ seg: 'NFO', token: '1', last: 10, bid: 9.9, ask: 10.1, volume: 7, oi: 200, oip: 100, t: 5 });
+    expect([bare.receivedAt, bare.bookSeenAt, bare.deliveryDelayMs, bare.outOfOrder]).toEqual([undefined, undefined, undefined, undefined]);
+    const nulls = quoteOf({ seg: 'NFO', token: '1', last: 10, bid: 9.9, ask: 10.1, volume: 7, oi: 200, oip: 100, t: 5, r: null, bs: null, dly: null, ooo: 0 });
+    expect([nulls.receivedAt, nulls.bookSeenAt, nulls.deliveryDelayMs]).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('T3: says whether the session is live from receipts and exchange times together, and measures ages from the newest receipt when it is not', async () => {
+    // (review R3: this test used to make the session live because an exchange time moved on; now a receipt must be recent and the packet's own time close to it. The full set of cases is in optionsession.test.ts)
+    const t = { v: nowMs - 6 * 3_600_000 };
+    const rows = (tok: string[]) => tok.map((token) => ({ seg: 'NFO', token, last: 10, bid: 9.9, ask: 10.1, volume: 1, oi: 1, oip: 0, t: t.v, lt: t.v, r: t.v + 500, bs: t.v + 500 }));
+    const fetcher = (async (url: string) => ({ ok: true, status: 200, json: async () => ({ live: true, quotes: rows(decodeURIComponent(url.split('tokens=')[1] ?? '').split(',').filter(Boolean).map((x) => x.split(':')[1])), now: nowMs }) })) as unknown as typeof fetch;
+    const f = liveFeed({ fetcher, spotOf: () => 24_200, now: () => nowMs });
+    expect(f.session()).toMatchObject({ state: 'unknown', referenceMs: null });
+    await f.quotes([{ underlying: 'NIFTY', expiry, kind: 'call', strike: 24_200, ref: { segment: 'NFO', token: '1', lot: 65 } }]);
+    expect(f.session()).toMatchObject({ state: 'last_session', referenceMs: t.v + 500 });
+    t.v = nowMs - 2_000;
+    await f.quotes([{ underlying: 'NIFTY', expiry, kind: 'call', strike: 24_200, ref: { segment: 'NFO', token: '1', lot: 65 } }]);
+    expect(f.session()).toMatchObject({ state: 'live', referenceMs: t.v + 500 });
   });
 
   it('asks for contracts by segment and token, a hundred at a time, and skips keys with no reference', async () => {
@@ -136,16 +164,16 @@ describe('the Options page on live prices', () => {
     view.hide();
   });
 
-  it('says live prices when the exchange times keep moving even if the exchange clock disagrees with this one', async () => {
-    let t = nowMs - 6 * 3_600_000; // a clock hours away from ours
+  it('says last session prices when the exchange times are hours from the receipts and keep moving: that cannot be told from a replay (review R3: it used to say live)', async () => {
+    let t = nowMs - 6 * 3_600_000; // a clock hours away from the server's
     const { view } = make(server({ at: () => t }));
     view.show();
     await flush();
     await vi.advanceTimersByTimeAsync(3_000);
-    expect(view.element.querySelector('.opt-synth')!.textContent).toBe('last session prices'); // seen once, not moving
+    expect(view.element.querySelector('.opt-synth')!.textContent).toBe('last session prices');
     t += 4_000;
     await vi.advanceTimersByTimeAsync(2_100);
-    expect(view.element.querySelector('.opt-synth')!.textContent).toBe('live prices');
+    expect(view.element.querySelector('.opt-synth')!.textContent, 'an exchange time that advances is not by itself current activity').toBe('last session prices');
     view.hide();
   });
 
@@ -189,6 +217,58 @@ describe('the Options page on live prices', () => {
     await vi.advanceTimersByTimeAsync(2_100);
     expect(view.element.querySelector('.opt-synth')!.textContent).toBe('live prices');
     expect(ltp()).toBe('40.00');
+    view.hide();
+  });
+
+  // ---- T3: the page judges each contract on its own times; the badge is the worst required input, not the newest quote ----
+  const cell = (view: OptionsView, strike: number, side: 'call' | 'put', col: string) => view.element.querySelector<HTMLElement>(`tr[data-strike="${strike}"] td[data-side="${side}"][data-col="${col}"]`)!;
+  const ago = (ms: number) => nowMs - ms;
+
+  it('T3: a stale wing has no volatility, its cell says why, and the fresh strikes keep theirs; the required inputs are fresh, so the badge stays live', async () => {
+    const wing = (token: string) => /^[CP](24000|24050|24100)$/.test(token);
+    const { view } = make(server({ patch: (token, row) => (wing(token) ? { ...row, r: ago(40 * 60_000), bs: ago(40 * 60_000), t: ago(40 * 60_000) } : row) }));
+    view.show();
+    await flush();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(cell(view, 24_200, 'call', 'iv').textContent).not.toBe('–');
+    expect(cell(view, 24_050, 'call', 'iv').textContent).toBe('–');
+    expect(cell(view, 24_050, 'call', 'iv').title).toMatch(/stale book/i);
+    expect(view.element.querySelector('.opt-synth')!.textContent).toBe('live prices');
+    view.hide();
+  });
+
+  it('T3: a forward older than the options withholds the volatility and the badge says inputs are withheld, though the newest quote is fresh', async () => {
+    const { view } = make(server({ patch: (token, row) => (token === 'F1' ? { ...row, r: ago(10 * 60_000), bs: ago(10 * 60_000), t: ago(10 * 60_000) } : row) }));
+    view.show();
+    await flush();
+    await vi.advanceTimersByTimeAsync(3_000);
+    const badge = view.element.querySelector('.opt-synth')!;
+    expect(badge.textContent).toBe('inputs withheld');
+    expect(badge.getAttribute('data-kind')).toBe('quality');
+    expect(badge.getAttribute('title')).toMatch(/forward unsynced/i);
+    expect(cell(view, 24_200, 'call', 'iv').textContent).toBe('–');
+    view.hide();
+  });
+
+  it('T3: ages are measured in the server\'s clock: a server three hours ahead of the page does not make fresh quotes look old', async () => {
+    const { view } = make(server({ skewMs: 3 * 3_600_000 }));
+    view.show();
+    await flush();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(view.element.querySelector('.opt-synth')!.textContent).toBe('live prices');
+    expect(cell(view, 24_200, 'call', 'iv').textContent).not.toBe('–');
+    view.hide();
+  });
+
+  it('T3: a quote the server sent no book time for is labelled, not called fresh', async () => {
+    const { view } = make(server({ patch: (_token, row) => ({ ...row, r: undefined, bs: undefined }) }));
+    view.show();
+    await flush();
+    await vi.advanceTimersByTimeAsync(3_000);
+    const badge = view.element.querySelector('.opt-synth')!;
+    expect(badge.textContent, '(review R3: with no receipt times the session is unknown, and the badge says so; it used to read "quotes labelled")').toBe('session unknown');
+    expect(badge.getAttribute('title')).toMatch(/book time unknown/i);
+    expect(cell(view, 24_200, 'call', 'iv').textContent).not.toBe('–');
     view.hide();
   });
 

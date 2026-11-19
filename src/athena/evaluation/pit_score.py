@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from athena.evaluation.evidence import evidence_class
 from athena.evaluation.outcomes import INLINE, OUTPERFORM, SIGNAL_FOR, UNDERPERFORM
 
 SIGNALS = ("bullish", "neutral", "bearish")
@@ -23,6 +24,7 @@ class Call:
     signal: str | None  # None when the analyst abstained or had insufficient data
     confidence: int
     label: str  # the outcome: outperform | inline | underperform
+    evidence: str = "unclassified"  # which kind of statement evidence the case rested on (athena.evaluation.evidence); a row that recorded no source is unclassified, not archival
 
     @property
     def right(self) -> bool:
@@ -79,7 +81,10 @@ def score(calls: Iterable[Call], specialist: str, horizon: int) -> Score | None:
         if len(called) > 1:
             agree, disagree = (agree + 1, disagree) if len(set(signals)) == 1 else (agree, disagree + 1)
         chosen = modal(signals)
-        confidence = round(sum(r.confidence for r in called if r.signal == chosen) / sum(1 for r in called if r.signal == chosen))
+        # A tie between opposing calls resolves to neutral even when no run said neutral. That synthetic neutral has no
+        # confidence row to average; it commits to nothing, so its confidence is 0 (as in evaluation.scorecard.cases).
+        backing = [r.confidence for r in called if r.signal == chosen]
+        confidence = round(sum(backing) / len(backing)) if backing else 0
         decided.append((chosen, confidence, outcome))
     n = len(decided)
     right = sum(1 for signal, _, outcome in decided if signal == outcome)
@@ -120,10 +125,15 @@ def format_score(result: Score) -> str:
     return "\n".join(lines)
 
 
-def calls_from_rows(rows: Iterable[Mapping[str, Any]]) -> list[Call]:
-    """Calls from the run log's JSON lines (one per analyst run and horizon)."""
-    return [
-        Call(r["symbol"], r["as_of"], int(r["horizon"]), r["specialist"], int(r.get("run", 0)), r.get("signal"), int(r.get("confidence") or 0), r["label"])
-        for r in rows
-        if r.get("label") in (OUTPERFORM, INLINE, UNDERPERFORM)
-    ]
+def calls_from_rows(rows: Iterable[Mapping[str, Any]], evidence_classes: Collection[str] | None = None) -> list[Call]:
+    """Calls from the run log's JSON lines (one per analyst run and horizon), each tagged with the evidence class of its `source`. `evidence_classes` keeps only those classes (None keeps all:
+    the caller then owns the decision to pool them, and should say so)."""
+    out = []
+    for r in rows:
+        if r.get("label") not in (OUTPERFORM, INLINE, UNDERPERFORM):
+            continue
+        kind = evidence_class(r.get("source"))
+        if evidence_classes is not None and kind not in evidence_classes:
+            continue
+        out.append(Call(r["symbol"], r["as_of"], int(r["horizon"]), r["specialist"], int(r.get("run", 0)), r.get("signal"), int(r.get("confidence") or 0), r["label"], kind))
+    return out

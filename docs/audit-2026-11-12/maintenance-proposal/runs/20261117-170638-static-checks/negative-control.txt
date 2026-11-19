@@ -1,0 +1,9 @@
+rejected: a well-formed but wrong SHA beside correct pins -> FAIL [workflows] ci.yml: job python step 5: `actions/upload-artifact@0000000000000000000000000000000000000000`: actions/upload-artifact is pinned to 000000000000..., the recorded pair is cf430e030ddb... (v7.0.2)
+rejected: a SHA that is right for another repository -> FAIL [workflows] ci.yml: job web step 1: `actions/setup-node@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0`: actions/setup-node is pinned to 6d4fd22b2046..., the recorded pair is 949feb2413d6... (v7.1.0)
+rejected: a nested expression inside a run script -> FAIL [workflows] ci.yml: job policy step 2: expression inside a run script (format('{0}', github.event.pull_request.title)): pass it through env: instead
+rejected: actions/checkout reintroduced -> FAIL [workflows] dependency-review.yml: job review step 0: `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`: actions/checkout is not allowed: use the access-safe checkout step
+rejected: a changed copy of the checkout script -> FAIL [workflows] ci.yml: job policy step 0: the checkout step's script is not byte-for-byte scripts/ci/safe_checkout.sh
+rejected: a privileged trigger -> FAIL [workflows] ci.yml: privileged trigger pull_request_target
+rejected: a job without a timeout -> FAIL [workflows] ci.yml: job policy has no timeout-minutes
+rejected: an extra Dependabot ecosystem -> FAIL [dependabot] ecosystems/directories differ: {'pip': '/', 'cargo': '/terminal', 'npm': '/terminal/web', 'github-actions': '/', 'docker': '/'}
+rejected: a sensitive CODEOWNERS path removed -> FAIL [codeowners] sensitive path /pyproject.toml is not listed

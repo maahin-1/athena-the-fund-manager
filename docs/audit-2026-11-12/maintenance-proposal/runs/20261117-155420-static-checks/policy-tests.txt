@@ -1,0 +1,15 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.14, pytest-9.1.1, pluggy-1.6.0 -- D:\projects\learn-project\athena-the-fund-manager\.venv\Scripts\python.exe
+rootdir: d:\projects\learn-project\athena-the-fund-manager
+configfile: pyproject.toml
+plugins: anyio-4.15.1, platformdirs-4.12.3
+collecting ... collected 6 items
+
+docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_clean_tree_passes PASSED [ 16%]
+docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_runtime_build_and_store_paths_fail PASSED [ 33%]
+docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_oversized_file_fails_unless_it_is_on_the_reviewed_allowlist PASSED [ 50%]
+docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_protected_name_fails_unless_it_is_exactly_the_recorded_inherited_entry PASSED [ 66%]
+docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_failure_output_never_prints_a_protected_name PASSED [ 83%]
+docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_workflow_checker_accepts_a_good_file_and_rejects_each_bad_one PASSED [100%]
+
+============================== 6 passed in 2.44s ==============================

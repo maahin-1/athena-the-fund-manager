@@ -1,0 +1,162 @@
+diff --git a/terminal/Cargo.lock b/terminal/Cargo.lock
+index 22e92f6..7d8fc19 100644
+--- a/terminal/Cargo.lock
++++ b/terminal/Cargo.lock
+@@ -239,6 +239,7 @@ dependencies = [
+  "tokio",
+  "tokio-tungstenite",
+  "tokio-util",
++ "tower",
+  "tower-http 0.5.2",
+ ]
+ 
+diff --git a/terminal/Cargo.toml b/terminal/Cargo.toml
+index d10320b..7bf632a 100644
+--- a/terminal/Cargo.toml
++++ b/terminal/Cargo.toml
+@@ -23,6 +23,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
+ [dev-dependencies]
+ # a paused, controlled clock for the bounded-queue tests (T6): the same crate, one more feature, no new package
+ tokio = { version = "1", features = ["full", "test-util"] }
++# an in-process client for the router, so the request-size tests do not depend on a socket: the crate axum already uses, with the feature it already enables (no new package)
++tower = { version = "0.5", features = ["util"] }
+ 
+ [profile.release]
+ lto = "thin"
+diff --git a/terminal/src/server.rs b/terminal/src/server.rs
+index 5a17115..b330c0f 100644
+--- a/terminal/src/server.rs
++++ b/terminal/src/server.rs
+@@ -1735,21 +1735,119 @@ mod tests {
+         assert_eq!(calendar_range(today, None, Some("2026-10-25".into())), ("2026-10-19".to_string(), "2026-10-25".to_string()));
+     }
+ 
++    // ---- the indicator route's request-size limit ----
++    //
++    // These replace one test that sent 5 MB over a real socket to a route that answers 413 and closes before the body is read: the client's write could meet the connection's reset, and the test then failed by chance
++    // (a Windows "connection aborted", seen in about a third of the runs of one session). A connection error is not an answer to a size limit, so no test here counts one as success. The exact sizes are decided in
++    // process, by sending a request straight through the router (no socket); a real connection is used only for the case that does not race, a body the server reads to the end.
++
++    /// The route's own limit: `DefaultBodyLimit::max(MAX_BODY + 64 KiB)` (see `router`).
++    const BODY_LIMIT: usize = crate::pyind::MAX_BODY + 64 * 1024;
++
++    /// A request body of exactly `len` bytes that the route can parse: the file name and no bars, padded in a field the route ignores.
++    fn run_body(len: usize) -> Vec<u8> {
++        let (head, tail) = (r#"{"file":"x.py","bars":[],"pad":""#, r#""}"#);
++        assert!(len >= head.len() + tail.len());
++        let mut body = Vec::with_capacity(len);
++        body.extend_from_slice(head.as_bytes());
++        body.resize(len - tail.len(), b'a');
++        body.extend_from_slice(tail.as_bytes());
++        assert_eq!(body.len(), len);
++        body
++    }
++
++    /// A request whose bars serialise to exactly `bars_len` bytes (`[1,1,1]` is 2n+1 bytes; an even length has one two-digit element).
++    fn bars_body(bars_len: usize) -> Vec<u8> {
++        let (ones, last) = if bars_len % 2 == 1 { ((bars_len - 1) / 2, "1") } else { ((bars_len - 2) / 2, "11") };
++        let mut elements = "1,".repeat(ones - 1);
++        elements.push_str(last);
++        let body = format!(r#"{{"file":"x.py","bars":[{elements}]}}"#).into_bytes();
++        assert_eq!(serde_json::to_vec(&serde_json::from_slice::<serde_json::Value>(&body).unwrap()["bars"]).unwrap().len(), bars_len);
++        body
++    }
++
++    /// One request through the router itself: the same layers and the same limit as the server, with no socket in between.
++    async fn through_the_router(state: &AppState, body: axum::body::Body) -> (StatusCode, Vec<u8>) {
++        use tower::ServiceExt;
++        let port = state.port;
++        let request = axum::http::Request::builder()
++            .method("POST")
++            .uri("/api/pyind/run")
++            .header("host", format!("127.0.0.1:{port}"))
++            .header("origin", format!("http://127.0.0.1:{port}"))
++            .header("content-type", "application/json")
++            .body(body)
++            .unwrap();
++        let response = router(state.clone()).oneshot(request).await.unwrap();
++        let status = response.status();
++        (status, axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap().to_vec())
++    }
++
++    /// What the handler says when it is reached and the indicator is not switched on: 403 and a JSON error. Nothing was executed.
++    fn reached_the_handler(status: StatusCode, body: &[u8], why: &str) {
++        let shown = String::from_utf8_lossy(&body[..body.len().min(200)]).into_owned();
++        assert_eq!(status, StatusCode::FORBIDDEN, "{why}: the handler answers 403 when the indicator is not switched on; got: {shown}");
++        let json = serde_json::from_slice::<serde_json::Value>(body).ok();
++        assert_eq!(json.is_some(), true, "{why}: the reply is not the handler's JSON: {shown}");
++        let json = json.unwrap();
++        assert_eq!(json["error"].as_str().is_some_and(|e| e.contains("not switched on")), true, "{why}: {json}");
++    }
++
++    /// What the framework says when the body is past the limit: 413 and its own plain text, which is not the handler's JSON (the handler never ran).
++    fn refused_before_the_handler(status: StatusCode, body: &[u8], why: &str) {
++        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{why}");
++        assert_eq!(serde_json::from_slice::<serde_json::Value>(body).is_err(), true, "{why}: a JSON reply would be the handler's: {}", String::from_utf8_lossy(&body[..body.len().min(200)]));
++    }
++
+     #[tokio::test]
+-    async fn the_indicator_run_route_takes_a_body_between_two_and_four_megabytes_and_refuses_a_larger_one() {
+-        let (port, _state, stop) = start().await;
+-        let client = reqwest::Client::new();
+-        let url = format!("http://127.0.0.1:{port}/api/pyind/run");
+-        let origin = format!("http://127.0.0.1:{port}");
+-        let post = |bytes: usize| {
+-            let bar = r#"{"t":1,"o":1,"h":1,"l":1,"c":1,"v":1},"#;
+-            let body = format!(r#"{{"file":"x.py","bars":[{}{{"t":1,"o":1,"h":1,"l":1,"c":1,"v":1}}]}}"#, bar.repeat(bytes / bar.len()));
+-            client.post(&url).header("Origin", &origin).header("content-type", "application/json").body(body).send()
++    async fn the_indicator_run_route_passes_exactly_what_is_inside_its_limit_and_refuses_the_next_byte_before_the_handler() {
++        let (_port, state, stop) = start().await;
++        for (len, why) in [(3 * 1024 * 1024, "3 MB"), (BODY_LIMIT - 1, "one byte under the limit"), (BODY_LIMIT, "exactly the limit")] {
++            let (status, body) = through_the_router(&state, axum::body::Body::from(run_body(len))).await;
++            reached_the_handler(status, &body, why);
++        }
++        for (len, why) in [(BODY_LIMIT + 1, "one byte over the limit"), (5 * 1024 * 1024, "5 MB")] {
++            let (status, body) = through_the_router(&state, axum::body::Body::from(run_body(len))).await;
++            refused_before_the_handler(status, &body, why);
++        }
++        stop.cancel();
++    }
++
++    #[tokio::test]
++    async fn a_body_with_no_declared_length_is_stopped_at_the_same_limit_while_it_is_read() {
++        let (_port, state, stop) = start().await;
++        let streamed = |len: usize| {
++            let body = run_body(len);
++            let chunks: Vec<Result<axum::body::Bytes, std::io::Error>> = body.chunks(64 * 1024).map(|c| Ok(axum::body::Bytes::copy_from_slice(c))).collect();
++            axum::body::Body::from_stream(futures_util::stream::iter(chunks))
+         };
+-        // 3 MB is inside the runner's own limit: the engine answers (this test's indicator folder has no such file), the framework does not refuse it
+-        assert_ne!(post(3 * 1024 * 1024).await.unwrap().status(), 413);
+-        // 5 MB is past it: refused before the handler
+-        assert_eq!(post(5 * 1024 * 1024).await.unwrap().status(), 413);
++        let (status, body) = through_the_router(&state, streamed(BODY_LIMIT)).await;
++        reached_the_handler(status, &body, "streamed, exactly the limit");
++        let (status, body) = through_the_router(&state, streamed(BODY_LIMIT + 1)).await;
++        refused_before_the_handler(status, &body, "streamed, one byte over the limit");
++        stop.cancel();
++    }
++
++    #[tokio::test]
++    async fn the_handlers_own_four_megabyte_limit_on_the_bars_is_a_separate_check_inside_the_framework_limit() {
++        let (_port, state, stop) = start().await;
++        let max = crate::pyind::MAX_BODY;
++        let (status, body) = through_the_router(&state, axum::body::Body::from(bars_body(max))).await;
++        reached_the_handler(status, &body, "bars of exactly 4 MB");
++        let (status, body) = through_the_router(&state, axum::body::Body::from(bars_body(max + 1))).await;
++        let shown = String::from_utf8_lossy(&body[..body.len().min(200)]).into_owned();
++        let json = serde_json::from_slice::<serde_json::Value>(&body).ok();
++        assert_eq!((status, json.as_ref().and_then(|j| j["error"].as_str()).is_some_and(|e| e.contains("at most 4 MB"))), (StatusCode::BAD_REQUEST, true), "bars one byte past 4 MB are the handler's refusal (400, in JSON), not the framework's (413): {shown}");
++        stop.cancel();
++    }
++
++    #[tokio::test]
++    async fn a_three_megabyte_indicator_request_reaches_the_handler_over_a_real_connection() {
++        let (port, _state, stop) = start().await;
++        let reply = reqwest::Client::new().post(format!("http://127.0.0.1:{port}/api/pyind/run")).header("Origin", format!("http://127.0.0.1:{port}")).header("content-type", "application/json").body(run_body(3 * 1024 * 1024)).send().await.expect("a body the server reads to the end is answered");
++        let status = reply.status();
++        let body = reply.bytes().await.unwrap();
++        reached_the_handler(status, &body, "3 MB over a socket");
+         stop.cancel();
+     }
+ 

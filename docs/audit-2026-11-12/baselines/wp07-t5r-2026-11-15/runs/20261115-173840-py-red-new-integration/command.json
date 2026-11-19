@@ -1,0 +1,13 @@
+{
+ "cwd": "D:\\projects\\learn-project\\athena-the-fund-manager",
+ "argv": [
+  "d:\\projects\\learn-project\\athena-the-fund-manager\\.venv\\Scripts\\python.exe",
+  "-m",
+  "pytest",
+  "-p",
+  "no:cacheprovider",
+  "--junitxml=D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\baselines\\wp07-t5r-2026-11-15\\runs\\20261115-173840-py-red-new-integration\\junit.xml",
+  "-q",
+  "tests/test_snapshot_integration.py"
+ ]
+}

@@ -1,0 +1,36 @@
+{
+    "candidate":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+    "tests":  [
+                  "tests/test_env_access_hook.py"
+              ],
+    "collected":  22,
+    "counts":  {
+                   "passed":  22,
+                   "failed":  0,
+                   "skipped":  0,
+                   "errors":  0,
+                   "xfailed":  0,
+                   "xpassed":  0,
+                   "deselected":  0
+               },
+    "checks":  {
+                   "tests_collected":  true,
+                   "exit_zero":  true,
+                   "no_failures_or_errors":  true,
+                   "no_skips":  true,
+                   "count_matches_collected":  true,
+                   "no_import_from_outside_candidate":  true,
+                   "recorder_was_active":  true
+               },
+    "import_origin":  {
+                          "processes_observed":  4,
+                          "processes_that_imported_athena":  0,
+                          "athena_modules_in_largest_process":  0,
+                          "violations":  0,
+                          "violation_examples":  [
+
+                                                 ],
+                          "ok":  true
+                      },
+    "ok":  true
+}

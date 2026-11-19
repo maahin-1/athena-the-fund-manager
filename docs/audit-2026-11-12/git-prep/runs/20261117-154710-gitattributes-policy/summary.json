@@ -1,0 +1,74 @@
+{
+    "autocrlf_true":  {
+                          "tracked_text_blobs_with_CR":  0,
+                          "tracked_rows":  1011,
+                          "status_entries_after_adding_policy":  1,
+                          "status_lines":  [
+                                               "?? .gitattributes"
+                                           ],
+                          "renormalizing_add_changes_paths":  0,
+                          "paths_changed_by_renormalizing":  [
+
+                                                             ],
+                          "only_the_policy_file_is_new":  false
+                      },
+    "autocrlf_false":  {
+                           "tracked_text_blobs_with_CR":  0,
+                           "tracked_rows":  1011,
+                           "status_entries_after_adding_policy":  1,
+                           "status_lines":  [
+                                                "?? .gitattributes"
+                                            ],
+                           "renormalizing_add_changes_paths":  0,
+                           "paths_changed_by_renormalizing":  [
+
+                                                              ],
+                           "only_the_policy_file_is_new":  false
+                       },
+    "samples_after_add":  {
+                              "src/athena/sample.py":  {
+                                                           "index_ending":  "lf",
+                                                           "expected":  "lf",
+                                                           "attr":  "text eol=lf",
+                                                           "as_declared":  true
+                                                       },
+                              "terminal/src/sample.rs":  {
+                                                             "index_ending":  "lf",
+                                                             "expected":  "lf",
+                                                             "attr":  "text eol=lf",
+                                                             "as_declared":  true
+                                                         },
+                              "scripts/sample.ps1":  {
+                                                         "index_ending":  "lf",
+                                                         "expected":  "lf",
+                                                         "attr":  "text eol=crlf",
+                                                         "as_declared":  true
+                                                     },
+                              "docs/audit-2026-11-12/baselines/x/runs/r/log.txt":  {
+                                                                                       "index_ending":  "crlf",
+                                                                                       "expected":  "crlf",
+                                                                                       "attr":  "-text",
+                                                                                       "as_declared":  true
+                                                                                   },
+                              "docs/audit-2026-11-12/baselines/x/runs/r/tool.py":  {
+                                                                                       "index_ending":  "crlf",
+                                                                                       "expected":  "crlf",
+                                                                                       "attr":  "-text",
+                                                                                       "as_declared":  true
+                                                                                   },
+                              "docs/audit-2026-11-12/git-prep/sample.patch":  {
+                                                                                  "index_ending":  "mixed",
+                                                                                  "expected":  "mixed",
+                                                                                  "attr":  "-text",
+                                                                                  "as_declared":  true
+                                                                              },
+                              "notes/unlisted.txt":  {
+                                                         "index_ending":  "lf",
+                                                         "expected":  "lf",
+                                                         "attr":  "",
+                                                         "as_declared":  true
+                                                     }
+                          },
+    "note":  "notes/unlisted.txt matches no rule: it follows core.autocrlf (true here), so its blob is LF; with autocrlf=false it would stay CRLF. That is the unchanged behaviour for unnamed paths.",
+    "ok":  false
+}

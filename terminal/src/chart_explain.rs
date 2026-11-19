@@ -44,7 +44,7 @@ impl ChartExplain {
         let program = self.module.first().ok_or_else(|| ExplainError::Failed("the explainer is not configured".into()))?;
         let mut cmd = Command::new(program);
         cmd.args(&self.module[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
-        let mut child = cmd.spawn().map_err(|_| ExplainError::Failed("could not start the explainer".into()))?;
+        let mut child = { crate::process::background(cmd.as_std_mut()); cmd.spawn() }.map_err(|_| ExplainError::Failed("could not start the explainer".into()))?;
         let mut stdin = child.stdin.take().ok_or_else(|| ExplainError::Failed("could not start the explainer".into()))?;
         let data = body.to_vec();
         let write = tokio::spawn(async move {

@@ -98,6 +98,25 @@ def build(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     return out
 
 
+POOLED_LABEL = "UNQUALIFIED: archival filings, approximate deadline-filtered statements and unclassified rows pooled together; read the per-class cards instead"
+REPORT_PATH_V2 = Path(".athena") / "reports" / "scorecard_v2.json"
+
+
+def build_by_evidence(rows: Iterable[Mapping[str, Any]], pooled: bool = False) -> dict[str, Any]:
+    """The scorecard per evidence class (`athena.evaluation.evidence`): archival filings and Yahoo's deadline-filtered statements are different evidence, so each gets its own card and none is
+    pooled with another. `pooled=True` adds one pooled card, labelled unqualified. A row with no recorded `source` is `unclassified`, never taken as archival."""
+    from athena.evaluation.evidence import evidence_class
+
+    by_class: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    held = list(rows)
+    for r in held:
+        by_class[evidence_class(r.get("source"))].append(r)
+    out: dict[str, Any] = {"schema": "scorecard/2", "classes": {name: build(group) for name, group in sorted(by_class.items())}}
+    if pooled:
+        out["pooled"] = {"label": POOLED_LABEL, "card": build(held)}
+    return out
+
+
 def format_card(scorecard: Mapping[str, Any]) -> str:
     def pct(value: float | None) -> str:
         return "n/a" if value is None else f"{value:.0%}"
@@ -120,11 +139,17 @@ def format_card(scorecard: Mapping[str, Any]) -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("logs", nargs="+", help="run logs (JSON lines with symbol, as_of, specialist, signal, confidence, horizon, excess)")
-    parser.add_argument("--out", default=str(REPORT_PATH))
+    parser.add_argument("--out", default=str(REPORT_PATH_V2), help="where the per-evidence-class scorecard (schema scorecard/2) is written; the older .athena/reports/scorecard.json is not touched")
+    parser.add_argument("--pooled", action="store_true", help="also add one card pooled across evidence classes, labelled unqualified")
     args = parser.parse_args(argv)
     rows = [json.loads(line) for path in args.logs for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
-    scorecard = build(rows)
-    print(format_card(scorecard))
+    scorecard = build_by_evidence(rows, pooled=args.pooled)
+    for name, card_ in scorecard["classes"].items():
+        print(f"== evidence class: {name} ==")
+        print(format_card(card_))
+    if "pooled" in scorecard:
+        print(f"== {scorecard['pooled']['label']} ==")
+        print(format_card(scorecard["pooled"]["card"]))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(scorecard, indent=1), encoding="utf-8")

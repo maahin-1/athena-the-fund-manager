@@ -1,5 +1,7 @@
 import type { DerivRow } from '../feed';
 import type { Quote } from './chain';
+import type { SessionState } from './quality';
+import { decideSession, sessionBadge, type Observation } from './session';
 import { keyOf, type ContractKey, type OptionFeed } from './synthetic';
 
 /** The live `OptionFeed`: prices, volume and open interest of futures and options as the broker's stream last sent them, read through the terminal server's
@@ -8,8 +10,6 @@ import { keyOf, type ContractKey, type OptionFeed } from './synthetic';
 
 /** The server answers at most this many contracts a request. */
 const MAX_ASKED = 100;
-/** A newest exchange time older than this means the market is shut (or the contract is idle) and the prices are the last ones sent. */
-const FRESH_MS = 120_000;
 
 export type LiveQuoteRow = DerivRow;
 
@@ -17,6 +17,8 @@ export type LiveQuoteRow = DerivRow;
 export interface PushSource {
   readonly derivs: ReadonlyMap<string, DerivRow>;
   readonly pushing: boolean;
+  /** The server's clock less this page's, as of the last frame (ms), when known. */
+  readonly serverSkewMs?: number | null;
   needDerivs(owner: string, keys: string[]): void;
   onDerivs(fn: (rows: DerivRow[]) => void): () => void;
 }
@@ -28,8 +30,15 @@ const OWNER = 'options';
 export interface LiveFeed extends OptionFeed {
   /** Whether the server has a broker stream to ask. False under the fake feed or while the broker is not connected. */
   probe(): Promise<boolean>;
-  /** The exchange time (ms) of the newest quote seen, or null. */
+  /** The newest exchange timestamp (ms) of any packet seen, or null. Information only: the session is decided by `session()`. */
   newest(): number | null;
+  /** The one session policy (`session.ts`), in the server's clock: live only while packets are being received and carry current exchange times; else the last session (or unknown), with the reason and the
+   *  evidence. `referenceMs` is the newest **receipt** time seen, the time ages are measured from after the session. */
+  session(): SessionState;
+  /** The server's clock now (ms): this page's clock moved by the offset the last answer showed. */
+  serverNow(): number;
+  /** What the feed is, said beside the prices; the same decision as `session()`. */
+  badge(): { text: string; title: string };
   /** Called on each pushed change of a contract this feed was asked about (only with a push source). */
   onUpdate?(fn: () => void): () => void;
   /** Let go of every contract named on the socket (the page was left). */
@@ -55,47 +64,62 @@ export function oiChange(oi: number, pct: number): number {
  *  lots), and from MCX already as lots; the page shows contracts, which are lots. */
 export const unitsPerContract = (segment: string, lot: number): number => (segment === 'MCX' || !(lot > 1) ? 1 : lot);
 
+/** A number as sent, a non-finite one included (the quality policy records it as invalid rather than losing it); null and absent are none. */
+const raw = (v: number | null | undefined): number | undefined => (typeof v === 'number' ? v : undefined);
+
+/** A server row as a quote. The times stay apart: `lt` is the exchange's time of the last **trade** (from the packet's own last-traded field), `t` the exchange's timestamp of the **packet** (not a trade time),
+ *  `r` the server's receipt of the packet that gave the quote its content, `bs` the server's receipt of the last change of the best bid or ask (the stream carries no exchange time for the book), `dly` how
+ *  late the last new packet arrived, `ooo` how many older packets were discarded, `tf` the times the server refused. A server that sends none of them gives none, and the quote is then labelled rather than
+ *  called fresh; a server that predates `lt` gives no trade time (the packet's time is never used in its place). */
 export function quoteOf(r: LiveQuoteRow, lot = 1): Quote {
   const per = unitsPerContract(r.seg, lot);
   const oi = Math.round(r.oi / per);
-  return { last: r.last, bid: r.bid, ask: r.ask, volume: Math.round(r.volume / per), oi, oiChange: oiChange(oi, r.oip), time: r.t ?? undefined };
+  return {
+    last: r.last, bid: r.bid, ask: r.ask, volume: Math.round(r.volume / per), oi, oiChange: oiChange(oi, r.oip), time: raw(r.lt), packetTime: raw(r.t),
+    receivedAt: raw(r.r), bookSeenAt: raw(r.bs), deliveryDelayMs: raw(r.dly), outOfOrder: r.ooo ? r.ooo : undefined, outOfOrderAt: raw(r.oooAt), timeFaults: r.tf?.length ? r.tf : undefined,
+  };
 }
 
 export function liveFeed(o: LiveOptions): LiveFeed {
   const fetcher = o.fetcher ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   const now = o.now ?? (() => Date.now());
-  let newest: number | null = null;
-  /** When the newest exchange time last moved on: a feed whose times keep advancing is live whatever the exchange's clock says, and one whose times stand still
-   *  is showing the last session. The first sight of a time is not an advance. */
-  let advancedAt: number | null = null;
   let live = true;
+  /** The server's clock less this page's, as of the last answer or frame. */
+  let skew = 0;
+  /** The newest packet seen of each contract: when the server received it and the exchange's own time on it. A repeat of a packet carries the same receipt (the server does not renew it), so it changes nothing. */
+  const observed = new Map<string, Observation>();
 
   async function ask(tokens: string): Promise<{ live: boolean; quotes: LiveQuoteRow[] }> {
     const r = await fetcher(`/api/derivs/quotes?tokens=${encodeURIComponent(tokens)}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return (await r.json()) as { live: boolean; quotes: LiveQuoteRow[] };
+    const answer = (await r.json()) as { live: boolean; quotes: LiveQuoteRow[]; now?: number };
+    if (typeof answer.now === 'number' && Number.isFinite(answer.now)) skew = answer.now - now();
+    return answer;
   }
 
-  /** Contracts named on the socket, with when each was last asked for. */
-  const asked = new Map<string, number>();
+  function observe(row: LiveQuoteRow): void {
+    observed.set(`${row.seg}:${row.token}`, { receivedAt: typeof row.r === 'number' ? row.r : null, eventTime: typeof row.t === 'number' ? row.t : null });
+  }
+
+  /** Contracts named on the socket, with when each was last asked for and its place in that ask. */
+  const asked = new Map<string, { at: number; rank: number }>();
+  /** The order last named, so an unchanged list is not named again. */
+  let lastNamed = '';
   function name(refs: string[]): void {
     const t = now();
-    let added = false;
-    for (const r of refs) {
-      if (!asked.has(r)) added = true;
-      asked.set(r, t);
+    refs.forEach((r, rank) => asked.set(r, { at: t, rank }));
+    for (const [r, a] of asked) if (t - a.at > PUSH_KEEP_MS) asked.delete(r);
+    // the order is the priority when the socket's limit is reached: the contracts of the newest ask first, in the order asked (the caller puts the ones nearest the money first), then older asks
+    const ordered = [...asked].sort((a, b) => b[1].at - a[1].at || a[1].rank - b[1].rank).map(([r]) => r);
+    const named = ordered.join(',');
+    if (named !== lastNamed) {
+      lastNamed = named;
+      o.push?.needDerivs(OWNER, ordered);
     }
-    let dropped = false;
-    for (const [r, at] of asked) if (t - at > PUSH_KEEP_MS) (asked.delete(r), (dropped = true));
-    if (added || dropped) o.push?.needDerivs(OWNER, [...asked.keys()]);
   }
 
-  function note(seen: number | null): void {
-    if (seen !== null && (newest === null || seen > newest)) {
-      if (newest !== null) advancedAt = now();
-      newest = seen;
-    }
-  }
+  const serverNow = (): number => now() + skew;
+  const session = (): SessionState => decideSession([...observed.values()], serverNow());
 
   return {
     synthetic: false,
@@ -106,8 +130,10 @@ export function liveFeed(o: LiveOptions): LiveFeed {
           })
       : undefined,
     release() {
+      observed.clear();
       if (asked.size === 0) return;
       asked.clear();
+      lastNamed = '';
       o.push?.needDerivs(OWNER, []);
     },
     async probe() {
@@ -118,7 +144,12 @@ export function liveFeed(o: LiveOptions): LiveFeed {
       }
       return live;
     },
-    newest: () => newest,
+    newest: () => {
+      const times = [...observed.values()].map((v) => v.eventTime).filter((t): t is number => typeof t === 'number' && Number.isFinite(t));
+      return times.length ? Math.max(...times) : null;
+    },
+    session,
+    serverNow,
     async spot(underlying) {
       return o.spotOf(underlying);
     },
@@ -127,17 +158,16 @@ export function liveFeed(o: LiveOptions): LiveFeed {
       const byRef = new Map<string, ContractKey>();
       for (const k of keys) if (k.ref) byRef.set(`${k.ref.segment}:${k.ref.token}`, k);
       const refs = [...byRef.keys()];
-      let seen: number | null = null; // the newest time in this call's answers
       if (o.push?.pushing && live) {
         name(refs); // asking is what keeps them on the stream; what has been pushed so far is the answer
+        if (typeof o.push.serverSkewMs === 'number') skew = o.push.serverSkewMs;
         for (const ref of refs) {
           const row = o.push.derivs.get(ref);
           const key = byRef.get(ref);
           if (!row || !key) continue;
           out.set(keyOf(key), quoteOf(row, key.ref?.lot ?? 1));
-          if (row.t !== null && (seen === null || row.t > seen)) seen = row.t;
+          observe(row);
         }
-        note(seen);
         return out;
       }
       for (let i = 0; i < refs.length; i += MAX_ASKED) {
@@ -148,19 +178,15 @@ export function liveFeed(o: LiveOptions): LiveFeed {
         for (const row of answer.quotes) {
           const key = byRef.get(`${row.seg}:${row.token}`);
           if (!key) continue;
-          const q = quoteOf(row, key.ref?.lot ?? 1);
-          out.set(keyOf(key), q);
-          if (row.t !== null && (seen === null || row.t > seen)) seen = row.t;
+          out.set(keyOf(key), quoteOf(row, key.ref?.lot ?? 1));
+          observe(row);
         }
       }
-      note(seen);
       return out;
     },
     badge() {
       if (!live) return { text: 'no live prices', title: 'The server has no broker stream to ask.' };
-      const t = newest;
-      if ((t !== null && now() - t <= FRESH_MS) || (advancedAt !== null && now() - advancedAt <= FRESH_MS)) return { text: 'live prices', title: 'Prices, volume and open interest as the broker\'s stream last sent them.' };
-      return { text: 'last session prices', title: 'The market is shut or these contracts have not traded lately: these are the last prices the exchange sent.' };
+      return sessionBadge(session());
     },
   };
 }

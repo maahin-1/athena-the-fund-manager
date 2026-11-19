@@ -9,6 +9,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from athena.evaluation.claims import bound_figure_errors, facts_from_sheet
+
 PREFIX = {"technical": "T", "fundamentals": "F", "news": "N"}
 MAX_HEADLINES = 8
 MAX_FLAGS = 12
@@ -30,6 +32,17 @@ def _facts(kind: str, packet: Mapping[str, Any]) -> list[dict[str, Any]]:
             fact["note"] = metric["note"]
         out.append(fact)
     return out
+
+
+def _analyst(out: Mapping[str, Any]) -> dict[str, Any]:
+    """One analyst's view as the sheet shows it. A newer output carries the claims code verified and rendered and the scheme that checked it (`athena.evaluation.claims`); an older one has neither, and is
+    shown as before. The reasoning is the model's own words in both."""
+    view = {"signal": out["signal"], "confidence": out["confidence"], "coverage": out["data_coverage"], "reasoning": out["reasoning"], "missing": list(out.get("missing", []))}
+    if out.get("claims"):
+        view["claims"] = [str(c.get("statement", "")) for c in out["claims"] if isinstance(c, Mapping) and c.get("statement")]
+    if isinstance(out.get("verification"), Mapping) and out["verification"].get("scheme"):
+        view["checked"] = str(out["verification"]["scheme"])
+    return view
 
 
 def build_sheet(
@@ -59,10 +72,7 @@ def build_sheet(
         "missing": missing,
         "headlines": headlines,
         "untrusted_note": UNTRUSTED,
-        "analysts": {
-            name: {"signal": out["signal"], "confidence": out["confidence"], "coverage": out["data_coverage"], "reasoning": out["reasoning"], "missing": list(out.get("missing", []))}
-            for name, out in outputs.items()
-        },
+        "analysts": {name: _analyst(out) for name, out in outputs.items()},
         "blend": {"rating": verdict.get("verdict"), "conviction": verdict.get("conviction"), "raw_conviction": verdict.get("raw_conviction"), "net": net, "calibration": verdict.get("calibration")},
         "conflict": dict(conflict) if conflict else None,
         "decision": dict(decision) if decision else None,
@@ -79,6 +89,42 @@ def unknown_citations(text: str, sheet: Mapping[str, Any]) -> list[str]:
     return sorted({i for i in ID.findall(text) if i not in known})
 
 
+def figure_binding_errors(text: str, listed: Sequence[str], sheet: Mapping[str, Any]) -> list[str]:
+    """Figures in `text` that belong to a fact the reply does not cite, or carry a sign the cited fact does not have (`athena.evaluation.claims.bound_figure_errors`). The cited facts are the listed
+    ids and any id written in the text. This ties a figure to an id on the sheet; it does not show that the fact supports the argument."""
+    return bound_figure_errors(text, facts_from_sheet(sheet), {*listed, *ID.findall(text)})
+
+
+MAX_CITATIONS = 12
+
+
+def citation_errors(value: Any, sheet: Mapping[str, Any], label: str, *, required: bool = True) -> list[str]:
+    """Why `value` is not a usable list of cited fact ids (empty when it is). Checked before anything iterates it: a model reply can hold null, a bare string or a mixed list.
+
+    The list must be an actual list of strings, each exactly one id that is on the sheet (a string like "F1, T2" or "f1" is not an id). It must be non-empty when `required`. This only
+    establishes that what was cited exists on the sheet; it does not establish that the cited fact supports the argument."""
+    if not isinstance(value, list):
+        return [f"{label} must be a list of fact ids, not {type(value).__name__}"]
+    if len(value) > MAX_CITATIONS:
+        return [f"{label} lists more than {MAX_CITATIONS} ids"]
+    if required and not value:
+        return [f"{label} is empty: cite at least one fact id from the sheet"]
+    known = fact_ids(sheet)
+    bad = [item for item in value if not (isinstance(item, str) and ID.fullmatch(item) and item in known)]
+    if bad:
+        return [f"{label} must hold only fact ids that are on the sheet; not valid: {[b if isinstance(b, str) else type(b).__name__ for b in bad]}"]
+    return []
+
+
+def text_errors(value: Any, label: str, max_words: int | None = None) -> list[str]:
+    """Why `value` is not a usable piece of prose: a non-empty string, within `max_words` when given."""
+    if not isinstance(value, str) or not value.strip():
+        return [f"{label} must be non-empty text"]
+    if max_words is not None and len(value.split()) > max_words:
+        return [f"{label} is over {max_words} words"]
+    return []
+
+
 def render(sheet: Mapping[str, Any]) -> str:
     """The sheet as plain text for a model: facts one per line with their ids, then flags, the analysts' views and the blend."""
     def shown(v: Any) -> str:
@@ -93,7 +139,8 @@ def render(sheet: Mapping[str, Any]) -> str:
         lines += ["", f"HEADLINES ({sheet['untrusted_note']})"] + [f"- {h.get('date')} {h.get('publisher')}: {h.get('title')}" for h in sheet["headlines"]]
     lines += ["", "ANALYSTS"]
     for name, a in sheet["analysts"].items():
-        lines.append(f"- {name}: {a['signal']} {a['confidence']} ({a['coverage']}): {a['reasoning']}")
+        lines.append(f"- {name}: {a['signal']} {a['confidence']} ({a['coverage']}): {a['reasoning']}" + (f" [checked: {a['checked']}]" if a.get("checked") else ""))
+        lines += [f"    fact (written by code): {statement}" for statement in a.get("claims", [])]
     b = sheet["blend"]
     lines += ["", f"BLEND: {b['rating']}, conviction {shown(b['conviction'])} ({b.get('calibration')}), net {shown(b['net'])}"]
     if sheet["conflict"]:

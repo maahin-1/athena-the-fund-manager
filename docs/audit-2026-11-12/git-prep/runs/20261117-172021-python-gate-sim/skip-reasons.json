@@ -1,0 +1,22 @@
+[
+    {
+        "reason":  "needs --live",
+        "count":  74,
+        "first":  "tests.live.test_live_backtest::test_live_stock_history_has_one_equity_price_per_day_with_no_bond_rows"
+    },
+    {
+        "reason":  "the Damodaran mirror is not on this machine",
+        "count":  7,
+        "first":  "tests.test_ref_country::test_the_real_july_2026_file_gives_india_baa3"
+    },
+    {
+        "reason":  "cross-language: set ATHENA_SNAPSHOT_RUST_OUT to the directory the Rust writer published into",
+        "count":  1,
+        "first":  "tests.test_snapshot_crosslang::test_python_reads_what_the_rust_writer_published"
+    },
+    {
+        "reason":  "cross-language: set ATHENA_SNAPSHOT_PY_OUT to an empty directory",
+        "count":  1,
+        "first":  "tests.test_snapshot_crosslang::test_python_writes_a_generation_for_the_rust_reader"
+    }
+]

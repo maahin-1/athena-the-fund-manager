@@ -5,6 +5,8 @@
     python -m athena.brokers confirm TOKEN                             send the previewed order (paper)
     python -m athena.brokers book | orders | settle | cancel ORDER_ID  funds and holdings, the order list, look at open orders again, cancel one
     python -m athena.brokers kill | resume                             switch trading off (and cancel what is open) or back on
+    python -m athena.brokers resolve-send --note "what you checked"    (after a send whose outcome is unknown) a person says the broker's order list was looked at: clears the desk's record and the adapter's
+                                                                       lost-answer ledger together; `resume` and any new order are refused until then
     python -m athena.brokers audit [--verify]                          the log of everything the desk did
     python -m athena.brokers check [--broker KEY]                      (live broker) log in and read the funds, to prove the settings work; places nothing
     python -m athena.brokers unresolved | resolve ID                  (live broker) orders sent whose answer was lost; a person clears one after looking at the broker's list
@@ -33,11 +35,12 @@ from athena.contracts import AthenaError
 def _desk() -> tuple[Desk, Any]:
     limits = safety.load_limits()
     audit = AuditLog(key=human.audit_key())
+    calendar = safety.load_holidays()  # None when the owner has not kept the exchange's holiday list: paper falls back to weekdays, a live order is refused
     if limits.mode == "live_delivery":
         broker = live.build(limits.broker)
-        return Desk(broker, limits, terminal_quote, audit, human=human.console_confirm, limits_pinned=lambda: human.limits_pinned(safety.LIMITS_PATH)), broker
+        return Desk(broker, limits, terminal_quote, audit, human=human.console_confirm, limits_pinned=lambda: human.limits_pinned(safety.LIMITS_PATH), calendar=calendar), broker
     broker = PaperBroker(terminal_quote)
-    return Desk(broker, limits, terminal_quote, audit), broker
+    return Desk(broker, limits, terminal_quote, audit, calendar=calendar), broker
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -58,6 +61,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub.add_parser("cancel").add_argument("order_id")
     sub.add_parser("kill")
     sub.add_parser("resume")
+    rs = sub.add_parser("resolve-send")
+    rs.add_argument("--note", required=True, help="what you checked at the broker (kept in the audit log)")
     sub.add_parser("check").add_argument("--broker", default="", help="log in to this broker (groww, zerodha, angelone, icici, upstox) even when the mode is paper; reads the funds and places nothing")
     sub.add_parser("pin-limits")
     sub.add_parser("resolve").add_argument("client_order_id")
@@ -141,7 +146,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{o.order_id} {o.status}")
             return 0
         if args.cmd == "kill":
-            print("trading is off; cancelled: " + (", ".join(desk.kill()) or "nothing was open"))
+            print(desk.kill().message())
+            return 0
+        if args.cmd == "resolve-send":
+            if human.ask("Have you looked at the broker's own order list for the send that never finished? Type RESOLVED to forget it: ") != "RESOLVED":
+                print("not cleared (this needs a person at a console)", file=sys.stderr)
+                return 1
+            desk.resolve_send(args.note)
+            print("the unresolved send(s) are cleared, in the desk's record and the broker ledger; `resume` switches trading back on")
             return 0
         if args.cmd == "resume":
             desk.resume()

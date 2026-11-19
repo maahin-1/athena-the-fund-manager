@@ -1,0 +1,26 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "bounded::"
+ ],
+ "mutations": [
+  {
+   "id": "t6r-presend-deadline-ignored",
+   "note": "R1 (rerun after the real-clock regression was added): the request is sent although the deadline passed while the child started",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if inner.now() >= until {",
+   "new": "if false {"
+  }
+ ]
+}

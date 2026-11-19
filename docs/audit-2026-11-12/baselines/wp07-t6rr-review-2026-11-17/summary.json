@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-17",
+  "disposition": "keep_T6_open_T8_paused",
+  "reviewer_probes": {
+    "passed": 4,
+    "failed": 5,
+    "total": 9,
+    "exit_code": 101
+  },
+  "existing_fake_suite": {
+    "passed": 67,
+    "failed": 0,
+    "filtered_out": 10,
+    "exit_code": 0
+  },
+  "collected_ids": 77,
+  "real_python_test": "explicitly filtered out",
+  "full_384_test_suite": "not independently rerun",
+  "source_sha256": "F4D23562DE1A96D8148018F26535A316FE2AFC9DF2BAB0149644292A14997822",
+  "application_code_changed": false,
+  "findings": [
+    "S1 direct admission shutdown is no-op",
+    "S2 partial resolution after resize releases excess permits",
+    "S3 expired direct budget still attempts spawn",
+    "S4 last-owner drop loses idle child recovery",
+    "S5 known journal write failure allows admission (disclosed policy)"
+  ]
+}

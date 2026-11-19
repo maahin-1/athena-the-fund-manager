@@ -146,9 +146,18 @@ class Findings:
     """The checks on a request, each `(rule, passed, text)`. A breach is a check that did not pass."""
 
     items: list[tuple[str, bool, str]] = field(default_factory=list)
+    unavailable: list[tuple[str, str]] = field(default_factory=list)  # protections that could not be measured and that the owner accepted as advisory: shown as unavailable, never as passed
 
     def add(self, rule: str, passed: bool, text: str) -> None:
         self.items.append((rule, passed, text))
+
+    def add_unavailable(self, rule: str, text: str, blocking: bool) -> None:
+        """A protection that cannot be measured here. `blocking`: it is a breach (the order is refused). Otherwise it is kept apart in `unavailable`, which is not among the checks that passed and does
+        not make the findings fail: the owner chose to watch it by hand."""
+        if blocking:
+            self.add(rule, False, "UNAVAILABLE: " + text)
+        else:
+            self.unavailable.append((rule, text))
 
     @property
     def breaches(self) -> list[tuple[str, bool, str]]:

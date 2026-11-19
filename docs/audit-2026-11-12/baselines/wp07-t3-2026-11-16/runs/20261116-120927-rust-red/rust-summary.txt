@@ -1,0 +1,1 @@
+{'passed': 252, 'failed': 6, 'ignored': 2} [{'verdict': 'FAILED', 'passed': 252, 'failed': 6, 'ignored': 2}]

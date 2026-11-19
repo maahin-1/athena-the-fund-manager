@@ -30,7 +30,7 @@ const SIDE_COLUMNS = ['oi', 'oichg', 'vol', 'iv'] as const;
 const GREEK_COLUMNS = ['delta', 'gamma', 'vega', 'theta'] as const;
 const LABELS: Record<string, string> = { oi: 'OI', oichg: 'ΔOI', vol: 'Vol', iv: 'IV%', delta: 'Δ', gamma: 'Γ', vega: 'Vega', theta: 'Θ', ltp: 'LTP', bid: 'Bid', ask: 'Ask' };
 const TITLES: Record<string, string> = {
-  oi: 'Open interest, in contracts', oichg: 'Change in open interest since the previous close', vol: 'Volume traded today, in contracts', iv: 'Implied volatility in percent, from the middle of the bid and ask (else the last trade)',
+  oi: 'Open interest, in contracts', oichg: 'Change in open interest since the previous close', vol: 'Volume traded today, in contracts', iv: 'Implied volatility in percent, from the middle of a two-sided bid and ask. A dash means the contract\'s own quote failed the quality rules (hover the cell); an italic number carries a label',
   delta: 'Delta: change in price for a move of 1 in the forward', gamma: 'Gamma: change in delta for a move of 1', vega: 'Vega: change in price for one volatility point', theta: 'Theta: price lost to one calendar day', ltp: 'Last traded price', bid: 'Best bid', ask: 'Best ask',
 };
 
@@ -60,6 +60,7 @@ function sideCells(side: SideView | null, kind: 'call' | 'put', strike: number, 
   cells.push(cell('vol', q ? compact(q.volume) : '–'));
   const iv = cell('iv', vol(side?.iv ?? null));
   if (side?.ivNote) iv.title = side.ivNote;
+  if (side && side.quality.state !== 'ok') iv.classList.add(`q-${side.quality.state}`); // withheld: no number, the title says why; labelled: the number, the title says what to know
   cells.push(iv);
   if (o.greeks) {
     const g = side?.greeks ?? null;

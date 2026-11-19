@@ -1,0 +1,11 @@
+{
+  "id": "synthetic-load-failure",
+  "file": "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\t3r-review-temp\\synthetic-source.txt",
+  "note": "",
+  "outcome": "caught",
+  "failing": [
+    "test/synthetic.test.ts"
+  ],
+  "seconds": 0.1,
+  "exit_code": 1
+}

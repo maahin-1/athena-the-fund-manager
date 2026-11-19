@@ -1,0 +1,7 @@
+cwd: C:\Users\LEGION\ath-wp07\w\terminal
+../.venv/Scripts/python.exe exists: True   resolves to: C:\Users\LEGION\ath-wp07\w\.venv\Scripts\python.exe
+../.venv/bin/python exists: False
+../src/athena/indicators_user/runner.py exists: True
+python runs from there: 3.13.14 0
+sh on PATH: False
+Git sh at C:\Program Files\Git\bin\sh.exe: True

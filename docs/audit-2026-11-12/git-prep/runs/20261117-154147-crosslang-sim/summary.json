@@ -1,0 +1,134 @@
+{
+    "candidate":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+    "python":  "d:\\projects\\learn-project\\athena-the-fund-manager\\.venv\\Scripts\\python.exe",
+    "work":  "C:\\Users\\LEGION\\ath-wp07\\xl-work-2",
+    "tools":  {
+                  "python":  "Python 3.13.14",
+                  "cargo":  "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+                  "rustc":  "rustc 1.98.1 (48a229cea 2026-09-01)",
+                  "node":  "v24.18.0",
+                  "sh":  "C:\\Program Files\\Git\\bin\\sh.exe (not on PATH: the Rust gate adds that folder and records it)"
+              },
+    "collected_ids":  [
+                          "tests/test_snapshot_crosslang.py::test_python_writes_a_generation_for_the_rust_reader",
+                          "tests/test_snapshot_crosslang.py::test_python_reads_what_the_rust_writer_published"
+                      ],
+    "collected_ids_as_intended":  true,
+    "stages":  [
+                   {
+                       "stage":  "1 python writes",
+                       "what":  "Python publishes a generation of w.duckdb",
+                       "argv":  "d:\\projects\\learn-project\\athena-the-fund-manager\\.venv\\Scripts\\python.exe -m pytest -v -rs -p no:cacheprovider --basetemp C:\\Users\\LEGION\\ath-wp07\\xl-work-2\\pytest-1 tests/test_snapshot_crosslang.py::test_python_writes_a_generation_for_the_rust_reader",
+                       "cwd":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+                       "exit":  0,
+                       "counts":  {
+                                      "passed":  1,
+                                      "failed":  0,
+                                      "skipped":  0,
+                                      "errors":  0,
+                                      "xfailed":  0,
+                                      "xpassed":  0,
+                                      "deselected":  0
+                                  },
+                       "named_test_passed":  true,
+                       "seconds":  0.9,
+                       "log":  "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\runs\\20261117-154147-crosslang-sim\\1-python-writes.log",
+                       "ok":  true
+                   },
+                   {
+                       "stage":  "2 rust reads python",
+                       "what":  "Rust validates and opens the Python generation",
+                       "argv":  "cargo test --offline --locked -- --ignored --exact snapshot::tests::a_generation_published_by_the_python_writer_validates_and_opens",
+                       "cwd":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim\\terminal",
+                       "exit":  0,
+                       "counts":  {
+                                      "passed":  1,
+                                      "failed":  0,
+                                      "ignored":  0,
+                                      "filtered_out":  418,
+                                      "result_lines":  1
+                                  },
+                       "test_lines":  [
+                                          "snapshot::tests::a_generation_published_by_the_python_writer_validates_and_opens ok"
+                                      ],
+                       "seconds":  0.8,
+                       "log":  "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\runs\\20261117-154147-crosslang-sim\\2-rust-reads-python.log",
+                       "ok":  true
+                   },
+                   {
+                       "stage":  "3 rust writes",
+                       "what":  "Rust publishes two generations",
+                       "argv":  "cargo test --offline --locked -- --ignored --exact snapshot::tests::publishes_generations_for_the_python_reader",
+                       "cwd":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim\\terminal",
+                       "exit":  0,
+                       "counts":  {
+                                      "passed":  1,
+                                      "failed":  0,
+                                      "ignored":  0,
+                                      "filtered_out":  418,
+                                      "result_lines":  1
+                                  },
+                       "test_lines":  [
+                                          "snapshot::tests::publishes_generations_for_the_python_reader ok"
+                                      ],
+                       "seconds":  0.8,
+                       "log":  "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\runs\\20261117-154147-crosslang-sim\\3-rust-writes.log",
+                       "ok":  true
+                   },
+                   {
+                       "stage":  "4 python reads rust",
+                       "what":  "Python validates and opens what Rust published",
+                       "argv":  "d:\\projects\\learn-project\\athena-the-fund-manager\\.venv\\Scripts\\python.exe -m pytest -v -rs -p no:cacheprovider --basetemp C:\\Users\\LEGION\\ath-wp07\\xl-work-2\\pytest-4 tests/test_snapshot_crosslang.py::test_python_reads_what_the_rust_writer_published",
+                       "cwd":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+                       "exit":  0,
+                       "counts":  {
+                                      "passed":  1,
+                                      "failed":  0,
+                                      "skipped":  0,
+                                      "errors":  0,
+                                      "xfailed":  0,
+                                      "xpassed":  0,
+                                      "deselected":  0
+                                  },
+                       "named_test_passed":  true,
+                       "seconds":  0.7,
+                       "log":  "D:\\projects\\learn-project\\athena-the-fund-manager\\docs\\audit-2026-11-12\\git-prep\\runs\\20261117-154147-crosslang-sim\\4-python-reads-rust.log",
+                       "ok":  true
+                   }
+               ],
+    "control_A":  {
+                      "what":  "plain pytest of the file: expected to skip both tests and still exit 0 (so it proves nothing)",
+                      "exit":  0,
+                      "counts":  {
+                                     "passed":  0,
+                                     "failed":  0,
+                                     "skipped":  2,
+                                     "errors":  0,
+                                     "xfailed":  0,
+                                     "xpassed":  0,
+                                     "deselected":  0
+                                 },
+                      "behaves_as_expected":  true
+                  },
+    "control_B":  {
+                      "what":  "one byte appended to the Python-published generation file before the Rust stage: the stage must fail",
+                      "exit":  101,
+                      "test_lines":  [
+                                         "snapshot::tests::a_generation_published_by_the_python_writer_validates_and_opens FAILED"
+                                     ],
+                      "behaves_as_expected":  true
+                  },
+    "python_published_files":  5,
+    "rust_published_files":  6,
+    "import_origin":  {
+                          "processes_observed":  4,
+                          "processes_that_imported_athena":  4,
+                          "athena_modules_in_largest_process":  3,
+                          "violations":  0,
+                          "violation_examples":  [
+
+                                                 ],
+                          "ok":  true
+                      },
+    "ok":  true
+}

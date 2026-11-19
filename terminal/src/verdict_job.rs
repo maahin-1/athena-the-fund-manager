@@ -56,7 +56,7 @@ impl VerdictJobs {
         tokio::spawn(async move {
             let mut cmd = tokio::process::Command::new(&command[0]);
             cmd.args(&command[1..]).arg(&symbol).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).kill_on_drop(true);
-            let outcome = match cmd.spawn() {
+            let outcome = match { crate::process::background(cmd.as_std_mut()); cmd.spawn() } {
                 Err(_) => State::Failed(symbol.clone(), "could not start the verdict command".into()),
                 Ok(mut child) => match tokio::time::timeout(LIMIT, child.wait()).await {
                     Err(_) => {

@@ -16,7 +16,7 @@ from typing import Any
 
 from athena.clock import utc_now
 from athena.llm.envfile import DEFAULT_ENV_FILE
-from athena.verdicts.calibration import CALIBRATION_PATH, Calibration
+from athena.verdicts.calibration import CALIBRATION_PATH, DEFAULT_EVIDENCE, Calibration
 from athena.verdicts.runner import VerdictRunner
 from athena.warehouse.warehouse import DEFAULT_PATH, Warehouse
 
@@ -106,6 +106,8 @@ def write_report(summary: dict[str, Any], started: datetime, finished: datetime,
     if summary["stopped"]:
         lines.append(f"- Stopped early: {summary['stopped']}.")
     lines += [f"- Made: {', '.join(summary['made'])}" if summary["made"] else "- Made: none"]
+    if summary.get("stale"):
+        lines.append(f"- NOT remade, price data too old for a new verdict (the last verdict stands, shown as stale): {', '.join(summary['stale'])}")
     lines += [f"- FAILED {line}" for line in summary["failed"]]
     report_dir.mkdir(parents=True, exist_ok=True)
     path = report_dir / f"verdicts_{started:%Y%m%d_%H%M}.md"
@@ -118,6 +120,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m athena.verdicts.cli", description=__doc__.split("\n")[0])
     parser.add_argument("--db", default=str(DEFAULT_PATH))
     parser.add_argument("--council", choices=("conflicts", "always"), help="also convene the council (debate, then the judge) beside the blend: on conflicts only, or for every verdict made")
+    parser.add_argument("--evidence", choices=("archival", "all"), default="archival", help="--calibrate: measure from archival-filing rows only (default), or pool every evidence class (unqualified)")
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--calibrate", nargs="*", metavar="LOG", help="run logs to measure (default: the Phase 1k v2 logs)")
     action.add_argument("--symbol")
@@ -126,9 +129,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.calibrate is not None:
         paths = [Path(p) for p in args.calibrate] or [p for p in DEFAULT_LOGS if p.exists()]
-        calibration = Calibration.from_logs(paths)
+        calibration = Calibration.from_logs(paths, None if args.evidence == "all" else DEFAULT_EVIDENCE)
         calibration.save()
         print(format_calibration(calibration))
+        print(f"evidence used: {', '.join(calibration.evidence.get('used', []))}; left out (rows by class): {calibration.evidence.get('left_out') or 'none'}")
         print(f"saved to {CALIBRATION_PATH}")
         return 0
     if args.list:
@@ -138,7 +142,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for symbol in symbols:
             state = runner.status(symbol)
             latest = state["verdict"]
-            print(f"{symbol}: {latest['payload']['verdict']['verdict']} made {latest['made_at']:%Y-%m-%d}" + (f"; out of date: {'; '.join(state['reasons'])}" if state["reasons"] else ""))
+            stale = "" if state["inputs"]["fresh"] else f"; STALE INPUTS, a new verdict cannot be made: {state['inputs']['reason']}"
+            print(f"{symbol}: {latest['payload']['verdict']['verdict']} made {latest['made_at']:%Y-%m-%d}" + (f"; out of date: {'; '.join(state['reasons'])}" if state["reasons"] else "") + stale)
         print(f"{len(symbols)} stocks with a verdict")
         return 0
     runner = live_runner(args.db, council_mode=args.council)

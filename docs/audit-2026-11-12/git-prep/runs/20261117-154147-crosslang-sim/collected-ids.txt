@@ -1,0 +1,2 @@
+tests/test_snapshot_crosslang.py::test_python_writes_a_generation_for_the_rust_reader
+tests/test_snapshot_crosslang.py::test_python_reads_what_the_rust_writer_published

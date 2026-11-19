@@ -101,7 +101,7 @@ test('F6 reaches the Options tab from the Grid', async ({ page }) => {
 
 test('under the fake feed the server has no derivative stream, says so, and the page keeps its synthetic prices', async ({ page }) => {
   const answer = await page.request.get('/api/derivs/quotes?tokens=NFO:1');
-  expect(await answer.json()).toEqual({ live: false, quotes: [] });
+  expect(await answer.json()).toEqual({ live: false, quotes: [], now: expect.any(Number) }); // (T3: the answer also carries the server's clock)
   expect((await page.request.get('/api/derivs/quotes?tokens=NSE:3045')).status()).toBe(400);
   await open(page);
   await expect(page.locator('.opt-synth')).toHaveAttribute('data-kind', 'synthetic');

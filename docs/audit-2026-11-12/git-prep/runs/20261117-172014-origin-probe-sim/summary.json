@@ -1,0 +1,24 @@
+{
+    "candidate":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim",
+    "A_in_process":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim\\src\\athena\\__init__.py",
+    "A_from_candidate":  true,
+    "B_child_process":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim\\src\\athena\\__init__.py",
+    "B_from_candidate":  true,
+    "C_dash_m_exit":  0,
+    "C_ok":  true,
+    "recorder":  {
+                     "processes_observed":  4,
+                     "processes_ended_normally":  4,
+                     "processes_that_imported_athena":  3,
+                     "athena_modules_in_largest_process":  10,
+                     "violations":  0,
+                     "violation_examples":  [
+
+                                            ],
+                     "ok":  true
+                 },
+    "N_without_candidate_path":  "D:\\projects\\learn-project\\athena-the-fund-manager\\src\\athena\\__init__.py",
+    "N_comes_from_candidate":  false,
+    "N_recorder_flagged_it":  true,
+    "ok":  true
+}

@@ -1,0 +1,6 @@
+2026-11-15 17:51:10  run 20261115-175110-web-red
+2026-11-15 17:51:10  tsc --noEmit (no build output is written)
+2026-11-15 17:51:13  tsc exit 1
+2026-11-15 17:51:13  npm test
+2026-11-15 17:51:17  npm test exit 1
+2026-11-15 17:51:17  done

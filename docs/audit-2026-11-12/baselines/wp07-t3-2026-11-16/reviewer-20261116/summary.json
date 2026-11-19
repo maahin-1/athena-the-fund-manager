@@ -1,0 +1,8 @@
+{
+  "files": 5,
+  "passed": 114,
+  "failed": 0,
+  "guard_records": 6768,
+  "denied": 0,
+  "scope": "focused web tests only; Rust and full suites not rerun"
+}

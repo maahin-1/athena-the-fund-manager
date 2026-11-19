@@ -92,6 +92,22 @@ describe('the Options page', () => {
     expect(view.element.querySelector('.opt-synth')!.textContent).toBe('synthetic prices');
   });
 
+  it('never chooses a nameless underlying listed first, whether opened with no name or an empty one', async () => {
+    for (const asked of [undefined, '', '  ']) {
+      const base = stubApi();
+      const api = stubApi({
+        underlyings: async () => [{ underlying: '', segment: 'BFO', class: 'stock', odd: false, expiries: 1, lot: 500, futures: true, options: true }, ...(await base.underlyings())],
+      });
+      const { view } = make(api);
+      view.show(asked);
+      await flush();
+      expect(api.calls[0]).toBe('expiries NIFTY');
+      expect(api.calls).not.toContain('expiries ');
+      expect(view.element.querySelectorAll('tr.opt-row').length).toBeGreaterThan(10);
+      expect([...view.element.querySelectorAll('datalist option')].map((o) => (o as HTMLOptionElement).value)).not.toContain('');
+    }
+  });
+
   it('shows the statistics: spot, forward, ATM, ATM IV, both put-call ratios, max pain, days and lot', async () => {
     const { view } = make();
     view.show();

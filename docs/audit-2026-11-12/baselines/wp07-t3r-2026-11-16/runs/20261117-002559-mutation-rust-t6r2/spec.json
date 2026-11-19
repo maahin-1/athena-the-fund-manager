@@ -1,0 +1,300 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "bounded::",
+  "helper::",
+  "fundamentals::tests::",
+  "flow_board::",
+  "bars::join_tests::",
+  "server::tests::an_override",
+  "server::tests::a_failure_with",
+  "server::tests::the_work",
+  "server::tests::acknowledging"
+ ],
+ "mutations": [
+  {
+   "id": "t6r2-abandon-cancels-running",
+   "note": "R2: a caller that goes away cancels its running job",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            stop.abandon();",
+   "new": "            stop.trip();"
+  },
+  {
+   "id": "t6r2-abandon-ignored-before-start",
+   "note": "R2: an abandoned job that has not started still starts",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if job.stop.is_set() || job.stop.is_abandoned() {",
+   "new": "if job.stop.is_set() {"
+  },
+  {
+   "id": "t6r2-abandon-queued-kept",
+   "note": "R2: a queued job whose caller went away stays queued",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if self.queue.iter().any(|e| e.id == id) {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r2-abandoned-flag-not-set",
+   "note": "R2: the record does not say the caller went away",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "                r.abandoned = true;",
+   "new": "                r.abandoned = false;"
+  },
+  {
+   "id": "t6r2-unrecovered-ignored",
+   "note": "R4: unreadable recovery state does not block admission",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if self.unrecovered.is_some() {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r2-orphans-do-not-block",
+   "note": "R4: an entry with no worker does not block admission",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if let Some(job) = self.orphans.first().map(|h| h.job) {",
+   "new": "if let Some(job) = None::<u64> {"
+  },
+  {
+   "id": "t6r2-extra-entries-dropped",
+   "note": "R4: entries beyond the worker count are discarded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "                None => self.orphans.push(entry),",
+   "new": "                None => {}"
+  },
+  {
+   "id": "t6r2-orphans-not-journalled",
+   "note": "R4: entries with no worker are not written back",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        out.extend(self.orphans.iter().map(|h| entry(None, h)));",
+   "new": ""
+  },
+  {
+   "id": "t6r2-idle-child-not-retained",
+   "note": "R4: an unconfirmed idle child is not held or journalled",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "                inner.retain_idle(slot, info); // journalled before the worker is counted as stopped, so a shutdown report never outruns the file",
+   "new": "                let _ = info;"
+  },
+  {
+   "id": "t6r2-idle-child-has-handle",
+   "note": "R4: an idle child whose handle is gone is treated as having one",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            origin: Origin::NoHandle,",
+   "new": "            origin: Origin::ThisRun,"
+  },
+  {
+   "id": "t6r2-handleless-retry-allowed",
+   "note": "R4: a worker with no process handle may be asked to try again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            if h.origin.handleless() {",
+   "new": "            if false {"
+  },
+  {
+   "id": "t6r2-orphan-retry-allowed",
+   "note": "R4: an entry with no worker may be asked to try again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        if let Some(i) = self.orphans.iter().position(|h| h.job == job) {\n            if how == Resolution::Retry {",
+   "new": "        if let Some(i) = self.orphans.iter().position(|h| h.job == job) {\n            if false && how == Resolution::Retry {"
+  },
+  {
+   "id": "t6r2-journal-gate-removed",
+   "note": "R4: snapshot and write are not one transaction",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        let _transaction = self.gate.lock().expect(\"journal gate\");\n        let held = snapshot();",
+   "new": "        let held = snapshot();"
+  },
+  {
+   "id": "t6r2-journal-shared-temp",
+   "note": "R4: every write uses the same temporary name",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "SEQUENCE.fetch_add(1, Ordering::SeqCst)",
+   "new": "0"
+  },
+  {
+   "id": "t6r2-temp-left-behind",
+   "note": "R4: a failed write leaves its temporary file",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            let _ = std::fs::remove_file(&tmp);",
+   "new": ""
+  },
+  {
+   "id": "t6r2-unreadable-file-not-kept",
+   "note": "R4: an acknowledgement does not keep the unreadable file",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            journal.put_aside(at_unix_ms).map_err(|_| ResolveError::JournalError)?;",
+   "new": ""
+  },
+  {
+   "id": "t6r2-ack-never-unblocks",
+   "note": "R4: an acknowledgement does not unblock",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        *unreadable = None;",
+   "new": ""
+  },
+  {
+   "id": "t6r2-unreadable-treated-as-empty",
+   "note": "R4: an unreadable journal is read as nothing held",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "                *self.unreadable.lock().expect(\"journal state\") = Some(why);",
+   "new": "                let _ = why;"
+  },
+  {
+   "id": "t6r2-waiter-place-leaks",
+   "note": "R3: a cancelled waiter keeps its waiting place",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        st.waiting = st.waiting.saturating_sub(1);",
+   "new": ""
+  },
+  {
+   "id": "t6r2-cancelled-waiter-not-counted",
+   "note": "R3: a cancelled waiter is not counted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        if !self.completed {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r2-held-direct-does-not-block",
+   "note": "R3: places held by unconfirmed commands do not refuse admission",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            if sh.recovery.blocked().is_some() || st.held.len() >= sh.running {",
+   "new": "            if sh.recovery.blocked().is_some() {"
+  },
+  {
+   "id": "t6r2-admission-recovery-ignored",
+   "note": "R4: unreadable recovery state does not block an admission",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            if sh.recovery.blocked().is_some() || st.held.len() >= sh.running {",
+   "new": "            if st.held.len() >= sh.running {"
+  },
+  {
+   "id": "t6r2-direct-confirm-always",
+   "note": "R3: a direct command is always taken as confirmed gone",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "    child.kill();\n    child.wait_exit(DIRECT_GRACE).await\n}",
+   "new": "    child.kill();\n    let _ = child.wait_exit(DIRECT_GRACE).await;\n    true\n}"
+  },
+  {
+   "id": "t6r2-direct-hold-not-journalled",
+   "note": "R4: a held direct command is not written to the journal",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        self.persist();\n        (id, wake)",
+   "new": "        (id, wake)"
+  },
+  {
+   "id": "t6r2-direct-place-freed-before-exit",
+   "note": "R3: the place is freed before the command is ended",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "    if end_direct(&mut child).await {\n        drop(permit);\n        return;\n    }\n    let (id, wake)",
+   "new": "    drop(permit);\n    if end_direct(&mut child).await {\n        return;\n    }\n    let (id, wake)"
+  },
+  {
+   "id": "t6r2-direct-withheld-place-not-returned",
+   "note": "R4: a withheld place is not given back when resolved",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "                sh.permits.add_permits(1);",
+   "new": ""
+  },
+  {
+   "id": "t6r2-direct-restore-keeps-no-place",
+   "note": "R4: a restart does not withhold the place of a held command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let forgotten_permit = permits.clone().try_acquire_owned().map(|p| p.forget()).is_ok();",
+   "new": "let forgotten_permit = false;"
+  },
+  {
+   "id": "t6r2-direct-handleless-retry-allowed",
+   "note": "R4: a held command from an earlier run may be asked to try again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "        if st.held[i].origin.handleless() {",
+   "new": "        if false {"
+  },
+  {
+   "id": "t6r2-admission-ack-does-nothing",
+   "note": "R4: acknowledging an admission changes nothing",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            sh.recovery.acknowledge(note, ms(now), at_unix_ms)?;",
+   "new": "            let _ = (&note, at_unix_ms);"
+  },
+  {
+   "id": "t6r2-next-start-failed-stops",
+   "note": "R3: a helper that never started is not followed by the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Failed(\"start_failed\") | HelperResult::Failed(\"not_started\") => Next::RunCommand,",
+   "new": "HelperResult::Failed(\"not_started\") => Next::RunCommand,"
+  },
+  {
+   "id": "t6r2-next-ignores-idempotence",
+   "note": "R3: a possibly completed operation is always repeated",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Failed(_) if idempotent => Next::RunCommand,",
+   "new": "HelperResult::Failed(_) if true => Next::RunCommand,"
+  },
+  {
+   "id": "t6r2-ops-not-idempotent",
+   "note": "R3: no operation is idempotent",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperOp::Page | HelperOp::Valuation | HelperOp::ChartBars | HelperOp::FlowBoard => true,",
+   "new": "HelperOp::Page | HelperOp::Valuation | HelperOp::ChartBars | HelperOp::FlowBoard => false,"
+  },
+  {
+   "id": "t6r2-unrecovered-runs-command",
+   "note": "R4: a pool with unreadable recovery state invites the command",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "HelperResult::Refused(Refusal::Held { .. }) | HelperResult::Refused(Refusal::Unrecovered) => Next::Stop(Why::Held),",
+   "new": "HelperResult::Refused(Refusal::Held { .. }) => Next::Stop(Why::Held), HelperResult::Refused(Refusal::Unrecovered) => Next::RunCommand,"
+  },
+  {
+   "id": "t6r2-server-ack-action-missing",
+   "note": "R4: the acknowledge action is not accepted by the route",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+   "old": "        \"acknowledge_recovery\" => Resolution::AcknowledgeRecovery,",
+   "new": ""
+  },
+  {
+   "id": "t6r2-fund-maybe-run-message",
+   "note": "R3: a possibly completed operation is told as a timeout",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "because it may already have run",
+   "new": "because it ran"
+  },
+  {
+   "id": "t6r2-fund-module-timeout-mapping",
+   "note": "R3: a module that overran is told as overloaded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "            DirectError::Timeout => FundError::TimedOut,",
+   "new": "            DirectError::Timeout => FundError::Overloaded,"
+  },
+  {
+   "id": "t6r2-export-code-2",
+   "note": "R3: an export that found no data is told as a failure",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "Ok(out) if out.code == Some(2) => Err(FundError::NoData),",
+   "new": "Ok(out) if out.code == Some(99) => Err(FundError::NoData),"
+  },
+  {
+   "id": "t6r2-board-module-timeout-mapping",
+   "note": "R3: a board module that overran is told as a failure",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/flow_board.rs",
+   "old": "            DirectError::Timeout => BoardError::TimedOut,",
+   "new": "            DirectError::Timeout => BoardError::Overloaded,"
+  },
+  {
+   "id": "t6r2-bars-direct-unbudgeted",
+   "note": "R3: the adjusted-bars command is given an endless deadline",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+   "old": "owner.run_command(permit, cmd, \"chart_bars\", &crate::bounded::Budget::new(left))",
+   "new": "owner.run_command(permit, cmd, \"chart_bars\", &crate::bounded::Budget::new(Duration::from_secs(100_000)))"
+  }
+ ]
+}

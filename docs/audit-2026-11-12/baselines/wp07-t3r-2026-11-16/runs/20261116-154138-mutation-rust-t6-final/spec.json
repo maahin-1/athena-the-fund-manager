@@ -1,0 +1,199 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "bounded::",
+  "analyse_worker::",
+  "helper::",
+  "server::tests::a_full_queue",
+  "server::tests::the_work",
+  "server::tests::resolving"
+ ],
+ "mutations": [
+  {
+   "id": "t6-queue-unbounded",
+   "note": "T6: capacity is not enforced",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if !idle && self.queue.len() >= self.limits.capacity {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6-queued-never-expires",
+   "note": "T6: a queued job never expires",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if now >= e.submitted + e.deadline {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6-expiry-boundary",
+   "note": "T6: a job expires one instant late",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if now >= e.submitted + e.deadline {",
+   "new": "if now > e.submitted + e.deadline {"
+  },
+  {
+   "id": "t6-deadline-ignores-wait",
+   "note": "T6: the remaining time is the full deadline",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "(self.submitted + self.deadline).saturating_sub(now)",
+   "new": "self.deadline"
+  },
+  {
+   "id": "t6-queue-order-reversed",
+   "note": "T6: the newest waiting job goes first",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let e = self.queue.pop_front().expect(\"not empty\");",
+   "new": "let e = self.queue.pop_back().expect(\"not empty\");"
+  },
+  {
+   "id": "t6-guard-not-retained",
+   "note": "T6: an unconfirmed child frees its worker",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.slots[slot] = Slot::Retained { job: id, since: now, attempts: 1, intended: how.state, reason: how.reason, resolution: None };",
+   "new": "self.slots[slot] = Slot::Idle;"
+  },
+  {
+   "id": "t6-held-not-refused",
+   "note": "T6: submissions are accepted when every worker is held",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if self.slots.iter().all(|s| matches!(s, Slot::Retained { .. })) {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6-no-kill-step",
+   "note": "T6: the termination routine never kills",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "    child.kill();\n    child.wait_exit(grace).await\n}",
+   "new": "    child.wait_exit(grace).await\n}"
+  },
+  {
+   "id": "t6-release-without-confirmation",
+   "note": "T6: the worker is released whatever the exit check says",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if end(&mut child, limits.grace).await {\n        inner.finish_job(slot, job.id, Finish { state, reason, retain: false });",
+   "new": "if { let _ = end(&mut child, limits.grace).await; true } {\n        inner.finish_job(slot, job.id, Finish { state, reason, retain: false });"
+  },
+  {
+   "id": "t6-person-resolution-ignored",
+   "note": "T6: a person saying the process is gone changes nothing",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if resolution == Some(Resolution::ConfirmedGone) {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6-resolve-does-not-wake",
+   "note": "T6: a resolution waits for the next recheck",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.inner.wakes[slot].notify_one();",
+   "new": "let _ = slot;"
+  },
+  {
+   "id": "t6-drop-does-not-cancel",
+   "note": "T6: dropping a ticket does not cancel",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if !self.done {\n            self.inner.cancel(self.id);",
+   "new": "if false {\n            self.inner.cancel(self.id);"
+  },
+  {
+   "id": "t6-healthy-child-dropped",
+   "note": "T6: a healthy child is thrown away after each job",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "return live; // a healthy child is kept for the next job",
+   "new": "return None;"
+  },
+  {
+   "id": "t6-ticket-timer-no-sweep",
+   "note": "T6: a waiting job is not expired at its deadline by its caller",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.inner.core.lock().expect(\"pool state\").sweep(now);",
+   "new": "let _ = now;"
+  },
+  {
+   "id": "t6-queue-wait-not-recorded",
+   "note": "T6: queue wait is not recorded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "r.state = JobState::Running;\n                r.queue_wait_ms = Some(ms(now.saturating_sub(e.submitted)));",
+   "new": "r.state = JobState::Running;"
+  },
+  {
+   "id": "t6-run-time-not-recorded",
+   "note": "T6: running time is not recorded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "r.run_ms = Some(ms(now).saturating_sub(started));",
+   "new": "r.run_ms = None;"
+  },
+  {
+   "id": "t6-resolution-not-recorded",
+   "note": "T6: how a held worker was freed is not recorded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "r.resolution = Some(resolution.into());",
+   "new": "r.resolution = None;"
+  },
+  {
+   "id": "t6-analyse-busy-mapped-wrong",
+   "note": "T6: a refused analysis request reads as unavailable",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/analyse_worker.rs",
+   "old": "Err(Refusal::QueueFull { .. }) => return Err(AnalyseError::Busy),",
+   "new": "Err(Refusal::QueueFull { .. }) => return Err(AnalyseError::Unavailable),"
+  },
+  {
+   "id": "t6-helper-limit-ignored",
+   "note": "T6: the helper caller limit is not the job deadline",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/helper.rs",
+   "old": "self.pool.enqueue(json!({\"op\": op, \"args\": args}), Some(limit))",
+   "new": "self.pool.enqueue(json!({\"op\": op, \"args\": args}), None)"
+  },
+  {
+   "id": "t6-busy-answer-is-500",
+   "note": "T6: a full queue answers with a server error",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+   "old": "AnalyseError::Busy => (StatusCode::SERVICE_UNAVAILABLE,",
+   "new": "AnalyseError::Busy => (StatusCode::INTERNAL_SERVER_ERROR,"
+  },
+  {
+   "id": "t6-start-deadline-misnamed",
+   "note": "T6: a deadline during start is called exceeded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "Step::Deadline if during_start =>",
+   "new": "Step::Deadline if false =>"
+  },
+  {
+   "id": "t6-running-cancel-missing",
+   "note": "T6: a running job cannot be cancelled",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "Slot::Busy { id: b, cancel } if *b == id => return Cancelled::Running(cancel.clone()),",
+   "new": "Slot::Busy { id: b, cancel } if *b == id => return Cancelled::Unknown,"
+  },
+  {
+   "id": "t6-enqueue-no-sweep",
+   "note": "T6: expired jobs still hold their places at submission",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.sweep(now); // a place held by a job that has already expired is free",
+   "new": ""
+  },
+  {
+   "id": "t6-queued-cancel-never-matches",
+   "note": "T6 (rerun, the first form did not compile): a queued job is never found by its ID",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if let Some(pos) = self.queue.iter().position(|e| e.id == id) {",
+   "new": "if let Some(pos) = self.queue.iter().position(|e| e.id == 0) {"
+  },
+  {
+   "id": "t6-start-limit-ignored",
+   "note": "T6 (replaces the redundant min with the deadline): the start limit is not applied",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let start_budget = limits.start_limit;",
+   "new": "let start_budget = Duration::from_secs(100_000);"
+  }
+ ]
+}

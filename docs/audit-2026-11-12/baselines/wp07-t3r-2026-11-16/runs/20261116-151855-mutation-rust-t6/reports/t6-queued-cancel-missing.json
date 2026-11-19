@@ -1,0 +1,16 @@
+{
+ "source": "libtest-text",
+ "total": 0,
+ "passed": 0,
+ "failed": 0,
+ "skipped": 0,
+ "tests": {},
+ "files": {},
+ "assertion_failures": [],
+ "error_failures": [],
+ "load_errors": [],
+ "build_errors": [
+  "could not compile"
+ ],
+ "problems": []
+}

@@ -20,7 +20,7 @@ from athena.trading_calendar import ist_date
 
 IST = timezone(timedelta(hours=5, minutes=30))
 NSE_FILINGS_UNTIL = date(2025, 3, 31)  # the exchange's results list is complete to about here; after it only a few late filers appear
-SOURCE_NSE, SOURCE_YAHOO, SOURCE_NONE = "NSE results filings", "Yahoo, filtered by legal filing deadline", "none"
+from athena.evaluation.evidence import SOURCE_NONE, SOURCE_NSE, SOURCE_YAHOO, evidence_class  # noqa: E402,F401 - the source labels and their evidence classes live in one light module
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 UNADJUSTED_SOURCES = frozenset({"jugaad", "bhavcopy"})  # the exchange's own prices, as printed; Yahoo's are already adjusted for every later split
 MIN_BARS = 60  # fewer closes than this before the date and no technical packet is built

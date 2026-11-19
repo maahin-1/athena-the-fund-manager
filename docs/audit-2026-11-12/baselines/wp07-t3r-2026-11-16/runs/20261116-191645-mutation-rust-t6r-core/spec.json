@@ -1,0 +1,240 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "bounded::",
+  "analyse_worker::",
+  "helper::",
+  "server::tests::the_work",
+  "server::tests::an_override"
+ ],
+ "mutations": [
+  {
+   "id": "t6r-prestart-stop-ignored",
+   "note": "R1: a job cancelled before its worker picked it up still reaches a child",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let before = if job.stop.is_set() {",
+   "new": "let before = if false {"
+  },
+  {
+   "id": "t6r-prestart-deadline-ignored",
+   "note": "R1: a job whose deadline passed before pickup still reaches a child",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "} else if inner.now() >= job.submitted + job.deadline {",
+   "new": "} else if false {"
+  },
+  {
+   "id": "t6r-presend-stop-ignored",
+   "note": "R1: the request is sent although a stop was set while the child started",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if stop_seen.is_set() {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r-presend-deadline-ignored",
+   "note": "R1: the request is sent although the deadline passed while the child started",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if inner.now() >= until {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r-work-beats-deadline",
+   "note": "R1: a reply at the instant of the deadline wins over the deadline",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "biased;\n            _ = stop.tripped() => Step::Cancelled,\n            _ = tokio::time::sleep_until(deadline_at) => Step::Deadline,\n            s = work => s,",
+   "new": "biased;\n            s = work => s,\n            _ = stop.tripped() => Step::Cancelled,\n            _ = tokio::time::sleep_until(deadline_at) => Step::Deadline,"
+  },
+  {
+   "id": "t6r-shutdown-no-close",
+   "note": "R1: shutdown does not close the pool",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "inner.core.lock().expect(\"pool state\").close(inner.now());",
+   "new": ""
+  },
+  {
+   "id": "t6r-shutdown-no-wait",
+   "note": "R1: shutdown returns before the workers have stopped",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "while inner.exited.load(Ordering::SeqCst) < inner.wakes.len() {",
+   "new": "while false {"
+  },
+  {
+   "id": "t6r-inner-drop-no-wake",
+   "note": "R1: the last holder going away does not wake the parked workers",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "for n in &self.wakes {",
+   "new": "for n in &self.wakes[..0] {"
+  },
+  {
+   "id": "t6r-idle-child-not-ended",
+   "note": "R1: an idle worker that stops does not end its child",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "ended = Some(end(&mut running.child, grace).await);",
+   "new": "ended = Some(true);"
+  },
+  {
+   "id": "t6r-shutdown-count-lost",
+   "note": "R1: the shutdown report counts nothing",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "fn note_end(&self, confirmed: bool) {\n        if self.closed() {",
+   "new": "fn note_end(&self, confirmed: bool) {\n        if false {"
+  },
+  {
+   "id": "t6r-failure-told-before-end",
+   "note": "R2: a failure after the request was sent is told before the child is dealt with",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "            let confirmed = end(&mut running.child, limits.grace).await;\n            inner.note_end(confirmed);\n            if confirmed {\n                tell(&mut tx, Outcome::Failed(\"no_answer\"));",
+   "new": "            tell(&mut tx, Outcome::Failed(\"no_answer\"));\n            let confirmed = end(&mut running.child, limits.grace).await;\n            inner.note_end(confirmed);\n            if confirmed {"
+  },
+  {
+   "id": "t6r-unconfirmed-told-as-failed",
+   "note": "R2: an unconfirmed failure is reported as an ordinary failure",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "tell(&mut tx, Outcome::Unconfirmed(\"no_answer\"));",
+   "new": "tell(&mut tx, Outcome::Failed(\"no_answer\"));"
+  },
+  {
+   "id": "t6r-pid-not-recorded",
+   "note": "R3: the child identity is not recorded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "inner.core.lock().expect(\"pool state\").set_child(slot, job.id, info);",
+   "new": ""
+  },
+  {
+   "id": "t6r-launch-number-constant",
+   "note": "R3: every child is launch number 1",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "seq: inner.launched.fetch_add(1, Ordering::SeqCst) + 1",
+   "new": "seq: 1"
+  },
+  {
+   "id": "t6r-override-not-recorded",
+   "note": "R3: an override is not recorded with the job",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if let Some(r) = self.record_mut(job) {\n            r.overrides.push(",
+   "new": "if let Some(r) = self.record_mut(job + 1_000_000) {\n            r.overrides.push("
+  },
+  {
+   "id": "t6r-note-not-trimmed",
+   "note": "R3: the operator and reason keep their surrounding spaces",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let t = text.trim();",
+   "new": "let t = text;"
+  },
+  {
+   "id": "t6r-note-control-allowed",
+   "note": "R3: control characters are accepted in an override note",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": " && !t.chars().any(char::is_control)",
+   "new": ""
+  },
+  {
+   "id": "t6r-note-length-unbounded",
+   "note": "R3: an override note may be any length",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "t.chars().count() <= max",
+   "new": "true"
+  },
+  {
+   "id": "t6r-restore-nothing",
+   "note": "R3: a restart does not restore the held workers",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if h.slot >= self.slots.len() || !matches!(self.slots[h.slot], Slot::Idle) {",
+   "new": "if true {"
+  },
+  {
+   "id": "t6r-orphan-retry-allowed",
+   "note": "R3: a worker held by an earlier run may be asked to try again",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if h.origin == Origin::PreviousRun && how == Resolution::Retry {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r-next-id-not-advanced",
+   "note": "R3: job numbers restart after a restart",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.next_id = self.next_id.max(h.job + 1);",
+   "new": ""
+  },
+  {
+   "id": "t6r-journal-not-written-on-hold",
+   "note": "R3: a newly held child is not written to the journal",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if how.retain {\n            self.persist();",
+   "new": "if false {\n            self.persist();"
+  },
+  {
+   "id": "t6r-journal-not-cleared-on-release",
+   "note": "R3: a freed worker stays in the journal",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.wake(woken);\n        self.persist();",
+   "new": "self.wake(woken);"
+  },
+  {
+   "id": "t6r-held-at-shutdown-not-retried",
+   "note": "R3: a held child is not tried once more at shutdown",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if inner.closed() {\n            let confirmed = end(",
+   "new": "if false {\n            let confirmed = end("
+  },
+  {
+   "id": "t6r-kind-submitted-not-counted",
+   "note": "R4: submissions are not counted per kind",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.stat(kind).submitted += 1;",
+   "new": ""
+  },
+  {
+   "id": "t6r-kind-wait-not-noted",
+   "note": "R4: queue wait is not totalled per kind",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.note_wait(e.kind, wait);\n            self.slots[i]",
+   "new": "self.slots[i]"
+  },
+  {
+   "id": "t6r-kind-run-not-noted",
+   "note": "R4: running time is not totalled per kind",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.note_run(kind, run_ms);",
+   "new": ""
+  },
+  {
+   "id": "t6r-close-reason-wrong",
+   "note": "R1: jobs cancelled by a shutdown are not said to be",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "r.reason = Some(\"pool_closed\".into());",
+   "new": "r.reason = Some(\"cancelled_while_queued\".into());"
+  },
+  {
+   "id": "t6r-admission-no-waiting-cap",
+   "note": "R2: the waiting places of an admission are unbounded",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if st.waiting >= self.waiting_cap {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r-admission-wait-unbounded",
+   "note": "R2: an admission waits without regard to the deadline",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "tokio::time::timeout(budget.remaining(), self.permits.clone().acquire_owned())",
+   "new": "tokio::time::timeout(Duration::from_secs(100_000), self.permits.clone().acquire_owned())"
+  },
+  {
+   "id": "t6r-budget-never-expires",
+   "note": "R2: a budget is never expired",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.remaining().is_zero()",
+   "new": "false"
+  }
+ ]
+}

@@ -1,0 +1,20 @@
+{
+    "staged_files":  203,
+    "expected":  203,
+    "accepted":  203,
+    "accepted_by_class":  {
+                              "eol_lf":  189,
+                              "eol_crlf":  12,
+                              "exact":  2
+                          },
+    "mismatched":  0,
+    "missing":  0,
+    "unexpected_tracked":  0,
+    "exit":  0,
+    "control_exit":  1,
+    "control_mismatched":  [
+                               "src/athena/timing.py"
+                           ],
+    "control_names_the_changed_file":  true,
+    "ok":  true
+}

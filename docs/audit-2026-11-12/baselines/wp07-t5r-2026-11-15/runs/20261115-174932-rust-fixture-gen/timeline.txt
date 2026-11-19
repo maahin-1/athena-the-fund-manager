@@ -1,0 +1,7 @@
+2026-11-15 17:49:32  run 20261115-174932-rust-fixture-gen
+2026-11-15 17:49:33  cargo test --offline --locked --no-run
+2026-11-15 17:50:07  build exit 0
+2026-11-15 17:50:10  cargo test --offline --locked the_registry_payloads_match_the_ui_fixtures
+2026-11-15 17:50:11  test exit 0
+2026-11-15 17:50:11  fixture regenerated from the Rust registry and copied to terminal\web\test\fixtures\data-source.cases.json
+2026-11-15 17:50:11  done

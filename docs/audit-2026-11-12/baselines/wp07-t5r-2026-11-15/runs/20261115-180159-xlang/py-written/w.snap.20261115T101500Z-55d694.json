@@ -1,0 +1,19 @@
+{
+ "schema": "athena.snapshot-manifest/1",
+ "generation_id": "20261115T101500Z-55d694",
+ "file": "w.snap.20261115T101500Z-55d694.duckdb",
+ "size": 536576,
+ "sha1": "9b4d236ec33ad39de0430bab80987a6489ac33b3",
+ "sha256": "1205aeed1afd517ef5736b7fd8284a81e3fd0d0e3e5d2af544ffa9383d79b57e",
+ "created_at": "2026-11-15T10:15:00Z",
+ "source": {
+  "size": 536576,
+  "mtime_ns": 1794745957467040700
+ },
+ "source_name": "w.duckdb",
+ "holder_job": "prices",
+ "data_as_of": {
+  "daily_bars": "2026-11-13",
+  "index_bars": null
+ }
+}

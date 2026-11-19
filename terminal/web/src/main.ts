@@ -31,6 +31,7 @@ import { DepthPanel } from './panels/depth';
 import { DetailsPanel } from './panels/details';
 import { QuotePanel } from './panels/quote';
 import { NotesPanel } from './panels/notes';
+import { badge, readDataSources } from './provenance';
 import { TapePanel } from './panels/tape';
 import { VerdictPanel } from './panels/verdict';
 import { WatchlistPanel } from './panels/watchlist';
@@ -62,6 +63,8 @@ class App implements AppContext {
   private bar = el('div', 'bar');
   private statusLine = el('span', 'statusline');
   private health = el('span', 'health');
+  /** Which data the panels are reading: empty while every reader has the real warehouse file; a warning when a snapshot answers or readers differ (see provenance.ts). */
+  private dataBadge = el('span', 'health databadge');
   private idle = '';
   private message = '';
   private messageTimer: ReturnType<typeof setTimeout> | null = null;
@@ -494,11 +497,27 @@ class App implements AppContext {
     }
     const full = el('button', 'btn', 'Fullscreen');
     full.addEventListener('click', () => (document.fullscreenElement ? void document.exitFullscreen() : void document.documentElement.requestFullscreen()));
-    this.bar.append(el('b', 'brand', 'ATHENA'), ...this.viewTabs.values(), this.layoutSelect, this.addSelect, reset, save, this.nameBox, del, this.deleteSelect, this.command, this.indexStrip, this.statusLine, this.health, theme, full);
+    this.bar.append(el('b', 'brand', 'ATHENA'), ...this.viewTabs.values(), this.layoutSelect, this.addSelect, reset, save, this.nameBox, del, this.deleteSelect, this.command, this.indexStrip, this.statusLine, this.dataBadge, this.health, theme, full);
     this.paintMarket();
     setInterval(() => this.paintMarket(), 30_000);
     this.paintHealth();
+    void this.refreshDataBadge();
+    setInterval(() => void this.refreshDataBadge(), 15_000);
     return this.bar;
+  }
+
+  /** Ask the server which data each reader of the warehouse last got, and show it. A server that cannot say (an older build, a failed request) leaves the badge empty: nothing is claimed either way. */
+  private async refreshDataBadge(): Promise<void> {
+    let b = badge(null);
+    try {
+      const r = await fetch('/api/data-source');
+      if (r.ok) b = badge(readDataSources(await r.json()));
+    } catch {
+      /* the badge stays empty */
+    }
+    this.dataBadge.textContent = b.text;
+    this.dataBadge.className = `health databadge${b.cls ? ` ${b.cls}` : ''}`;
+    this.dataBadge.title = b.title;
   }
 
   /** Nifty 50, Nifty Bank and India VIX in the top bar, from the exchange's snapshot. Old values are marked, never hidden. */

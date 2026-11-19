@@ -1,0 +1,17 @@
+{
+ "source": "libtest-text",
+ "total": 2,
+ "passed": 2,
+ "failed": 0,
+ "skipped": 0,
+ "tests": {
+  "bounded::tests::every_caller_of_a_concurrent_admission_shutdown_returns_when_the_last_owner_is_gone": "passed",
+  "bounded::tests::every_caller_of_a_concurrent_pool_shutdown_returns_when_the_last_worker_has_stopped": "passed"
+ },
+ "files": {},
+ "assertion_failures": [],
+ "error_failures": [],
+ "load_errors": [],
+ "build_errors": [],
+ "problems": []
+}

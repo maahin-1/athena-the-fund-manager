@@ -12,6 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from athena.llm import envelope
+
 CACHE_PATH = Path(".athena") / "llm_cache.sqlite"
 TTL_DAYS = 7
 
@@ -95,10 +97,20 @@ class CachedLLM:
         hit = self._cache.get(k)
         if hit is not None:
             self._source, self._usage = f"cache ({hit[1]})", {}
+            envelope.note_call(tier=self._tier, origin="cache", cache_key=k[:16], cache_origin_model=hit[1] or envelope.UNKNOWN, responding_model=f"cache ({hit[1] or envelope.UNKNOWN})", attempts=[],
+                               usage="none: served from the cache", prompt_sha256=envelope.digest(system), input_sha256=envelope.digest(user), chars_in=len(system) + len(user), chars_out=len(hit[0]), outcome="answered")
             return hit[0]
+        recorder = envelope.current()
+        before = len(recorder.calls) if recorder is not None else 0
         reply = self._inner.complete(system, user)
         self._source, self._usage = "", dict(getattr(self._inner, "last_usage", {}) or {})
         self._cache.put(k, str(getattr(self._inner, "last_source", "")), reply)
+        if recorder is not None:
+            if len(recorder.calls) > before:
+                recorder.calls[-1]["cache"] = "miss"  # the metered client below recorded the request; the cache adds that it was asked
+            else:  # an inner client that does not record (no meter): the request is still part of the run
+                envelope.note_call(tier=self._tier, origin="live", cache="miss", metered=False, responding_model=str(getattr(self._inner, "last_source", "") or envelope.UNKNOWN), attempts=envelope.UNKNOWN,
+                                   usage=self._usage or envelope.UNKNOWN, prompt_sha256=envelope.digest(system), input_sha256=envelope.digest(user), chars_in=len(system) + len(user), chars_out=len(reply), outcome="answered")
         return reply
 
     def forget_last(self) -> None:

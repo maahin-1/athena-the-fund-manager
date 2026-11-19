@@ -80,7 +80,7 @@ impl PyInd {
         if self.dir.is_dir() {
             cmd.current_dir(&self.dir);
         }
-        let mut child = cmd.spawn().map_err(|_| PyIndError::Unavailable)?;
+        let mut child = { crate::process::background(cmd.as_std_mut()); cmd.spawn() }.map_err(|_| PyIndError::Unavailable)?;
         if let Some(mut stdin) = child.stdin.take() {
             let input = input.to_vec();
             tokio::spawn(async move {

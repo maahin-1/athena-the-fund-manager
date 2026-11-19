@@ -1,0 +1,27 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "deriv_quotes::",
+  "server::tests::the_derivative_quotes_route"
+ ],
+ "mutations": [
+  {
+   "id": "rs-first-sight-no-book-time",
+   "note": "T3 (rerun of the pattern error in mutation-rust-t3: the pattern spanned lines): the first packet leaves the book time unset",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/deriv_quotes.rs",
+   "old": "quote.book_seen_ms = Some(now_ms);",
+   "new": "quote.book_seen_ms = None;"
+  }
+ ]
+}

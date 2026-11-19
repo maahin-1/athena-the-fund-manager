@@ -10,7 +10,7 @@ import pytest
 from athena.contracts import AthenaError
 from athena.forensic.agent import first_action, pace_line, run_agent, submit, system_prompt
 from athena.forensic.budget import CallBudget
-from athena.forensic.model import ANSWER, ESTABLISHED, FLAG, OBSERVATION, QUESTION, REJECTED, SINGLE_SOURCE, UNROUTABLE, Case, LaneSpec
+from athena.forensic.model import ANSWER, CORROBORATED, ESTABLISHED, FLAG, OBSERVATION, QUESTION, REJECTED, SINGLE_SOURCE, UNROUTABLE, Case, LaneSpec
 from athena.forensic.scoring import classify, concern, level
 from athena.forensic.store import ForensicStore
 from athena.forensic.supervisor import Supervisor
@@ -201,7 +201,7 @@ class TestScoring:
         assert store.entry("c1", fid).status == SINGLE_SOURCE  # saying nothing checkable backs nothing
         store.add_entry("c1", OBSERVATION, "statements", 2, {"text": "independent", "evidence": [own], "quote": quote, "supports": fid})
         classify(store, "c1", look)
-        assert store.entry("c1", fid).status == ESTABLISHED
+        assert store.entry("c1", fid).status == CORROBORATED  # model-supported from an independent source (statements, not the draft the flag read): not `established`, which only code or a person gives
 
     def test_two_flags_on_the_same_evidence_are_one(self, store) -> None:  # noqa: ANN001
         a, b = (store.add_evidence("c1", "text", "doc.get", {"n": n}, OFFER) for n in (1, 2))
@@ -423,10 +423,11 @@ class TestSupervisor:
         )
         report = self.make(store, registry, script).investigate(CASE)
         flag_row = store.entry("c1", "L1")
-        assert flag_row.status == ESTABLISHED and "independently supported by statements" in flag_row.reason
+        assert flag_row.status == CORROBORATED and "corroborated by model lane statements" in flag_row.reason and "not human-reviewed" in flag_row.reason
         assert any(e.author == "supervisor" and e.kind == QUESTION and e.body.get("about") == "L1" for e in store.entries("c1"))
         assert store.entries("c1", kind=QUESTION)[0].status == "answered"  # closed once the other lane backed the flag
-        assert report["concern"]["established"] == 1 and report["established"][0]["supported_by"][0]["author"] == "statements"
+        assert report["concern"]["established"] == 0 and report["concern"]["corroborated"] == 1 and report["concern"]["low"] == "none established" and report["concern"]["high"] != "none established"
+        assert report["established"] == [] and report["corroborated"][0]["supported_by"][0]["author"] == "statements" and report["corroborated"][0]["supported_by"][0]["counts"] is True
 
     def test_a_question_for_a_lane_that_is_not_in_the_case_is_reported_not_dropped(self, store, registry) -> None:  # noqa: ANN001
         script = Script(text=[{"action": "write", "kind": "QUESTION", "to": "forensic_accountant", "text": "who audits?"}, {"action": "finish", "summary": ""}],

@@ -1,0 +1,26 @@
+﻿       caught  t6-queue-unbounded  (36.1s) ['analyse_worker::tests::a_full_queue_is_refused_at_once_and_the_accepted_requests_still_finish']  5 assertion failures (and 2 tests failed with an error)
+       caught  t6-queued-never-expires  (32.4s) ['bounded::tests::a_job_whose_deadline_passes_in_the_queue_expires_before_start_never_reaches_a_child_and_frees_its_place']  2 assertion failures
+       caught  t6-expiry-boundary  (29.9s) ['bounded::tests::a_job_whose_deadline_passes_in_the_queue_expires_before_start_never_reaches_a_child_and_frees_its_place']  2 assertion failures
+       caught  t6-deadline-ignores-wait  (26.7s) ['bounded::tests::the_second_jobs_deadline_covers_its_wait_so_its_running_time_is_what_remains']  1 assertion failures
+      invalid  t6-queued-cancel-missing  (4.0s) []  build_error: could not compile
+       caught  t6-queue-order-reversed  (26.6s) ['bounded::tests::a_queued_job_is_cancelled_and_removed_without_touching_the_running_one_and_the_order_of_the_others_is_kept']  1 assertion failures
+       caught  t6-guard-not-retained  (26.1s) ['bounded::tests::a_person_can_ask_for_another_attempt_and_only_a_retained_job_can_be_resolved']  5 assertion failures
+       caught  t6-held-not-refused  (23.6s) ['bounded::tests::an_unconfirmed_child_keeps_the_slot_and_no_new_job_takes_it_until_a_person_resolves_it']  2 assertion failures (and 1 tests failed with an error)
+       caught  t6-no-kill-step  (36.5s) ['analyse_worker::tests::a_request_past_its_deadline_has_its_child_ended_and_confirmed_before_the_next_gets_a_worker']  2 assertion failures (and 1 tests failed with an error)
+       caught  t6-release-without-confirmation  (34.3s) ['bounded::tests::a_person_can_ask_for_another_attempt_and_only_a_retained_job_can_be_resolved']  3 assertion failures
+       caught  t6-person-resolution-ignored  (35.9s) ['bounded::tests::an_unconfirmed_child_retains_the_guard_refuses_new_work_and_a_person_can_resolve_it']  1 assertion failures
+       caught  t6-resolve-does-not-wake  (30.8s) ['bounded::tests::a_person_can_ask_for_another_attempt_and_only_a_retained_job_can_be_resolved']  1 assertion failures (and 1 tests failed with an error)
+     SURVIVED  t6-start-deadline-misnamed  (32.7s) []  every test passed
+     SURVIVED  t6-start-ignores-deadline  (33.1s) []  every test passed
+       caught  t6-drop-does-not-cancel  (29.6s) ['bounded::tests::cancelling_a_running_job_ends_its_child_and_the_slot_is_released_only_after_the_exit_is_confirmed']  1 assertion failures (and 1 tests failed with an error)
+       caught  t6-healthy-child-dropped  (32.2s) ['bounded::tests::a_healthy_child_is_kept_between_jobs_and_a_failure_reply_does_not_end_it']  5 assertion failures
+       caught  t6-ticket-timer-no-sweep  (40.9s) ['bounded::tests::a_job_whose_deadline_passes_in_the_queue_expires_before_start_never_reaches_a_child_and_frees_its_place']  1 assertion failures
+       caught  t6-queue-wait-not-recorded  (33.6s) ['bounded::tests::per_job_queue_wait_and_running_time_are_in_the_status_for_the_contention_decision']  3 assertion failures (and 1 tests failed with an error)
+       caught  t6-run-time-not-recorded  (35.8s) ['bounded::tests::per_job_queue_wait_and_running_time_are_in_the_status_for_the_contention_decision']  2 assertion failures (and 1 tests failed with an error)
+   error_only  t6-running-cancel-missing  (25.7s) ['bounded::tests::cancelling_a_running_job_ends_its_child_and_the_slot_is_released_only_after_the_exit_is_confirmed']  1 tests failed with an error and none by an assertion
+       caught  t6-resolution-not-recorded  (26.9s) ['bounded::tests::an_unconfirmed_child_keeps_the_slot_and_no_new_job_takes_it_until_a_person_resolves_it']  3 assertion failures
+     SURVIVED  t6-enqueue-no-sweep  (22.3s) []  every test passed
+       caught  t6-analyse-busy-mapped-wrong  (34.8s) ['analyse_worker::tests::a_full_queue_is_refused_at_once_and_the_accepted_requests_still_finish']  1 assertion failures
+       caught  t6-helper-limit-ignored  (92.5s) ['helper::tests::the_callers_limit_covers_the_wait_for_a_free_helper']  1 assertion failures
+       caught  t6-busy-answer-is-500  (32.8s) ['server::tests::a_full_queue_a_passed_deadline_and_a_held_worker_each_have_their_own_answer_with_the_job_id']  1 assertion failures
+D:\projects\learn-project\athena-the-fund-manager\docs\audit-2026-11-12\baselines\wp07-t3r-2026-11-16\runs\20261116-151855-mutation-rust-t6 {'caught': 20, 'SURVIVED': 3, 'error_only': 1, 'invalid': 1}

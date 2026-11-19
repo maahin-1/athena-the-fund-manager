@@ -1,0 +1,9 @@
+{
+    "ran":  true,
+    "is_candidate_venv_path":  true,
+    "same_environment_as_intended":  true,
+    "athena_from_candidate":  true,
+    "executable":  "C:\\Users\\LEGION\\ath-wp07\\cand-sim\\.venv\\Scripts\\python.exe",
+    "version":  "3.13.14",
+    "prefix":  "D:\\projects\\learn-project\\athena-the-fund-manager\\.venv"
+}

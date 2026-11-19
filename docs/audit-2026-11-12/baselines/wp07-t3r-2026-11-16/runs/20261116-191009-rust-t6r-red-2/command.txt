@@ -1,0 +1,2 @@
+cwd=C:\Users\LEGION\ath-wp07\w\terminal CARGO_TARGET_DIR=C:\Users\LEGION\ath-wp07\t CARGO_NET_OFFLINE=true
+cargo test --offline --locked (the isolated copy made by run_rust.ps1 for run 20261116-190322, with the one change in README.txt)

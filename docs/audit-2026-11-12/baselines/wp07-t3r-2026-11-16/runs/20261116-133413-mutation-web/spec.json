@@ -1,0 +1,101 @@
+{
+ "cwd": "D:/projects/learn-project/athena-the-fund-manager/terminal/web",
+ "kind": "vitest",
+ "timeout": 600,
+ "env": {
+  "npm_config_offline": "true",
+  "npm_config_update_notifier": "false",
+  "npm_config_audit": "false",
+  "npm_config_fund": "false"
+ },
+ "command": [
+  "C:/Program Files/nodejs/npm.cmd",
+  "test",
+  "--",
+  "--config",
+  "D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/baselines/wp07-t3r-2026-11-16/runs/20261116-131953-web-green-5/vitest.config.mjs",
+  "--reporter=default",
+  "test/provenance.test.ts",
+  "test/datasource-fixtures.test.ts",
+  "test/labview.test.ts"
+ ],
+ "mutations": [
+  {
+   "id": "ts-object-dates-ignored",
+   "note": "T5-R4: a per-dataset data_as_of object is read as unknown",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "  if (isObject(v)) {\n    const out: Record<string, string | null> = {};",
+   "new": "  if (false) {\n    const out: Record<string, string | null> = {};"
+  },
+  {
+   "id": "ts-no-date-recorded-hidden",
+   "note": "T5-R4: a dataset with no date is shown with another's/unknown date",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "(d ? `${words(k)} to ${day(d)}` : `${words(k)}: no date recorded`)",
+   "new": "`${words(k)} to ${day(d)}`"
+  },
+  {
+   "id": "ts-updating-for-every-reason",
+   "note": "T5-R4: 'updating' is claimed whatever the fallback reason",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "  if (reason === 'locked_by_writer') return { text: '\u25cf snapshot while updating', cls: 'warn' };",
+   "new": "  if (true) return { text: '\u25cf snapshot while updating', cls: 'warn' };"
+  },
+  {
+   "id": "ts-unreadable-said-as-updating",
+   "note": "T5-R4: an unreadable file is described as an update",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "  if (reason === 'main_unreadable') return { text: '\u25cf snapshot: warehouse file unreadable', cls: 'bad' };",
+   "new": "  if (reason === 'main_unreadable') return { text: '\u25cf snapshot while updating', cls: 'warn' };"
+  },
+  {
+   "id": "ts-worst-reason-not-chosen",
+   "note": "T5-R4: the first snapshot reason stands in for the worst",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "const worst = snaps.reduce((a, b) => ((RANK[b.p.fallback_reason ?? ''] ?? 0) > (RANK[a.p.fallback_reason ?? ''] ?? 0) ? b : a));",
+   "new": "const worst = snaps[0];"
+  },
+  {
+   "id": "ts-failed-publication-hidden",
+   "note": "T5-R4: a failed copy is invisible while the real file answers",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "  if (sources.publication?.last_attempt?.outcome === 'failed') return { text: '\u25cf snapshot copy failed'",
+   "new": "  if (false) return { text: '\u25cf snapshot copy failed'"
+  },
+  {
+   "id": "ts-newer-failed-never-said",
+   "note": "T5-R4: a newer failed copy is not said beside a snapshot answer",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "(s?.last_attempt?.outcome === 'failed' ? ",
+   "new": "(s?.last_attempt?.outcome === 'never' ? "
+  },
+  {
+   "id": "ts-refresh-failure-hidden",
+   "note": "T5-R3: a failed refresh beside served data is not shown",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "  if (refresh.length) {",
+   "new": "  if (false) {"
+  },
+  {
+   "id": "ts-stale-entries-described",
+   "note": "T5-R3: entries the server marks as not recent still drive the badge",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+   "old": "    .filter((e) => e.r.kind === 'none' || e.r.value.recent);",
+   "new": "    .filter(() => true);"
+  },
+  {
+   "id": "ts-chart-lab-drops-provenance",
+   "note": "T5-R3: the Chart Lab does not show which data answered",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/chartlab/view.ts",
+   "old": "const where = provenanceNote(fetched.provenance);",
+   "new": "const where = '';"
+  },
+  {
+   "id": "ts-fetcher-drops-provenance",
+   "note": "T5-R3: the server fetcher discards the response's provenance",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/chartlab/view.ts",
+   "old": "provenance: body.provenance ?? undefined }",
+   "new": "provenance: undefined }"
+  }
+ ]
+}

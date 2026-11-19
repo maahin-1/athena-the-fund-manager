@@ -99,6 +99,7 @@ async fn session_once(
         headers.insert(name, HeaderValue::from_str(value).map_err(|_| "unusable credentials")?);
     }
     let (socket, _) = tokio_tungstenite::connect_async(request).await.map_err(|_| "could not connect")?;
+    derivs.reset_sequences(); // a new connection numbers its packets afresh: the old numbers say nothing about the new ones
     let (mut tx, mut rx) = socket.split();
     let _ = status.send(FeedStatus::On);
     let mut subscribed: HashSet<String> = HashSet::new();
@@ -186,7 +187,7 @@ pub async fn run_stream(session: Session, master: Arc<Master>, hub: Hub, derivs:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::angel::decode::{test_packet, test_packet_on};
+    use crate::angel::decode::{test_packet, test_packet_on, with_sequence};
     use crate::quote::Source;
     use tokio::net::TcpListener;
     use tokio_tungstenite::accept_hdr_async;
@@ -341,6 +342,59 @@ mod tests {
         let subs = server.await.unwrap();
         let sub = subs.iter().find(|m| m.contains("\"exchangeType\":2")).expect("a derivative subscribe");
         assert!(sub.contains("\"action\":1") && sub.contains("\"mode\":3") && sub.contains("\"777\""));
+    }
+
+    /// A stand-in that serves one connection per packet: after the derivative subscribe it sends that connection's packet and drops the socket (the client reconnects).
+    async fn reconnecting_derivative_server(packets: Vec<Vec<u8>>) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let handle = tokio::spawn(async move {
+            for packet in packets {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut ws = accept_hdr_async(stream, |_: &Request, resp: Response| Ok(resp)).await.unwrap();
+                while let Some(Ok(msg)) = ws.next().await {
+                    if let Message::Text(t) = msg {
+                        if t.as_str() != "ping" && t.contains("\"exchangeType\":2") {
+                            let _ = ws.send(Message::Binary(packet.clone().into())).await;
+                            tokio::time::sleep(Duration::from_millis(300)).await;
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        (url, handle)
+    }
+
+    #[tokio::test]
+    async fn a_new_connection_restarts_the_sequence_numbers_so_its_first_packets_are_not_taken_for_old_ones() {
+        // packets with no exchange time are ordered by sequence alone: sequence 50 on the first connection, then 1 on the second (the stream's numbering started again)
+        let depth = [(1u16, 650i64, 9_995i64), (0, 130, 10_005)];
+        let first = with_sequence(test_packet_on(2, "777", 0, 10_000, 9_000, &depth, 1, 0.0), 50);
+        let second = with_sequence(test_packet_on(2, "777", 0, 20_000, 9_000, &depth, 1, 0.0), 1);
+        let (url, server) = reconnecting_derivative_server(vec![first, second]).await;
+        let derivs = DerivQuotes::new();
+        derivs.want(&[(2, "777".into())], Instant::now());
+        let (status, _rx) = watch::channel(FeedStatus::Connecting);
+        let stop = CancellationToken::new();
+        let task = tokio::spawn(run_stream_at(url, session(), master(), Hub::new(), derivs.clone(), status, stop.clone()));
+        let waited = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if derivs.get(&[(2, "777".into())]).first().is_some_and(|q| q.last == Some(200.0)) {
+                    return derivs.get(&[(2, "777".into())]).remove(0);
+                }
+                sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        // (T3-C2: an `assert_eq!`, not `.expect`, so a mutant that never applies the second connection's packet fails by an assertion the mutation harness can attribute: libtest prints "assertion `left == right` failed"
+        // for it, while `assert!(cond, "message")` prints only the message and cannot be told from a `panic!`)
+        assert_eq!(waited.is_ok(), true, "the second connection's packet is applied, not discarded as older than sequence 50");
+        let got = waited.unwrap();
+        assert_eq!(got.out_of_order, 0);
+        stop.cancel();
+        let _ = task.await;
+        let _ = server.await;
     }
 
     #[tokio::test]

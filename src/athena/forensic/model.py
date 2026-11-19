@@ -19,6 +19,9 @@ FLAG_TYPES = (ARITHMETIC, DOC_VS_DOC, TEXT_VS_DATA, CLAIM_VS_OUTSIDE, ANOMALY_VS
 
 # status of a ledger entry
 OPEN, ANSWERED, ESTABLISHED, SINGLE_SOURCE, DUPLICATE, REJECTED, UNROUTABLE = "open", "answered", "established", "single_source", "duplicate", "rejected", "unroutable"
+# `established`: a code-owned invariant is violated by the cited numbers, or a person recorded their verification. `corroborated`: another model lane, reading an independent source, backed the flag: model-supported, not
+# human-reviewed. `single_source`: neither. A model-authored relation or a second reading of one source never becomes `established`.
+CORROBORATED = "corroborated"
 
 
 @dataclass(frozen=True)

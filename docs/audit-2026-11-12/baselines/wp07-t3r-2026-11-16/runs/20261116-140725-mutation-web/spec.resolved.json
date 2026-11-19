@@ -1,0 +1,19 @@
+{
+  "cwd": "D:/projects/learn-project/athena-the-fund-manager/terminal/web",
+  "kind": "vitest",
+  "timeout": 600,
+  "env": {"npm_config_offline": "true", "npm_config_update_notifier": "false", "npm_config_audit": "false", "npm_config_fund": "false"},
+  "command": ["C:/Program Files/nodejs/npm.cmd", "test", "--", "--config", "D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/baselines/wp07-t3r-2026-11-16/runs/20261116-135254-web-c1-green/vitest.config.mjs", "--reporter=default", "test/optionquality.test.ts", "test/optiontimes.test.ts"],
+  "mutations": [
+    {"id": "selftest-syntax-error", "note": "harness self-test (real vitest): a syntax error in a module every file imports: the suites do not load; must not be caught", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "export type Consequence = 'withhold' | 'label';", "new": "export type Consequence = 'withhold' | 'label' ;;; }}} deliberate synthetic syntax error"},
+    {"id": "selftest-import-error", "note": "harness self-test: an import that does not resolve: must not be caught", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "export const MIN_EPOCH_MS = 946_684_800_000;", "new": "import { gone } from './does-not-exist-anywhere';\nexport const MIN_EPOCH_MS = 946_684_800_000 + (gone ? 1 : 0);"},
+    {"id": "selftest-survivor-comment", "note": "harness self-test: a change in a comment only: must SURVIVE", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "Pure; no clock of its own.", "new": "Pure; no clock of its own, still."},
+    {"id": "selftest-throws-in-tests", "note": "harness self-test: the code throws a TypeError when called: classified by what the tests show (assertion failures make it caught, errors alone make it error_only)", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "const orNull = (n: number | null | undefined): number | null => (finite(n) ? n : null);", "new": "const orNull = (n: number | null | undefined): number | null => (finite(n) ? (n as unknown as { gone(): number }).gone() : null);"},
+    {"id": "selftest-real-assertion", "note": "harness self-test: a changed limit: tests must fail by assertion: caught", "file": "D:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+     "old": "maxSpreadPct: 0.25,", "new": "maxSpreadPct: 0.0001,"}
+  ]
+}

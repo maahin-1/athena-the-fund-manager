@@ -17,6 +17,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from athena.forensic import availability
 from athena.forensic.model import Case, LaneSpec
 from athena.forensic.tools import Tool, ToolContext, ToolError
 from athena.ownership.packet import GROUPS, Quarter, is_quarter_end
@@ -61,12 +62,23 @@ class OwnershipData:
                 self._ev = self._ev_factory()
         return self._ev
 
-    def patterns(self, ctx: ToolContext) -> list[Quarter]:
-        symbol = ctx.case.target
-        rows = pattern_quarters(self.fundamentals.holdings(symbol), self.fundamentals.holding_filed(symbol), ctx.case.as_of)
+    def patterns_with_availability(self, ctx: ToolContext) -> tuple[list[Quarter], dict[str, Any]]:
+        """The shareholding patterns the case may use, and what the availability policy did to the rest. In a strict historical case a quarter with no known filing time is not taken as public
+        because its quarter ended; in a current case it is admitted and listed under `notes`. Each decision is kept in the forensic store."""
+        symbol, strict = ctx.case.target, availability.strict_for(ctx.case)
+        rows, found = pattern_availability(self.fundamentals.holdings(symbol), self.fundamentals.holding_filed(symbol), ctx.case.as_of, strict=strict)
+        for item in found:
+            availability.record(ctx, "ownership_pattern", item["quarter_end"], item["status"] != "rejected", item["status"] if item["status"] != "rejected" else item["kind"], item["reason"])
+        for q in rows:
+            if not any(item["quarter_end"] == q.end.isoformat() for item in found):
+                availability.record(ctx, "ownership_pattern", q.end.isoformat(), True, "admitted", f"filed {q.filed.isoformat()}, by the case date" if q.filed else "admitted")
         if not rows:
             raise ToolError(f"no shareholding pattern filed by {ctx.case.as_of.isoformat()} is held for {symbol}")
-        return rows
+        return rows, {"policy": availability.policy_for(ctx.case), "strict": strict, "rejected": [i for i in found if i["status"] == "rejected"],
+                      "notes": [i for i in found if i["status"] != "rejected"]}
+
+    def patterns(self, ctx: ToolContext) -> list[Quarter]:
+        return self.patterns_with_availability(ctx)[0]
 
     def trades(self, ctx: ToolContext, since: date) -> list[dict[str, Any]]:
         """The insider filings of the case's company filed in `since` to the as-of day (the store already filters on the filing stamp)."""
@@ -74,15 +86,36 @@ class OwnershipData:
 
 
 def pattern_quarters(holdings: Any, filed: Any, as_of: date) -> list[Quarter]:
-    """The calendar quarter ends filed by `as_of`, oldest first, as percent of all shares. Unlike the ownership packet this does not drop a pattern whose promoter and public groups do not add up to the total: a company
+    """The calendar quarter ends filed by `as_of`, oldest first, as percent of all shares: the patterns `pattern_availability` admits when it is not strict (a quarter with no known filing
+    time is admitted). Unlike the ownership packet this does not drop a pattern whose promoter and public groups do not add up to the total: a company
     whose employee trust or depository-receipt holder sits in neither group has a gap that is real, so it is shown as `unclassified` (total less promoters less public) and the agent is told, not left with nothing."""
+    return pattern_availability(holdings, filed, as_of, strict=False)[0]
+
+
+def pattern_availability(holdings: Any, filed: Any, as_of: date, *, strict: bool) -> tuple[list[Quarter], list[dict[str, Any]]]:
+    """(the patterns usable by a case dated `as_of`, what happened to the others). Each item says its `quarter_end`, `status` (`rejected`, or `admitted_unknown_filing_time` in a current case) and
+    `reason`. A quarter filed after `as_of`, one that ends after it, and one that is not a quarter end are rejected in both modes. A quarter with no filing time on record is rejected when `strict`:
+    a quarter that ended is not a quarter that was published, and the filing time is what says when the public could know. Unlike `athena.ownership.packet` a pattern whose groups do not add up is
+    kept (see `pattern_quarters`)."""
     out: list[Quarter] = []
+    found: list[dict[str, Any]] = []
     for end in sorted(holdings):
-        if not is_quarter_end(end) or end > as_of:
-            continue
+        label = end.isoformat()
         when = filed[end].date() if end in filed else None
-        if when is not None and when > as_of:
+        if not is_quarter_end(end):
+            found.append({"quarter_end": label, "status": "rejected", "kind": "not_quarter_end", "reason": f"{label} is not a quarter end"})
             continue
+        if when is not None and when > as_of:
+            found.append({"quarter_end": label, "status": "rejected", "kind": "after_case_date", "reason": f"filed {when.isoformat()}, after the case date {as_of.isoformat()}"})
+            continue
+        if end > as_of:
+            found.append({"quarter_end": label, "status": "rejected", "kind": "after_case_date", "reason": f"the quarter ends {label}, after the case date {as_of.isoformat()}"})
+            continue
+        if when is None:
+            if strict:
+                found.append({"quarter_end": label, "status": "rejected", "kind": "unknown_publication", "reason": "the filing time is unknown, so a quarter end alone is not taken as public"})
+                continue
+            found.append({"quarter_end": label, "status": "admitted_unknown_filing_time", "kind": "admitted_unknown_publication", "reason": "no filing time is held; admitted because this store holds the pattern now, and labelled"})
         groups = holdings[end]
         total = groups.get("total", (0.0, None))[0]
         if total <= 0:
@@ -91,7 +124,7 @@ def pattern_quarters(holdings: Any, filed: Any, as_of: date) -> list[Quarter]:
         if "promoters" in groups and "public_total" in groups:
             pct["unclassified"] = (total - groups["promoters"][0] - groups["public_total"][0]) / total * 100.0
         out.append(Quarter(end, when, pct, groups["total"][1]))
-    return out
+    return out, found
 
 
 def _pp(value: float | None) -> float | None:
@@ -121,14 +154,15 @@ def _day_of(row: dict[str, Any]) -> date | None:
 
 def ownership_tools(data: OwnershipData) -> list[Tool]:
     def holdings(ctx: ToolContext, args: dict[str, Any]) -> Any:
-        rows = data.patterns(ctx)[-MAX_QUARTERS:]
+        found, available = data.patterns_with_availability(ctx)
+        rows = found[-MAX_QUARTERS:]
         out = []
         for i, q in enumerate(rows):
             prev = rows[i - 1] if i else None
             out.append({"quarter_end": q.end.isoformat(), "filed": q.filed.isoformat() if q.filed else None, "percent": {g: round(v, 2) for g, v in q.pct.items()},
                         "change_points": {g: _pp(v - prev.pct[g]) for g, v in q.pct.items() if prev and g in prev.pct}, "shareholders": q.holders})
         return {"unit": "percent of all shares; change_points are points since the quarter before; mutual_funds and insurance are parts of dii, not additional to it; unclassified is the total less promoters less the public "
-                         "group (an employee trust or a depository holder sits there)", "groups": [*GROUPS, "unclassified"], "quarters": out, "limits": LIMITS}
+                         "group (an employee trust or a depository holder sits there)", "groups": [*GROUPS, "unclassified"], "quarters": out, "availability": available, "limits": LIMITS}
 
     def insider(ctx: ToolContext, args: dict[str, Any]) -> Any:
         days = max(30, min(int(args.get("days", 365)), 1100))

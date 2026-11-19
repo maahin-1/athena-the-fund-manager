@@ -1,0 +1,65 @@
+# PROPOSED Dependabot configuration. Not on any branch; Dependabot behaviour is verified only after this file is on the default branch (README.md, test 8).
+# Weekly version updates, a modest cap per ecosystem, compatible minor/patch updates grouped, majors separate (they are never grouped, so each gets its own PR and its own review).
+# No auto-merge anywhere: every update PR runs the same `gate` check and needs the same review as any other change. Security updates are a separate GitHub setting and are not delayed by this schedule.
+#
+# DuckDB is the one coordinated dependency: pyproject.toml pins `duckdb>=1.5.6,<1.6` and terminal/Cargo.toml pins the crate that bundles the same engine. A bump on one side without the other breaks the
+# Python <-> Rust snapshot contract, so each ecosystem gets a separate duckdb group (never mixed with other updates) and the `rust` job's four-stage contract run is the check. Nothing is ignored.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: [dependencies, python]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      duckdb-coordinated:
+        patterns: ["duckdb"]
+      python-minor-patch:
+        update-types: [minor, patch]
+        exclude-patterns: ["duckdb"]
+
+  - package-ecosystem: cargo
+    directory: /terminal
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: [dependencies, rust]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      duckdb-coordinated:
+        patterns: ["duckdb"]
+      rust-minor-patch:
+        update-types: [minor, patch]
+        exclude-patterns: ["duckdb"]
+
+  - package-ecosystem: npm
+    directory: /terminal/web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: [dependencies, web]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      web-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

@@ -1,0 +1,52 @@
+{
+    "cwd":  "C:/Users/LEGION/ath-wp07/w/terminal",
+    "kind":  "cargo",
+    "timeout":  900,
+    "env":  {
+                "CARGO_TARGET_DIR":  "C:/Users/LEGION/ath-wp07/t",
+                "CARGO_NET_OFFLINE":  "true"
+            },
+    "command":  [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked"
+                ],
+    "mutations":  [
+                      {
+                          "id":  "bl-limit-one-too-high",
+                          "note":  "the route admits one byte past its limit",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+                          "old":  "DefaultBodyLimit::max(crate::pyind::MAX_BODY + 64 * 1024)",
+                          "new":  "DefaultBodyLimit::max(crate::pyind::MAX_BODY + 64 * 1024 + 1)"
+                      },
+                      {
+                          "id":  "bl-limit-one-too-low",
+                          "note":  "the route refuses the last byte it should admit",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+                          "old":  "DefaultBodyLimit::max(crate::pyind::MAX_BODY + 64 * 1024)",
+                          "new":  "DefaultBodyLimit::max(crate::pyind::MAX_BODY + 64 * 1024 - 1)"
+                      },
+                      {
+                          "id":  "bl-limit-removed",
+                          "note":  "the route has the framework default limit (2 MB)",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/server.rs",
+                          "old":  ".layer(axum::extract::DefaultBodyLimit::max(crate::pyind::MAX_BODY + 64 * 1024))",
+                          "new":  ""
+                      },
+                      {
+                          "id":  "bl-handler-limit-off-by-one-low",
+                          "note":  "the handler refuses bars of exactly 4 MB",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/pyind.rs",
+                          "old":  "if body.len() \u003e MAX_BODY || !bars.is_array() {",
+                          "new":  "if body.len() \u003e= MAX_BODY || !bars.is_array() {"
+                      },
+                      {
+                          "id":  "bl-handler-limit-off-by-one-high",
+                          "note":  "the handler admits bars one byte past 4 MB",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/pyind.rs",
+                          "old":  "if body.len() \u003e MAX_BODY || !bars.is_array() {",
+                          "new":  "if body.len() \u003e MAX_BODY + 1 || !bars.is_array() {"
+                      }
+                  ]
+}

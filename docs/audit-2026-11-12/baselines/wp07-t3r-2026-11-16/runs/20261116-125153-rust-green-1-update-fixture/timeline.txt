@@ -1,0 +1,6 @@
+2026-11-16 12:51:53  run 20261116-125153-rust-green-1-update-fixture
+2026-11-16 12:51:55  cargo test --offline --locked --no-run
+2026-11-16 12:52:46  build exit 0
+2026-11-16 12:52:51  cargo test --offline --locked
+2026-11-16 12:53:05  test exit 101
+2026-11-16 12:53:06  done

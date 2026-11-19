@@ -90,7 +90,7 @@ impl FundFetch {
             *self.state.lock().unwrap() = State::Running { symbol: symbol.clone(), stage };
             let mut cmd = (self.launch)(module, &symbol);
             cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
-            let outcome = match cmd.spawn() {
+            let outcome = match { crate::process::background(cmd.as_std_mut()); cmd.spawn() } {
                 Err(_) => Err("the fetch could not be started"),
                 Ok(mut child) => match tokio::time::timeout(STAGE_LIMIT, child.wait()).await {
                     Err(_) => {

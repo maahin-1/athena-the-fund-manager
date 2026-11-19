@@ -77,6 +77,7 @@ class FallbackLLM:
         self.health = health or HealthRegistry()
         self.last_source = ""
         self.last_failures: tuple[tuple[str, str], ...] = ()
+        self.last_attempts: list[dict[str, Any]] | None = None  # every provider request the last `complete` made, over all the models it tried ([] when none was made: every model was skipped)
         self._timeouts: dict[str, int] = {}
         self._chain = FallbackChain([(client.name, self._guarded(client)) for client in self.clients])
 
@@ -87,7 +88,13 @@ class FallbackLLM:
     def _guarded(self, client: OpenAICompatibleClient) -> Callable[[str, str], str]:
         def call(system: str, user: str) -> str:
             try:
-                reply = client.complete(system, user)
+                try:
+                    reply = client.complete(system, user)
+                finally:  # on success and on failure alike: what this model was asked is part of what the call did
+                    if self.last_attempts is not None:
+                        reported = [dict(a) for a in getattr(client, "last_attempts", ()) or ()]
+                        # a client that was called and reports no request cannot be taken to have sent none: an empty history is only true of a model that was skipped without being called
+                        self.last_attempts.extend(reported or [{"n": 0, "model": client.name, "outcome": "unreported", "status": None, "retry": False, "detail": "the client was called and reported no request"}])
             except ProviderError as exc:
                 if not exc.retryable:
                     self.health.mark_degraded(client.name, str(exc))
@@ -110,6 +117,7 @@ class FallbackLLM:
         return dict(getattr(answered, "last_usage", {}) or {})
 
     def complete(self, system: str, user: str) -> str:
+        self.last_attempts = []
         result = self._chain.run(system, user, health=self.health)
         self.last_source, self.last_failures = result.source, result.failures
         return result.value

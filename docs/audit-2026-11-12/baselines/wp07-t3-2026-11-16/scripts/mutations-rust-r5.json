@@ -1,0 +1,11 @@
+{
+  "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+  "kind": "cargo",
+  "timeout": 900,
+  "env": {"CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t", "CARGO_NET_OFFLINE": "true"},
+  "command": ["cargo", "test", "--offline", "--locked", "--", "snapshot::"],
+  "mutations": [
+    {"id": "rs-original-substring-rule", "note": "T5-R5: the rule the review found, restored: any of the old bare words anywhere in the message, a path included", "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+     "old": "    if LOCK_PHRASES.iter().any(|k| m.contains(k)) {", "new": "    if m.is_empty() || [\"lock\", \"conflicting\", \"being used by another process\", \"sharing violation\"].iter().any(|k| message.to_ascii_lowercase().contains(k)) {"}
+  ]
+}

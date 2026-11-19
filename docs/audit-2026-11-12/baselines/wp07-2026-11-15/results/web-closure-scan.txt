@@ -1,0 +1,143 @@
+test files: 70
+closure files (tests + imported): 185
+imported non-test files: 113
+bare (package) imports: fancy-canvas, lightweight-charts, vitest
+unresolved relative imports: none
+
+## network
+T test/watchliststore.test.ts:122: const status = (code: number, body: unknown = {}) => (async () => new Response(JSON.stringify(body), { status: code })) as unknown as typeof fetch;
+T test/watchliststore.test.ts:124: expect(await serverIO((async () => new Response(null, { status: 204 })) as unknown as typeof fetch).load()).toBeNull();
+S src/watchlists/store.ts:17: export function serverIO(fetcher: typeof fetch = fetch): WatchlistIO {
+S src/panels/analysis.ts:31: /** One fetch of the stored analysis, shared by the panels that show it. */
+S src/panels/analysis.ts:34: const r = await fetch(`/api/analysis?symbol=${encodeURIComponent(symbol)}`);
+S src/screenrows.ts:17: private readonly fetcher: typeof fetch = (...a) => fetch(...a),
+S src/indices.ts:65: constructor(private fetcher: typeof fetch = (...a) => fetch(...a)) {}
+S src/feed.ts:79: private open: (url: string) => SocketLike = (u) => new WebSocket(u) as unknown as SocketLike,
+S src/details/data.ts:12: private readonly fetcher: typeof fetch = (...a) => fetch(...a),
+S src/chartlab/resample.ts:78: /** The bars for `tf` from what was fetched for `sourceOf(tf).fetch`. */
+T test/suggest.test.ts:53: const reply = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+T test/suggest.test.ts:59: }) as unknown as typeof fetch;
+T test/suggest.test.ts:67: expect(await searchInstruments('x', { fetcher: (async () => { throw new Error('down'); }) as unknown as typeof fetch })).toEqual([]);
+S src/suggest.ts:20: fetcher?: typeof fetch;
+S src/suggest.ts:93: export async function searchInstruments(text: string, options: { kinds?: string; limit?: number; fetcher?: typeof fetch; signal?: AbortSignal } = {}):
+S src/suggest.ts:94: const f = options.fetcher ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+S src/formula/strategies.ts:75: export function serverStrategiesIO(fetcher: typeof fetch = fetch): StrategiesIO {
+S src/chartlab/model.ts:332: /** Put a saved state back. The compare symbol is returned for the caller to fetch its bars (the model holds no data it was not given). */
+T test/sentiment.test.ts:59: const answer = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+T test/sentiment.test.ts:87: }) as unknown as typeof fetch;
+T test/sentiment.test.ts:118: }) as unknown as typeof fetch;
+T test/sentiment.test.ts:185: const view = new SentimentView({ onSymbol() {} }, (async () => ({ ok: true, status: 200, json: async () => withEvidence() })) as unknown as typeof fet
+T test/sentiment.test.ts:230: const fetcher = (async () => new Response(JSON.stringify(doc({ filings })), { status: 200 })) as unknown as typeof fetch;
+T test/sentiment.test.ts:277: const fetcher = (async () => new Response(JSON.stringify(doc({ attention })), { status: 200 })) as unknown as typeof fetch;
+T test/sentiment.test.ts:335: const fetcher = (async () => new Response(JSON.stringify(doc({ claims })), { status: 200 })) as unknown as typeof fetch;
+T test/sentiment.test.ts:351: const fetcher = (async () => new Response(JSON.stringify(doc()), { status: 200 })) as unknown as typeof fetch;
+T test/sentiment.test.ts:367: }) as unknown as typeof fetch;
+S src/sentiment.ts:29: constructor(private host: SentimentHost, private fetcher: typeof fetch = (...a) => fetch(...a)) {
+S src/screens/store.ts:112: export function serverScreensIO(fetcher: typeof fetch = fetch): ScreensIO {
+T test/screens-format.test.ts:29: const store = new ScreenStore((async () => new Response(JSON.stringify(body))) as typeof fetch);
+T test/screenrows.test.ts:13: }) as unknown as typeof fetch;
+T test/resample.test.ts:66: expect(SOURCE['1W'].fetch).toBe('1D');
+S src/formula/pyind.ts:37: export function serverPyIO(fetcher: typeof fetch = fetch): PyIO {
+S src/options/livefeed.ts:40: fetcher?: typeof fetch;
+S src/options/livefeed.ts:65: const fetcher = o.fetcher ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+S src/options/api.ts:68: export function serverOptionsApi(fetcher: typeof fetch = fetch): OptionsApi {
+T test/optionslive.test.ts:48: }) as unknown as typeof fetch;
+T test/optionslive.test.ts:107: }) as unknown as typeof fetch;
+T test/notes.test.ts:121: const none = serverNotebookIO(answer(204) as unknown as typeof fetch);
+T test/notes.test.ts:123: const there = serverNotebookIO(answer(200, { version: 1, notes: [] }) as unknown as typeof fetch);
+T test/notes.test.ts:125: await expect(serverNotebookIO(answer(500) as unknown as typeof fetch).load()).rejects.toThrow('HTTP 500');
+T test/notes.test.ts:127: await serverNotebookIO(put as unknown as typeof fetch).save('{}');
+T test/notes.test.ts:129: await expect(serverNotebookIO(answer(413) as unknown as typeof fetch).save('{}')).rejects.toThrow('HTTP 413');
+S src/notes/store.ts:9: export function serverNotebookIO(fetcher: typeof fetch = (...a) => fetch(...a)): NotebookIO {
+T test/livepush.test.ts:71: const live = liveFeed({ spotOf: () => 24_000, push: feed, now: () => t, fetcher: (async (u: string) => (urls.push(u), new Response(JSON.stringify({ li
+T test/livepush.test.ts:96: const live = liveFeed({ spotOf: () => null, push: feed, fetcher: (async (u: string) => (urls.push(u), new Response(JSON.stringify({ live: true, quotes
+S src/chartlab/view.ts:69: const body = (await (await fetch(url)).json()) as { bars: Bar[]; note?: string };
+S src/chartlab/view.ts:209: // a grid cell uses the lists of the Chart Lab page, so there is one of each and the cells fetch nothing of their own
+S src/chartlab/view.ts:670: fetched = await this.fetcher(this.symbol, source.fetch, limit, this.model.adjusted);
+S src/chartlab/view.ts:682: this.say(bars.length ? fetched.note || (custom ? `${this.tf} bars are built from ${source.fetch} bars` : '') : `no ${this.tf} bars for ${this.symbol}`
+S src/chartlab/view.ts:700: const got = await this.fetcher(symbol, sourceOf(this.tf).fetch, null, true);
+S src/chartlab/view.ts:965: const r = await fetch('/api/chart/explain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(buildRequest(this.
+S src/chartlab/drawings/store.ts:20: export const serverDrawingIO = (fetcher: typeof fetch = (...a) => fetch(...a)): DrawingIO => ({
+S src/formula/store.ts:59: export function serverFormulaIO(fetcher: typeof fetch = fetch): FormulaIO {
+T test/ipo.test.ts:55: const answer = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+T test/ipo.test.ts:90: it('says what an empty page means and what went wrong, and a second show does not fetch again', async () => {
+T test/ipo.test.ts:108: }) as unknown as typeof fetch;
+S src/ipo.ts:34: constructor(private host: IpoHost, private fetcher: typeof fetch = (...a) => fetch(...a), forensic?: ForensicPanel) {
+S src/forensic.ts:15: private fetcher: typeof fetch = (...a) => fetch(...a),
+T test/interval.test.ts:85: expect(plan('3M').fetch).toBe('1D');
+T test/interval.test.ts:92: expect(sourceOf('2h').fetch).toBe('1h');
+T test/indexfeed.test.ts:14: }) as unknown as typeof fetch;
+S src/fundamentals/view.ts:24: const r = await fetch(`/api/valuation/${encodeURIComponent(symbol)}?basis=${basis}`);
+S src/fundamentals/view.ts:180: const r = await fetch(`/api/fund/${encodeURIComponent(symbol)}?basis=${basis}`);
+S src/fundamentals/view.ts:208: /** Nothing stored: offer to fetch it now (or follow a fetch that is already running). */
+S src/fundamentals/view.ts:230: const r = await fetch(`/api/fund-fetch/${encodeURIComponent(symbol)}`, { method: 'POST' });
+S src/fundamentals/view.ts:238: this.body.replaceChildren(el('div', 'note bad', 'The fetch could not be started.'));
+S src/fundamentals/view.ts:253: if (this.symbol !== symbol) return; // the person moved on; the fetch carries on and the page is there when they come back
+S src/fundamentals/view.ts:256: status = await (await fetch('/api/fund-fetch')).json();
+S src/fundamentals/view.ts:266: this.body.replaceChildren(el('div', 'note bad', `${status.error ?? 'The fetch failed.'}`));
+S src/fundamentals/view.ts:284: void fetch('/api/fund-fetch').then(async (r) => {
+S src/fundamentals/chartbox.ts:67: fetch(`/api/bars?symbol=${encodeURIComponent(symbol)}&tf=1D&limit=${limit}`)
+T test/forensic.test.ts:76: }) as unknown as typeof fetch;
+T test/forensic.test.ts:156: }) as unknown as typeof fetch;
+T test/fno.test.ts:49: const answer = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+S src/screens/fno.ts:33: constructor(private owner: FnoHost, private fetcher: typeof fetch = (...a) => fetch(...a)) {
+T test/drawings-store.test.ts:149: }) as unknown as typeof fetch;
+T test/calendarview.test.ts:21: }) as unknown as typeof fetch;
+S src/screens/calendar.ts:42: constructor(private host: CalendarHost, private fetcher: typeof fetch = (...a) => fetch(...a), private today: () => string = indiaToday) {
+S src/screens/calendar.ts:100: /** Show the page: fetch the range the first time. */
+S src/alerts/notify.ts:62: const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: controller.signal, mode: 'no-cors' });
+
+## absoluteUrl
+T test/sentiment.test.ts:11: { date: '2026-10-22', publisher: 'NSE', source: 'nse', title: 'Outcome of Board Meeting', link: 'https://example.test/a', routine: false, used: true }
+T test/sentiment.test.ts:17: social: { enabled: true, notes: [], by_subreddit: { IndiaInvestments: 1 }, items: [{ date: '2026-10-22', subreddit: 'IndiaInvestments', title: 'TCS Q2
+T test/sentiment.test.ts:27: expect(got.social.items[0]).toMatchObject({ subreddit: 'IndiaInvestments', score: 80, link: 'https://www.reddit.com/r/x/1' });
+T test/sentiment.test.ts:32: expect(safeLink('http://a.test')).toBe('http://a.test');
+T test/sentiment.test.ts:146: { date: '2026-10-22', published: '2026-10-22T06:30:00+00:00', first_seen: '2026-10-22T07:00:00+00:00', publisher: 'Mint', source: 'publisher feed', so
+T test/sentiment.test.ts:203: board: [{ date: '2026-11-05', purpose: 'Board Meeting Intimation', description: 'to consider results', announced: '2026-10-28T12:25:00+00:00', link: '
+T test/sentiment.test.ts:251: wikipedia: { status: 'ok', article: 'Tata Consultancy Services', description: 'Indian IT company', link: 'https://en.wikipedia.org/wiki/Tata_Consultan
+T test/sentiment.test.ts:286: expect(view.element.querySelector('a[href="https://en.wikipedia.org/wiki/Tata_Consultancy_Services"]')).not.toBeNull();
+T test/sentiment.test.ts:291: const view = (o: Record<string, unknown>) => ({ kind: 'price_move', text: 'Infosys stock falls 3%', outcome: 'contradicted', detail: 'the furthest it 
+S src/options/svgchart.ts:27: const NS = 'http://www.w3.org/2000/svg';
+T test/ipo.test.ts:7: const filing = { company: 'Oravel Stays Limited', kind: 'DRHP', filed: '2026-10-26', title: 'Oravel Stays Limited - DRHP', page: 'https://www.sebi.gov
+T test/ipo.test.ts:23: const got = readIpo(doc({ filed: [{ ...filing, pdf: 'javascript:alert(1)', page: 'http://plain.test' }], open: [issue({ price_high: 'x', shares: null 
+T test/ipo.test.ts:30: expect(safeLink('https://a.test')).toBe('https://a.test');
+T test/ipo.test.ts:31: expect(safeLink('http://a.test')).toBe('');
+T test/fundview.test.ts:31: annual_reports: [{ title: 'FY2025-26', category: 'Annual report', date: '2026-05-15', url: 'https://nsearchives.nseindia.com/annual_reports/AR_1.pdf',
+T test/fundview.test.ts:32: concalls: [{ title: 'Transcript', category: 'Call', date: '2026-10-14', url: 'https://nsearchives.nseindia.com/corporate/b.pdf', size: '' }],
+T test/fundview.test.ts:33: announcements: [{ title: 'Bad link', category: 'Updates', date: '2026-10-01', url: 'https://evil.example/x.pdf', size: '' }],
+T test/fundview.test.ts:101: expect(links.every((a) => a.target === '_blank' && a.rel.includes('noopener') && a.href.startsWith('https://nsearchives.nseindia.com/'))).toBe(true);
+T test/fundview.test.ts:105: expect(safeHref('https://nsearchives.nseindia.com/a b.pdf')).toBeNull();
+T test/fundview.test.ts:106: expect(safeHref('https://nsearchives.nseindia.com/annual_reports/AR_1.pdf')).not.toBeNull();
+S src/fundamentals/view.ts:28: const ARCHIVE = 'https://nsearchives.nseindia.com/';
+T test/forensic.test.ts:7: const URL = 'https://www.sebi.gov.in/sebi_data/attachdocs/oct-2026/1_draft.pdf';
+T test/forensic.test.ts:117: const other = rig(json({}, 202), [{ state: 'running', url: 'https://www.sebi.gov.in/other.pdf', seconds: 5 }]);
+T test/forensic.test.ts:145: const filing = { company: 'Carlsberg India Limited', kind: 'DRHP', filed: '2026-10-26', title: 'Carlsberg India Limited - DRHP', page: 'https://www.se
+T test/alerts.test.ts:123: expect(await deliver(fired({ webhook: 'https://hooks.example/x' }), e)).toEqual(['browser', 'sound', 'webhook']);
+T test/alerts.test.ts:124: expect(e.sent).toEqual(['notify:Alert: TCS', 'beep', 'post:https://hooks.example/x:TCS']);
+T test/alerts.test.ts:131: const sent = await deliver(fired({ webhook: 'https://hooks.example/x' }), env({ beep: () => { throw new Error('no audio'); }, post: async () => { thro
+
+## nodeIO
+S src/formula/parse.ts:103: const visit = (node: Cond | Expr, depth: number): void => {
+S src/screenquery.ts:80: export type Parsed = { ok: true; node: Node | null } | { ok: false; error: QueryError };
+S src/screenquery.ts:302: /** Parse a query. Empty text is a query that matches every row (`node: null`). */
+S src/screenquery.ts:305: return { ok: true, node: new Parser(tokenize(text)).parse() };
+S src/screenquery.ts:314: function holds(node: Extract<Node, { t: 'cmp' }>, row: Row): boolean {
+S src/screenquery.ts:366: export function evaluate(node: Node | null, row: Row): boolean {
+S src/screens/heatmap.ts:154: function place(node: HTMLElement, r: { x: number; y: number; w: number; h: number }): void {
+S src/screens/controls.ts:11: node: Node | null = null;
+
+## storage
+T test/sentiment.test.ts:377: localStorage.removeItem(RECENT_KEY);
+T test/sentiment.test.ts:394: expect(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')).toEqual(['TCSBEES']);
+T test/sentiment.test.ts:400: localStorage.setItem(RECENT_KEY, JSON.stringify(['INFY', 'TCS']));
+S src/sentiment.ts:62: const raw = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as unknown;
+S src/sentiment.ts:71: localStorage.setItem(RECENT_KEY, JSON.stringify(rememberRecent(this.recentList(), symbol)));
+S src/options/view.ts:49: return window.localStorage;
+S src/chartlab/view.ts:113: return window.localStorage;
+S src/chartlab/gridview.ts:37: return window.localStorage;
+
+## dynamicImport
+(none)
+
+## eval
+(none)

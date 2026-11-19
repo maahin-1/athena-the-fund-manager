@@ -1,0 +1,15 @@
+{
+  "source": "docs/audit-2026-11-12/verification.md, 'Broad Python command and exclusions' (12 November 2026)",
+  "note": "These nine modules were left out of the audit's broad Python run. They are listed here so the omission is named, reasoned and reviewable; none is silently dropped. Owner and follow-up date are decisions for the maintainer: they are not invented here.",
+  "exclusions": [
+    {"path": "tests/test_dashboard_app.py", "reason": "Streamlit AppTest module: default-temp permission failures; controlled-temp attempts did not complete and were interrupted; not diagnosed as an application defect or as environmental", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_dashboard_live_panel.py", "reason": "Streamlit AppTest module (same as above)", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_dashboard_market.py", "reason": "Streamlit AppTest module (same as above)", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_dashboard_verdict_panel.py", "reason": "Streamlit AppTest module (same as above)", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_llm_basics.py", "reason": "environment/provider/account-setup module, omitted to avoid environment files and exhausted credentials", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_llm_probe.py", "reason": "environment/provider/account-setup module (same as above)", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_llm_router.py", "reason": "environment/provider/account-setup module (same as above); some router logic is covered by injected-fake tests elsewhere", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_angel_login.py", "reason": "broker account-setup module (same as above)", "owner": "unassigned", "follow_up": "unset"},
+    {"path": "tests/test_kite_login.py", "reason": "broker account-setup module (same as above)", "owner": "unassigned", "follow_up": "unset"}
+  ]
+}

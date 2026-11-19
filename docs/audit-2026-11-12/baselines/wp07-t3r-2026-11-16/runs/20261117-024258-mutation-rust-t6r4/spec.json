@@ -1,0 +1,125 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "bounded::",
+  "helper::",
+  "fundamentals::tests::",
+  "flow_board::",
+  "bars::join_tests::",
+  "server::tests::an_override",
+  "server::tests::a_failure_with",
+  "server::tests::the_work",
+  "server::tests::acknowledging"
+ ],
+ "mutations": [
+  {
+   "id": "t6r4-pool-exit-not-counted",
+   "note": "R1: a stopped worker is not recorded, so shutdown never completes",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.exited.send_modify(|n| *n += 1);",
+   "new": "self.exited.send_modify(|n| *n += 0);"
+  },
+  {
+   "id": "t6r4-pool-wait-for-none",
+   "note": "R1: pool shutdown does not wait for the workers",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let _ = stopped.wait_for(|n| *n >= inner.wakes.len()).await;",
+   "new": "let _ = stopped.wait_for(|n| *n >= 0).await;"
+  },
+  {
+   "id": "t6r4-adm-owner-exit-not-published",
+   "note": "R1: a finished owner is not published",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "self.shared.owners_seen.send_replace(st.owners);",
+   "new": "let _ = st.owners;"
+  },
+  {
+   "id": "t6r4-adm-no-wait",
+   "note": "R1: admission shutdown does not wait for the owners",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let _ = owners.wait_for(|n| *n == 0).await;",
+   "new": "let _ = &owners;"
+  },
+  {
+   "id": "t6r4-try-owner-ignores-closed",
+   "note": "R4: a launch is counted but not refused after shutdown began",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if st.closed {\n            return None;\n        }",
+   "new": "if false {\n            return None;\n        }"
+  },
+  {
+   "id": "t6r4-try-owner-not-published",
+   "note": "R4: a launch is counted but the count is not published",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "st.owners += 1;\n        self.owners_seen.send_replace(st.owners);\n        Some(OwnerGuard",
+   "new": "st.owners += 1;\n        Some(OwnerGuard"
+  },
+  {
+   "id": "t6r4-launch-not-counted-before-check",
+   "note": "R4: run_command counts its owner without the refusing check",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let Some(owner) = self.shared.try_owner() else { return Err(DirectError::Shutdown) };",
+   "new": "let owner = self.shared.owner();"
+  },
+  {
+   "id": "t6r4-ended-never-counted",
+   "note": "R2: a child ended while shutdown is under way is not counted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if confirmed && self.closed() {",
+   "new": "if false {"
+  },
+  {
+   "id": "t6r4-unconfirmed-counted-ended",
+   "note": "R2: an unconfirmed child is counted as ended",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "if confirmed && self.closed() {",
+   "new": "if self.closed() {"
+  },
+  {
+   "id": "t6r4-deadline-end-counted-always",
+   "note": "R2: a deadline cleanup is counted whether or not shutdown is under way, and again later",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let confirmed = end_direct(&mut child).await;\n    shared.note_ended_if_closing(confirmed);\n    if confirmed {\n        drop(permit);",
+   "new": "let confirmed = end_direct(&mut child).await;\n    shared.note_end_at_shutdown(confirmed);\n    if confirmed {\n        drop(permit);"
+  },
+  {
+   "id": "t6r4-deadline-end-not-counted",
+   "note": "R2: a deadline cleanup that shutdown overlaps is not counted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "let confirmed = end_direct(&mut child).await;\n    shared.note_ended_if_closing(confirmed);\n    if confirmed {\n        drop(permit);",
+   "new": "let confirmed = end_direct(&mut child).await;\n    if confirmed {\n        drop(permit);"
+  },
+  {
+   "id": "t6r4-periodic-end-not-counted",
+   "note": "R2: a periodic attempt that shutdown overlaps is not counted",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "shared.note_attempt(id);\n        let confirmed = end_direct(&mut child).await;\n        shared.note_ended_if_closing(confirmed);",
+   "new": "shared.note_attempt(id);\n        let confirmed = end_direct(&mut child).await;"
+  },
+  {
+   "id": "t6r4-status-blocking-missing",
+   "note": "R3: the admission status does not say it is blocking",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "\"blocking\": sh.recovery.error().is_some() && !st.held.is_empty()",
+   "new": "\"blocking\": false"
+  },
+  {
+   "id": "t6r4-status-blocking-when-empty",
+   "note": "R3: the admission status says blocking with nothing held",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+   "old": "\"blocking\": sh.recovery.error().is_some() && !st.held.is_empty()",
+   "new": "\"blocking\": sh.recovery.error().is_some()"
+  }
+ ]
+}

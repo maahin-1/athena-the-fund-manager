@@ -11,7 +11,7 @@ pub enum AnalysisError {
 }
 
 fn connect(path: &Path) -> Result<Connection, AnalysisError> {
-    crate::snapshot::open_read_only(path).map_err(|_| AnalysisError::Busy)
+    crate::snapshot::open(path, "analysis").map(|o| o.conn).map_err(|_| AnalysisError::Busy)
 }
 
 /// The columns of the `screen` table the page shows, in order.

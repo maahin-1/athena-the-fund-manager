@@ -1,0 +1,285 @@
+{
+ "cwd": "D:/projects/learn-project/athena-the-fund-manager/terminal/web",
+ "kind": "vitest",
+ "timeout": 600,
+ "env": {
+  "npm_config_offline": "true",
+  "npm_config_update_notifier": "false",
+  "npm_config_audit": "false",
+  "npm_config_fund": "false"
+ },
+ "command": [
+  "C:/Program Files/nodejs/npm.cmd",
+  "test",
+  "--",
+  "--config",
+  "D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/baselines/wp07-t3r-2026-11-16/runs/20261116-131053-web-green-4/vitest.config.mjs",
+  "--reporter=default",
+  "test/optiontimes.test.ts",
+  "test/optionsession.test.ts",
+  "test/optionquality.test.ts",
+  "test/optionslive.test.ts",
+  "test/assemble.test.ts"
+ ],
+ "mutations": [
+  {
+   "id": "ts-implausible-time-accepted",
+   "note": "R6: a time that is not an epoch time is accepted",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (raw < MIN_EPOCH_MS) return {",
+   "new": "if (false as boolean) return {"
+  },
+  {
+   "id": "ts-future-boundary",
+   "note": "R6: a time exactly at the tolerance is invalid",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (ahead > limit) return {",
+   "new": "if (ahead >= limit) return {"
+  },
+  {
+   "id": "ts-future-never-invalid",
+   "note": "R6: no time is too far ahead",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (ahead > limit) return {",
+   "new": "if (false as boolean) return {"
+  },
+  {
+   "id": "ts-receipt-tolerance-wider",
+   "note": "R6: the server-clock tolerance is a millisecond wider",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "maxReceiptAheadMs: 5_000,",
+   "new": "maxReceiptAheadMs: 5_001,"
+  },
+  {
+   "id": "ts-exchange-tolerance-wider",
+   "note": "R6: the exchange-clock tolerance is a millisecond wider",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "maxExchangeAheadMs: 60_000,",
+   "new": "maxExchangeAheadMs: 60_001,"
+  },
+  {
+   "id": "ts-invalid-book-time-not-flagged",
+   "note": "R6: an invalid book time is not a failure",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "} else if (book.fault) {",
+   "new": "} else if (false as boolean) {"
+  },
+  {
+   "id": "ts-invalid-trade-time-not-flagged",
+   "note": "R6: an invalid trade time is not a failure",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "const tradeInvalid = trade.fault !== null ||",
+   "new": "const tradeInvalid = false &&"
+  },
+  {
+   "id": "ts-server-refusals-ignored",
+   "note": "R1/R6: a time the server refused does not make the trade time invalid",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "serverFaults.some((f) => f.field === 'tradeTime')",
+   "new": "false"
+  },
+  {
+   "id": "ts-negative-age-passes",
+   "note": "R6: a book time within the tolerance gives a negative age",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "const bookAgeMs = book.at === null ? null : Math.max(0, ageBase - book.at);",
+   "new": "const bookAgeMs = book.at === null ? null : ageBase - book.at;"
+  },
+  {
+   "id": "ts-newest-age-counts-future",
+   "note": "R6: a future time is the newest quote's age (negative)",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": ".filter((t): t is number => finite(t) && t >= MIN_EPOCH_MS && t <= a.now);",
+   "new": ".filter((t): t is number => finite(t));"
+  },
+  {
+   "id": "ts-book-fallback-on-fault",
+   "note": "R6: a book time that is present but not a number silently falls back to the other",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (present(q.bookTime)) {",
+   "new": "if (present(q.bookTime) && Number.isFinite(q.bookTime)) {"
+  },
+  {
+   "id": "ts-forward-labels-dropped",
+   "note": "R4: the forward does not say its inputs are labelled",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (inputFlags.size) flags.push('forward_input_labelled');",
+   "new": "void 0;"
+  },
+  {
+   "id": "ts-forward-inputflags-not-collected",
+   "note": "R4: the inputs' labels are not carried",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "inputFlags.add(f);",
+   "new": "void f;"
+  },
+  {
+   "id": "ts-forward-span-unchecked",
+   "note": "R4: the inputs of a forward need not be in step",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (spanMs > policy.maxSyncGapMs) flags.push('forward_unsynced');",
+   "new": "void 0;"
+  },
+  {
+   "id": "ts-forward-span-boundary",
+   "note": "R4: a span exactly at the limit is out of step",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (spanMs > policy.maxSyncGapMs)",
+   "new": "if (spanMs >= policy.maxSyncGapMs)"
+  },
+  {
+   "id": "ts-forward-span-zero",
+   "note": "R4: the span is not measured",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "spanMs = Math.max(...times) - Math.min(...times);",
+   "new": "spanMs = 0;"
+  },
+  {
+   "id": "ts-forward-time-invalid-not-flagged",
+   "note": "R6: a forward input with an invalid time is not a failure",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (invalid) flags.push('forward_time_invalid');",
+   "new": "void 0;"
+  },
+  {
+   "id": "ts-forward-unfit-input-ignored",
+   "note": "R4: an unfit input does not make the forward unfit",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "if (unfit) flags.push('forward_input_withheld');",
+   "new": "void 0;"
+  },
+  {
+   "id": "ts-absent-side-is-no-atm",
+   "note": "R5: a missing side at the money is the same as no at-the-money strike",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "a.atm !== null && other ? 'atm_side_absent' : 'no_atm'",
+   "new": "'no_atm'"
+  },
+  {
+   "id": "ts-missing-put-not-listed",
+   "note": "R5: a missing at-the-money put is left out of the required inputs",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "entry('atm_put', a.atmPut, a.atmCall)];",
+   "new": "...(a.atmPut ? [entry('atm_put', a.atmPut, a.atmCall)] : [])];"
+  },
+  {
+   "id": "ts-no-quote-is-no-book",
+   "note": "R5: a contract with no quote has the generic flag",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "flags.push('no_quote');",
+   "new": "flags.push('no_two_sided_book');"
+  },
+  {
+   "id": "ts-absent-side-withholds",
+   "note": "R5: the declared consequence of an absent side is withhold",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "atm_side_absent: 'label',",
+   "new": "atm_side_absent: 'withhold',"
+  },
+  {
+   "id": "ts-invalid-book-time-labels",
+   "note": "R6: the declared consequence of an invalid book time is label",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "invalid_book_time: 'withhold',",
+   "new": "invalid_book_time: 'label',"
+  },
+  {
+   "id": "ts-policy-version-stale",
+   "note": "the policy version is not bumped",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/quality.ts",
+   "old": "  version: 2,",
+   "new": "  version: 1,"
+  },
+  {
+   "id": "ts-session-recency-ignored",
+   "note": "R3: an old receipt counts as recent (cached contracts, a stopped feed)",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/session.ts",
+   "old": "const recent = receipts.filter((o) => serverNow - o.receivedAt <= policy.liveWindowMs);",
+   "new": "const recent = receipts;"
+  },
+  {
+   "id": "ts-session-event-lag-ignored",
+   "note": "R3: a packet stamped long before its receipt is current (a replay)",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/session.ts",
+   "old": "o.receivedAt - o.eventTime <= policy.maxEventLagMs",
+   "new": "true"
+  },
+  {
+   "id": "ts-session-future-receipt-counts",
+   "note": "R6: a receipt ahead of the server's clock is evidence",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/session.ts",
+   "old": "valid(o.receivedAt) && o.receivedAt <= serverNow + policy.maxReceiptAheadMs",
+   "new": "valid(o.receivedAt)"
+  },
+  {
+   "id": "ts-session-no-event-time-is-replay",
+   "note": "R3: packets with no usable time are read as a replay, not unknown",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/session.ts",
+   "old": "recent.every((o) => !eventOk(o)) ?",
+   "new": "false ?"
+  },
+  {
+   "id": "ts-session-clock-is-the-pages",
+   "note": "R3: ages and the session are in the page's clock",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/livefeed.ts",
+   "old": "const serverNow = (): number => now() + skew;",
+   "new": "const serverNow = (): number => now();"
+  },
+  {
+   "id": "ts-session-from-trade-time",
+   "note": "R3: the session reads the last trade's age instead of the packet's",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/livefeed.ts",
+   "old": "eventTime: typeof row.t === 'number' ? row.t : null",
+   "new": "eventTime: typeof row.lt === 'number' ? row.lt : null"
+  },
+  {
+   "id": "ts-trade-time-from-packet-time",
+   "note": "R1: the trade time is the packet's time",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/livefeed.ts",
+   "old": "time: raw(r.lt),",
+   "new": "time: raw(r.t),"
+  },
+  {
+   "id": "ts-badge-ignores-session",
+   "note": "R3: the feed badge is not the session's",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/livefeed.ts",
+   "old": "return sessionBadge(session());",
+   "new": "return { text: 'live prices', title: '' };"
+  },
+  {
+   "id": "ts-observe-ignores-receipt",
+   "note": "R3: a missing receipt is taken as just now",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/livefeed.ts",
+   "old": "receivedAt: typeof row.r === 'number' ? row.r : null,",
+   "new": "receivedAt: typeof row.r === 'number' ? row.r : serverNow(),"
+  },
+  {
+   "id": "ts-excluded-not-recorded",
+   "note": "R4: pairs left out of the parity forward are not on record",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/assemble.ts",
+   "old": "if (d.state === 'withheld') excluded.push({ strike: r.strike, kind, flags: d.withheld });",
+   "new": "void 0;"
+  },
+  {
+   "id": "ts-far-from-spot-not-recorded",
+   "note": "R4: a parity forward set aside is not recorded as such",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/assemble.ts",
+   "old": "reason: 'far_from_spot'",
+   "new": "reason: 'unused'"
+  },
+  {
+   "id": "ts-atm-not-passed-to-quality",
+   "note": "R5: the chain's quality is not told which strike is at the money",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/assemble.ts",
+   "old": "forward: forwardDecision, atm, atmCall:",
+   "new": "forward: forwardDecision, atm: null, atmCall:"
+  },
+  {
+   "id": "ts-future-candidate-not-recorded",
+   "note": "R4: a rejected future is not recorded as a candidate",
+   "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/options/assemble.ts",
+   "old": "reason: 'withheld', flags: futureOwn!.withheld",
+   "new": "reason: 'withheld', flags: []"
+  }
+ ]
+}

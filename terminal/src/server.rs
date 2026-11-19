@@ -18,7 +18,7 @@ use tower_http::services::ServeDir;
 use crate::angel::stream::FeedStatus;
 use crate::analysis::analysis;
 use crate::verdict_job::{symbol_ok as verdict_symbol_ok, StartError, VerdictJobs};
-use crate::bars::{daily_bars_joined, yahoo_params, Bars, DEFAULT_LIMIT};
+use crate::bars::{yahoo_params, Bars, DEFAULT_LIMIT};
 use crate::fundamentals::{FundError, FundamentalsJobs};
 use crate::hub::Hub;
 use crate::layouts::{LayoutError, LayoutStore};
@@ -39,6 +39,8 @@ pub struct AppState {
     pub layouts: Arc<LayoutStore>,
     pub verdicts: VerdictJobs,
     pub analyse: Arc<crate::analyse_worker::AnalyseWorker>,
+    /// The bounded queues of the Python workers (T6): their status, with per-job queue wait and running time, and the way out of a worker that could not be confirmed gone.
+    pub work: Arc<crate::bounded::WorkRegistry>,
     pub fundamentals: Arc<FundamentalsJobs>,
     pub flow_board: Arc<crate::flow_board::FlowBoard>,
     pub chart_explain: Arc<crate::chart_explain::ChartExplain>,
@@ -149,26 +151,44 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
     }
     let symbol = q.symbol.to_ascii_uppercase();
     let tf = q.tf.unwrap_or_else(|| "1D".to_string());
+    // which data a daily answer came from (the real file, or a validated snapshot generation and why); null for an answer that is not from the warehouse
+    let mut provenance = serde_json::Value::Null;
     let (bars, source, note) = if tf == "1D" {
         let path = state.bars.warehouse.clone();
         let (sym, limit) = (symbol.clone(), q.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 5000));
         // a stock's prices are adjusted for splits and bonuses (as Streamlit's were); an index has none, and if the adjustment cannot run the raw bars are shown and say so
         let raw_wanted = q.adj == Some(0);
-        let adjusted = if raw_wanted || symbol.to_ascii_uppercase().starts_with("NIFTY ") { None } else { state.bars.adjusted.get(&symbol).await };
+        let adjusted = if raw_wanted || symbol.to_ascii_uppercase().starts_with("NIFTY ") { None } else { state.bars.adjusted.get_served(&symbol).await };
+        // what is registered for /api/data-source is the provenance of this response, at the point it is given: a cache hit renews it, and it is never what some other open last got
+        let variant = if raw_wanted { "raw" } else { "fallback" };
         match adjusted {
-            Some(a) => {
+            Some((a, cache)) => {
                 let from = a.bars.len().saturating_sub(limit);
                 // the helper has already joined a renamed company's earlier symbols; the page is told which
                 let note = join_notes(if a.flags.is_empty() { String::new() } else { format!("Price breaks no record explains: {}.", a.flags.join(", ")) }, &a.joined);
-                return Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": &a.bars[from..], "source": "warehouse, adjusted", "note": note})).into_response();
+                let mut provenance = bars_provenance(a.provenance.clone(), a.bars.last().map(|b| b.t));
+                if let Some(o) = provenance.as_object_mut() {
+                    o.insert("cache".into(), serde_json::json!({"hit": cache.hit, "age_seconds": cache.age_secs})); // the data is as old as the answer was when it was computed, not as old as this request
+                    crate::snapshot::record_served("bars", Some(&format!("{symbol}:adjusted")), provenance.clone());
+                }
+                return Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": &a.bars[from..], "source": "warehouse, adjusted", "note": note, "provenance": provenance})).into_response();
             }
-            None => match tokio::task::spawn_blocking(move || daily_bars_joined(&path, &sym, limit)).await {
-                Ok(Ok((bars, joined))) => {
+            None => match tokio::task::spawn_blocking(move || crate::bars::daily_bars_with_provenance(&path, &sym, limit)).await {
+                Ok(Ok((bars, joined, prov))) => {
                     let stock = !symbol.to_ascii_uppercase().starts_with("NIFTY ");
                     let note = if raw_wanted && stock { "Prices are as printed, not adjusted for splits and bonuses.".to_string() } else if stock { "Split and bonus adjustment is unavailable; prices are as printed.".to_string() } else { String::new() };
+                    provenance = bars_provenance(Some(prov.to_value()), bars.last().map(|b| b.t));
+                    crate::snapshot::record_served("bars", Some(&format!("{symbol}:{variant}")), provenance.clone());
                     (bars, if raw_wanted { "warehouse, raw" } else { "warehouse" }, join_notes(note, &joined))
                 }
-                _ => (Vec::new(), if raw_wanted { "warehouse, raw" } else { "warehouse" }, "warehouse busy".to_string()),
+                Ok(Err(failure)) => {
+                    provenance = failure.failure.unwrap_or(serde_json::Value::Null); // why the real file failed and why no snapshot generation replaced it
+                    if !provenance.is_null() {
+                        crate::snapshot::record_served("bars", Some(&format!("{symbol}:{variant}")), provenance.clone());
+                    }
+                    (Vec::new(), if raw_wanted { "warehouse, raw" } else { "warehouse" }, "warehouse busy".to_string())
+                }
+                Err(_) => (Vec::new(), if raw_wanted { "warehouse, raw" } else { "warehouse" }, "warehouse busy".to_string()),
             },
         }
     } else if yahoo_params(&tf).is_some() {
@@ -187,7 +207,26 @@ async fn api_bars(State(state): State<AppState>, Query(q): Query<BarsQuery>) -> 
     } else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note})).into_response()
+    Json(serde_json::json!({"symbol": symbol, "tf": tf, "bars": bars, "source": source, "note": note, "provenance": provenance})).into_response()
+}
+
+/// A daily answer's provenance, with the date its own data stops at: the last bar it returned. A snapshot's manifest dates (per dataset) are kept beside it as `snapshot_data_as_of`; the date a copy was
+/// taken (`snapshot_created_at`) is a different fact and is never used for either.
+pub(crate) fn bars_provenance(provenance: Option<serde_json::Value>, last_t: Option<i64>) -> serde_json::Value {
+    let Some(mut p) = provenance else { return serde_json::Value::Null };
+    if let Some(o) = p.as_object_mut() {
+        if let Some(manifest_dates) = o.remove("data_as_of").filter(|v| !v.is_null()) {
+            o.insert("snapshot_data_as_of".into(), manifest_dates);
+        }
+        let day = last_t.and_then(|t| chrono::DateTime::from_timestamp(t, 0)).map(|d| d.date_naive().to_string());
+        o.insert("data_as_of".into(), serde_json::json!(day));
+    }
+    p
+}
+
+/// What each reader of the warehouse last got: the real file or which snapshot generation and why, and whether recent answers came from different generations.
+async fn api_data_source(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(crate::snapshot::data_sources_for(&state.bars.warehouse))
 }
 
 #[derive(serde::Deserialize)]
@@ -199,12 +238,69 @@ struct AnalyseBody {
 
 /// The live analysis of one instrument (all the specialists, as Streamlit's Analyse tab ran them). It calls the language model and can take a minute or more.
 async fn api_analyse(State(state): State<AppState>, Json(body): Json<AnalyseBody>) -> Response {
-    use crate::analyse_worker::AnalyseError;
     match state.analyse.view(&body.query, body.relatives).await {
         Ok(view) => Json(view).into_response(),
-        Err(AnalyseError::BadQuery) => StatusCode::BAD_REQUEST.into_response(),
-        Err(AnalyseError::Unavailable) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "the analysis service did not answer; try again"}))).into_response(),
-        Err(AnalyseError::Failed(message)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": message}))).into_response(),
+        Err(e) => analyse_error_response(e),
+    }
+}
+
+/// What a failed analysis request says to the page (T6: a full queue, a deadline that passed and a held worker each have their own answer; the job's ID is in the body so the page's message and the
+/// `/api/work` record can be matched).
+pub fn analyse_error_response(error: crate::analyse_worker::AnalyseError) -> Response {
+    use crate::analyse_worker::AnalyseError;
+    match error {
+        AnalyseError::BadQuery => StatusCode::BAD_REQUEST.into_response(),
+        AnalyseError::Unavailable => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "the analysis service did not answer; try again"}))).into_response(),
+        AnalyseError::Failed(message) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": message}))).into_response(),
+        AnalyseError::Busy => (StatusCode::SERVICE_UNAVAILABLE, [("retry-after", "10")], Json(serde_json::json!({"error": "the analysis queue is full; try again shortly", "reason": "queue_full"}))).into_response(),
+        AnalyseError::TimedOut(job) => (StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({"error": format!("the analysis did not finish within its time limit (job {job}); the limit includes the time spent waiting in the queue"), "reason": "deadline", "job": job}))).into_response(),
+        AnalyseError::Held => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": "the analysis worker could not be confirmed stopped and is being held; see /api/work", "reason": "cancel_unconfirmed"}))).into_response(),
+        AnalyseError::Unconfirmed(job) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("the analysis failed and its worker could not be confirmed stopped (job {job}); see /api/work"), "reason": "unconfirmed", "job": job}))).into_response(),
+        AnalyseError::Closed => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({"error": "the terminal is shutting down", "reason": "shutting_down"}))).into_response(),
+    }
+}
+
+/// The bounded queues: each pool's capacity, what is queued and running, the workers held because a child could not be confirmed gone, and the recent jobs with their queue wait and running time.
+async fn api_work(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(state.work.status())
+}
+
+#[derive(serde::Deserialize)]
+struct WorkResolveBody {
+    pool: String,
+    job: u64,
+    /// `confirmed_gone` (a person has checked that the process is gone) or `retry` (try to end it again now).
+    action: String,
+    /// Who is doing this (recorded with the job).
+    #[serde(default)]
+    operator: String,
+    /// Why (recorded with the job).
+    #[serde(default)]
+    reason: String,
+}
+
+/// The way out of a worker that could not be confirmed gone (T6): a person says the process is gone, or asks for another attempt to end it. Who and why are required and are recorded with the job.
+async fn api_work_resolve(State(state): State<AppState>, Json(body): Json<WorkResolveBody>) -> Response {
+    use crate::bounded::{NoteError, OverrideNote, RegistryError, Resolution};
+    let how = match body.action.as_str() {
+        "confirmed_gone" => Resolution::ConfirmedGone,
+        "retry" => Resolution::Retry,
+        "acknowledge_recovery" => Resolution::AcknowledgeRecovery,
+        "retry_journal" => Resolution::RetryJournal,
+        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "action must be confirmed_gone, retry, acknowledge_recovery or retry_journal"}))).into_response(),
+    };
+    let note = match OverrideNote::new(&body.operator, &body.reason) {
+        Ok(n) => n,
+        Err(NoteError::Operator) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "operator is required: who is doing this (1 to 64 characters)"}))).into_response(),
+        Err(NoteError::Reason) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "reason is required: why (1 to 240 characters)"}))).into_response(),
+    };
+    match state.work.resolve(&body.pool, body.job, how, note) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(RegistryError::NoPool) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "no such pool"}))).into_response(),
+        Err(RegistryError::NotRetained) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "that job is not holding a worker"}))).into_response(),
+        Err(RegistryError::JournalError) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "the recovery file could not be written or put aside, so nothing was changed", "reason": "journal_error"}))).into_response(),
+        Err(RegistryError::NotBlocked) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "nothing is blocked on the recovery state: it is readable and the journal's last write worked", "reason": "not_blocked"}))).into_response(),
+        Err(RegistryError::NoHandle) => (StatusCode::CONFLICT, Json(serde_json::json!({"error": "that worker is held from an earlier run of the terminal: there is no process to try again; only confirmed_gone applies", "reason": "no_handle"}))).into_response(),
     }
 }
 
@@ -218,12 +314,9 @@ struct BacktestBody {
 
 /// The built-in rules replayed over the symbol's history (up to eight years), each against buy and hold. Takes a few seconds to a minute.
 async fn api_backtest(State(state): State<AppState>, Json(body): Json<BacktestBody>) -> Response {
-    use crate::analyse_worker::AnalyseError;
     match state.analyse.backtest(&body.symbol, body.strategy).await {
         Ok(view) => Json(view).into_response(),
-        Err(AnalyseError::BadQuery) => StatusCode::BAD_REQUEST.into_response(),
-        Err(AnalyseError::Unavailable) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "the analysis service did not answer; try again"}))).into_response(),
-        Err(AnalyseError::Failed(message)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": message}))).into_response(),
+        Err(e) => analyse_error_response(e),
     }
 }
 
@@ -308,10 +401,11 @@ async fn api_derivs_quotes(State(state): State<AppState>, Query(q): Query<Quotes
     };
     let live = state.live_derivs && matches!(*state.status.borrow(), FeedStatus::On);
     if !live {
-        return Json(serde_json::json!({ "live": false, "quotes": [] })).into_response();
+        return Json(serde_json::json!({ "live": false, "quotes": [], "now": unix_ms() })).into_response();
     }
     state.deriv_quotes.want(&keys, std::time::Instant::now());
-    Json(serde_json::json!({ "live": true, "quotes": state.deriv_quotes.get(&keys) })).into_response()
+    // `now` is the server's own clock: the receipt times on the quotes are in it, so the page measures ages against it and not against a clock that may disagree
+    Json(serde_json::json!({ "live": true, "quotes": state.deriv_quotes.get(&keys), "now": unix_ms() })).into_response()
 }
 
 async fn api_derivs_futures(State(state): State<AppState>, Query(q): Query<DerivsQuery>) -> Response {
@@ -392,6 +486,8 @@ fn fund_error(e: FundError) -> Response {
         FundError::BadSymbol | FundError::BadBasis => return StatusCode::BAD_REQUEST.into_response(),
         FundError::NoData => (StatusCode::NOT_FOUND, "no statements stored".to_string()),
         FundError::Busy => (StatusCode::SERVICE_UNAVAILABLE, "the fundamentals store is busy; try again in a moment".to_string()),
+        FundError::Overloaded => (StatusCode::SERVICE_UNAVAILABLE, "the fundamentals service is at its limit; try again shortly".to_string()),
+        FundError::TimedOut => (StatusCode::GATEWAY_TIMEOUT, "the request did not finish within its time limit (the wait for a place counts against it)".to_string()),
         FundError::Failed(m) => (StatusCode::BAD_GATEWAY, m),
     };
     (status, Json(serde_json::json!({"error": message}))).into_response()
@@ -507,6 +603,8 @@ async fn api_flow_board(State(state): State<AppState>) -> Response {
         Ok(doc) => Json(doc).into_response(),
         Err(BoardError::NoData) => (StatusCode::NOT_FOUND, "no derivatives history is stored yet").into_response(),
         Err(BoardError::Busy) => (StatusCode::SERVICE_UNAVAILABLE, "the derivatives file is being loaded; try again in a moment").into_response(),
+        Err(BoardError::Overloaded) => (StatusCode::SERVICE_UNAVAILABLE, "the board is at its limit; try again shortly").into_response(),
+        Err(BoardError::TimedOut) => (StatusCode::GATEWAY_TIMEOUT, "the board did not finish within its time limit (the wait for a place counts against it)").into_response(),
         Err(BoardError::Failed(why)) => (StatusCode::BAD_GATEWAY, why).into_response(),
     }
 }
@@ -875,6 +973,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/status", get(api_status))
         .route("/api/jobs", get(api_jobs))
         .route("/api/bars", get(api_bars))
+        .route("/api/data-source", get(api_data_source))
         .route("/api/analysis", get(api_analysis))
         .route("/api/known", get(api_known))
         .route("/api/screen", get(api_screen))
@@ -898,6 +997,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/drawings/:symbol", get(drawings_get).put(drawings_put))
         .route("/api/analyse", axum::routing::post(api_analyse))
         .route("/api/backtest", axum::routing::post(api_backtest))
+        .route("/api/work", get(api_work))
+        .route("/api/work/resolve", axum::routing::post(api_work_resolve))
         .route("/api/fund-status", get(api_fund_status))
         .route("/api/fund-fetch", get(fund_fetch_status))
         .route("/api/fund-fetch/:symbol", axum::routing::post(fund_fetch_start))
@@ -963,16 +1064,31 @@ mod tests {
     }
 
     async fn start_with(live_derivs: bool) -> (u16, AppState, CancellationToken) {
+        start_in(PathBuf::from("no/such.duckdb"), live_derivs).await
+    }
+
+    async fn start_in(warehouse: PathBuf, live_derivs: bool) -> (u16, AppState, CancellationToken) {
+        start_custom(warehouse, live_derivs, Arc::new(|_s| Box::pin(async { None }))).await
+    }
+
+    /// As `start_in`, with the function that stands in for the Python helper's adjusted history (what it returns, and the provenance it reports, is the test's to choose).
+    async fn start_custom(warehouse: PathBuf, live_derivs: bool, adjust: crate::bars::AdjustFetcher) -> (u16, AppState, CancellationToken) {
+        start_full(warehouse, live_derivs, adjust, Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]))).await
+    }
+
+    /// As `start_custom`, with the analysis worker the test chooses (a stand-in child that is slow, for instance).
+    async fn start_full(warehouse: PathBuf, live_derivs: bool, adjust: crate::bars::AdjustFetcher, analyse: Arc<crate::analyse_worker::AnalyseWorker>) -> (u16, AppState, CancellationToken) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (status, _rx) = watch::channel(FeedStatus::On);
         let fetch: crate::bars::Fetcher = Arc::new(|_s, _t| Box::pin(async { None }));
-        let bars = Arc::new(Bars { warehouse: PathBuf::from("no/such.duckdb"), intraday: crate::bars::Intraday::new(fetch), adjusted: crate::bars::AdjustedDaily::new(Arc::new(|_s| Box::pin(async { None }))) });
+        let bars = Arc::new(Bars { warehouse, intraday: crate::bars::Intraday::new(fetch), adjusted: crate::bars::AdjustedDaily::new(adjust) });
         let layouts = Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-layouts-{port}"))));
         let verdicts = VerdictJobs::new(vec!["no-such-program-xyz".into()]);
-        let analyse = Arc::new(crate::analyse_worker::AnalyseWorker::new(vec!["no-such-program-xyz".into()]));
+        let work = Arc::new(crate::bounded::WorkRegistry::new());
+        work.register(analyse.pool_view());
         let fundamentals = Arc::new(FundamentalsJobs::new(vec!["no-such-program-xyz".into()], vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"), PathBuf::from("no/such-f.duckdb")));
-        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), chart_explain: Arc::new(crate::chart_explain::ChartExplain::new(vec!["no-such-program-xyz".into()])), sentiment: Arc::new(crate::sentiment::SentimentJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), ipo: Arc::new(crate::ipo::IpoJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), forensic: crate::forensic_job::ForensicJobs::new(Arc::new(|_u, _c, _k| tokio::process::Command::new("no-such-program-xyz"))), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
+        let state = AppState { hub: Hub::new(), status, port, web_dir: std::env::temp_dir(), bars, layouts, verdicts, analyse, work, fundamentals, flow_board: Arc::new(crate::flow_board::FlowBoard::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such-derivs.duckdb"))), chart_explain: Arc::new(crate::chart_explain::ChartExplain::new(vec!["no-such-program-xyz".into()])), sentiment: Arc::new(crate::sentiment::SentimentJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), ipo: Arc::new(crate::ipo::IpoJobs::new(vec!["no-such-program-xyz".into()], PathBuf::from("no/such.duckdb"))), forensic: crate::forensic_job::ForensicJobs::new(Arc::new(|_u, _c, _k| tokio::process::Command::new("no-such-program-xyz"))), indices: crate::indices::IndexStore::new(), search: Arc::new(crate::search::SearchCache::new(PathBuf::from("no/such.duckdb"))), fund_fetch: crate::fund_fetch::FundFetch::new(Arc::new(|_m, _s| tokio::process::Command::new("no-such-program-xyz"))), lists: Arc::new(LayoutStore::new(std::env::temp_dir().join(format!("athena-srv-lists-{port}")))), pyind: crate::pyind::PyInd::new("no-such-python", std::path::Path::new("no/such/runner.py"), &std::env::temp_dir().join(format!("athena-srv-ind-{port}"))), derivs: crate::derivs::DerivsStore::new(), deriv_quotes: crate::deriv_quotes::DerivQuotes::new(), live_derivs };
         let stop = CancellationToken::new();
         tokio::spawn(run_fake(state.hub.clone(), stop.clone()));
         let app = router(state.clone());
@@ -1044,6 +1160,235 @@ mod tests {
         assert_eq!(client.delete(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 204);
         assert_eq!(client.get(format!("{base}/Mine-1")).header("Origin", &origin).send().await.unwrap().status(), 404);
         stop.cancel();
+    }
+
+    // ---- T6: what the page is told about a full queue, a deadline and a held worker; the work status and the way out of a held worker ----
+    #[tokio::test]
+    async fn a_full_queue_a_passed_deadline_and_a_held_worker_each_have_their_own_answer_with_the_job_id() {
+        use crate::analyse_worker::AnalyseError;
+        use axum::body::to_bytes;
+        let body = |r: Response| async move { (r.status(), serde_json::from_slice::<serde_json::Value>(&to_bytes(r.into_body(), 1 << 20).await.unwrap()).unwrap()) };
+        let (status, v) = body(analyse_error_response(AnalyseError::Busy)).await;
+        assert_eq!((status, v["reason"].as_str()), (StatusCode::SERVICE_UNAVAILABLE, Some("queue_full")), "{v}");
+        let (status, v) = body(analyse_error_response(AnalyseError::TimedOut(7))).await;
+        assert_eq!((status, v["reason"].as_str(), v["job"].as_u64()), (StatusCode::GATEWAY_TIMEOUT, Some("deadline"), Some(7)), "{v}");
+        let (status, v) = body(analyse_error_response(AnalyseError::Held)).await;
+        assert_eq!((status, v["reason"].as_str()), (StatusCode::SERVICE_UNAVAILABLE, Some("cancel_unconfirmed")), "{v}");
+        assert_eq!(analyse_error_response(AnalyseError::BadQuery).status(), StatusCode::BAD_REQUEST, "the earlier answers are unchanged");
+        assert_eq!(analyse_error_response(AnalyseError::Unavailable).status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn the_work_route_lists_each_pool_with_its_recent_jobs_and_their_queue_wait_and_running_time() {
+        let (port, _state, stop) = start().await;
+        let origin = format!("http://127.0.0.1:{port}");
+        let r = reqwest::Client::new().post(format!("http://127.0.0.1:{port}/api/analyse")).header("Origin", &origin).json(&serde_json::json!({"query": "TCS"})).send().await.unwrap();
+        assert_eq!(r.status(), 502, "the stand-in worker cannot start");
+        let work = get_json(port, "/api/work").await;
+        let pool = work["pools"].as_array().unwrap().iter().find(|p| p["pool"] == "analyse").cloned().expect("the analyse pool is listed");
+        assert_eq!(pool["workers"], 1);
+        assert!(pool["capacity"].as_u64().unwrap() >= 1);
+        let job = &pool["recent"][0];
+        assert_eq!((job["state"].as_str(), job["reason"].as_str()), (Some("failed"), Some("start_failed")), "{pool}");
+        assert!(job["queue_wait_ms"].is_u64() && job["run_ms"].is_u64() && job["deadline_ms"].is_u64(), "{job}");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn resolving_a_job_that_holds_no_worker_is_refused_and_a_bad_request_or_origin_is_too() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}/api/work/resolve");
+        let post = |body: serde_json::Value, origin: String| { let (c, u) = (client.clone(), url.clone()); async move { c.post(u).header("Origin", origin).json(&body).send().await.unwrap().status() } };
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "confirmed_gone", "operator": "tester", "reason": "checked by hand"}), origin.clone()).await, 409);
+        assert_eq!(post(serde_json::json!({"pool": "nope", "job": 1, "action": "retry", "operator": "tester", "reason": "checked by hand"}), origin.clone()).await, 404);
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "forget"}), origin.clone()).await, 400);
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "retry", "operator": "tester", "reason": "checked by hand"}), "http://evil.test".into()).await, 403);
+        stop.cancel();
+    }
+
+    async fn get_json(port: u16, path_and_query: &str) -> serde_json::Value {
+        let origin = format!("http://127.0.0.1:{port}");
+        let r = reqwest::Client::new().get(format!("http://127.0.0.1:{port}{path_and_query}")).header("Origin", origin).send().await.unwrap();
+        assert_eq!(r.status(), 200, "{path_and_query}");
+        r.json().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_daily_answer_from_the_real_file_says_so_and_dates_its_own_data() {
+        let dir = crate::snapshot::testkit::temp_dir("srv-main");
+        let main = dir.join("w.duckdb");
+        crate::snapshot::testkit::make_main_for(&main, "SBIN", "2026-11-13", 100.0);
+        crate::snapshot::testkit::publish(&main, 0); // a snapshot exists and is not used while the real file opens
+        let (port, _state, stop) = start_in(main.clone(), false).await;
+        let body = get_json(port, "/api/bars?symbol=SBIN&tf=1D&adj=0").await;
+        assert_eq!(body["bars"].as_array().unwrap().len(), 1);
+        let p = &body["provenance"];
+        assert_eq!((p["source"].as_str(), p["generation_basis"].as_str(), p["fallback_reason"].is_null()), (Some("main"), Some("observed"), true));
+        assert!(p["generation_id"].as_str().unwrap().starts_with("main:"));
+        assert_eq!(p["data_as_of"], "2026-11-13"); // the date of the last bar it returned
+        stop.cancel();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_daily_answer_from_a_snapshot_names_the_generation_the_reason_and_both_dates() {
+        let dir = crate::snapshot::testkit::temp_dir("srv-snap");
+        let main = dir.join("w.duckdb");
+        crate::snapshot::testkit::make_main_for(&main, "ZSNAPSRV", "2026-11-13", 100.0); // a symbol of this test's own: the registry is process-wide, so what is asserted below is what THIS request registered
+        let gen = crate::snapshot::testkit::publish(&main, 4);
+        crate::snapshot::testkit::ruin_main(&main);
+        let (port, _state, stop) = start_in(main.clone(), false).await;
+        let body = get_json(port, "/api/bars?symbol=ZSNAPSRV&tf=1D&adj=0").await;
+        assert_eq!(body["bars"].as_array().unwrap().len(), 1, "the validated generation answered");
+        let p = &body["provenance"];
+        assert_eq!((p["source"].as_str(), p["generation_id"].as_str(), p["fallback_reason"].as_str(), p["validated"].as_bool()), (Some("snapshot"), Some(gen.as_str()), Some("main_unreadable"), Some(true)));
+        assert_eq!(p["snapshot_created_at"], "2026-11-15T10:15:04Z");
+        assert_eq!(p["data_as_of"], "2026-11-13"); // what the bars stop at, not when the copy was taken
+        assert_eq!(p["snapshot_data_as_of"]["daily_bars"], "2026-11-13");
+        // what /api/data-source then says about this request's reader and subject (`adj=0` registers `bars:<SYMBOL>:raw`): the same generation, source and reason the response carried
+        let s = get_json(port, "/api/data-source").await;
+        let entry = &s["readers"]["bars:ZSNAPSRV:raw"];
+        assert!(entry.is_object(), "this request registered no entry of its own: {s}");
+        assert_eq!((entry["source"].as_str(), entry["generation_id"].as_str(), entry["fallback_reason"].as_str(), entry["validated"].as_bool()), (Some("snapshot"), Some(gen.as_str()), Some("main_unreadable"), Some(true)), "{s}");
+        assert_eq!(entry["data_as_of"], "2026-11-13");
+        assert_eq!(entry["snapshot_data_as_of"]["daily_bars"], "2026-11-13");
+        assert!(s["recent_generations"].as_array().unwrap().iter().any(|g| g == gen.as_str()), "{s}");
+        stop.cancel();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_daily_answer_with_no_usable_data_says_why_instead_of_naming_a_source() {
+        let dir = crate::snapshot::testkit::temp_dir("srv-fail");
+        let main = dir.join("w.duckdb");
+        crate::snapshot::testkit::make_main_for(&main, "SBIN", "2026-11-13", 100.0);
+        crate::snapshot::testkit::ruin_main(&main); // no snapshot was ever published
+        let (port, _state, stop) = start_in(main.clone(), false).await;
+        let body = get_json(port, "/api/bars?symbol=SBIN&tf=1D&adj=0").await;
+        assert_eq!(body["note"], "warehouse busy"); // the existing wording is unchanged
+        assert!(body["bars"].as_array().unwrap().is_empty());
+        let f = &body["provenance"]["failure"];
+        assert_eq!((f["main_reason"].as_str(), f["snapshot_reason"].as_str()), (Some("main_unreadable"), Some("absent")));
+        stop.cancel();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn the_data_source_endpoint_reports_each_readers_last_answer_and_whether_they_differ() {
+        let dir = crate::snapshot::testkit::temp_dir("srv-sources");
+        let main = dir.join("w.duckdb");
+        crate::snapshot::testkit::make_main_for(&main, "ZSRCMAIN", "2026-11-13", 100.0); // a symbol of this test's own: the registry is process-wide
+        let (port, _state, stop) = start_in(main.clone(), false).await;
+        let body = get_json(port, "/api/bars?symbol=ZSRCMAIN&tf=1D&adj=0").await;
+        let s = get_json(port, "/api/data-source").await;
+        let entry = &s["readers"]["bars:ZSRCMAIN:raw"]; // `adj=0` registers `bars:<SYMBOL>:raw`
+        assert!(entry.is_object(), "this request registered no entry of its own: {s}");
+        assert_eq!((entry["source"].as_str(), entry["generation_basis"].as_str(), entry["fallback_reason"].is_null()), (Some("main"), Some("observed"), true), "{s}");
+        assert_eq!(entry["generation_id"], body["provenance"]["generation_id"], "the registry holds the generation this answer was served with: {s}");
+        assert!(entry["generation_id"].as_str().unwrap().starts_with("main:"), "{s}");
+        assert_eq!(entry["data_as_of"], "2026-11-13");
+        assert!(s["mixed_generations"].is_boolean() && s["window_seconds"].is_u64() && s["recent_generations"].is_array());
+        // a request from another site is refused like every other API request
+        let refused = reqwest::Client::new().get(format!("http://127.0.0.1:{port}/api/data-source")).header("Origin", "http://evil.test").send().await.unwrap();
+        assert_eq!(refused.status(), 403);
+        stop.cancel();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ---- T5-R3: what is registered is what was served, at the serving boundary (the registry is process-wide, so each test uses symbols of its own) ----
+    /// The provenance the Python helper reports for the history it computed: a snapshot generation `gen`, taken while a writer held the file.
+    fn helper_provenance(gen: &str) -> serde_json::Value {
+        serde_json::json!({"source": "snapshot", "source_path": format!("w.snap.{gen}.duckdb"), "generation_id": gen, "generation_basis": "manifest", "snapshot_created_at": "2026-11-15T10:15:00Z",
+            "data_as_of": {"daily_bars": "2026-11-13", "index_bars": null}, "fallback_reason": "locked_by_writer", "validated": true, "snapshot_status": null})
+    }
+
+    /// A stand-in for the helper: `gens` maps a symbol to the generation its history comes from; the counter counts the helper's runs.
+    fn helper_with(gens: &'static [(&'static str, &'static str)], runs: Arc<std::sync::atomic::AtomicUsize>) -> crate::bars::AdjustFetcher {
+        Arc::new(move |symbol: String| {
+            let runs = runs.clone();
+            Box::pin(async move {
+                runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let gen = gens.iter().find(|(s, _)| *s == symbol).map(|(_, g)| *g)?;
+                let bar = crate::bars::Bar { t: 1_794_528_000, o: 100.0, h: 101.0, l: 99.0, c: 100.5, v: 10.0 }; // 2026-11-13
+                Some(crate::bars::Adjusted { bars: vec![bar], flags: vec![], joined: vec![], provenance: Some(helper_provenance(gen)) })
+            })
+        })
+    }
+
+    #[tokio::test]
+    async fn the_default_adjusted_answer_is_registered_with_the_provenance_it_was_served_with() {
+        let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (port, _state, stop) = start_custom(PathBuf::from("no/such.duckdb"), false, helper_with(&[("ZADJA", "20261115T101500Z-a1b2c3")], runs)).await;
+        let body = get_json(port, "/api/bars?symbol=ZADJA&tf=1D").await; // the default path: adjusted, not `adj=0`
+        assert_eq!(body["provenance"]["generation_id"], "20261115T101500Z-a1b2c3");
+        let s = get_json(port, "/api/data-source").await;
+        let entry = &s["readers"]["bars:ZADJA:adjusted"];
+        assert_eq!((entry["source"].as_str(), entry["generation_id"].as_str(), entry["fallback_reason"].as_str()), (Some("snapshot"), Some("20261115T101500Z-a1b2c3"), Some("locked_by_writer")), "{s}");
+        assert_eq!(entry["data_as_of"], "2026-11-13"); // the date of the last bar it served; the manifest's per-dataset dates are kept beside it
+        assert_eq!(entry["snapshot_data_as_of"]["daily_bars"], "2026-11-13");
+        assert!(s["recent_generations"].as_array().unwrap().iter().any(|g| g == "20261115T101500Z-a1b2c3"));
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn a_cache_hit_renews_the_served_provenance_and_says_it_was_cached() {
+        let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (port, _state, stop) = start_custom(PathBuf::from("no/such.duckdb"), false, helper_with(&[("ZCACHE", "20261115T101500Z-a1b2c3")], runs.clone())).await;
+        let first = get_json(port, "/api/bars?symbol=ZCACHE&tf=1D").await;
+        let at_first = get_json(port, "/api/data-source").await["readers"]["bars:ZCACHE:adjusted"]["at"].as_u64().unwrap();
+        assert_eq!(first["provenance"]["cache"]["hit"], false);
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let second = get_json(port, "/api/bars?symbol=ZCACHE&tf=1D").await;
+        assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 1, "the second answer came from the cache");
+        assert_eq!(second["provenance"]["cache"]["hit"], true);
+        assert_eq!(second["provenance"]["generation_id"], "20261115T101500Z-a1b2c3", "the cached answer keeps the generation it was computed from");
+        let entry = get_json(port, "/api/data-source").await["readers"]["bars:ZCACHE:adjusted"].clone();
+        assert!(entry["at"].as_u64().unwrap() > at_first, "serving it again renews the entry, so a cache that keeps serving is never described as an old answer");
+        assert_eq!(entry["recent"], true);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn two_symbols_served_different_generations_through_one_reader_are_both_kept_and_flagged_mixed() {
+        let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let gens: &'static [(&str, &str)] = &[("ZMIXA", "20261115T101500Z-aaaaaa"), ("ZMIXB", "20261115T102000Z-bbbbbb")];
+        let (port, _state, stop) = start_custom(PathBuf::from("no/such.duckdb"), false, helper_with(gens, runs)).await;
+        get_json(port, "/api/bars?symbol=ZMIXA&tf=1D").await;
+        get_json(port, "/api/bars?symbol=ZMIXB&tf=1D").await;
+        let s = get_json(port, "/api/data-source").await;
+        assert_eq!(s["readers"]["bars:ZMIXA:adjusted"]["generation_id"], "20261115T101500Z-aaaaaa", "{s}");
+        assert_eq!(s["readers"]["bars:ZMIXB:adjusted"]["generation_id"], "20261115T102000Z-bbbbbb", "{s}");
+        let recent = s["recent_generations"].as_array().unwrap();
+        assert!(recent.iter().any(|g| g == "20261115T101500Z-aaaaaa") && recent.iter().any(|g| g == "20261115T102000Z-bbbbbb"));
+        assert_eq!(s["mixed_generations"], true);
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_data_source_endpoint_carries_the_last_publication_status_even_when_the_real_file_answers() {
+        let dir = crate::snapshot::testkit::temp_dir("srv-publication");
+        let main = dir.join("w.duckdb");
+        crate::snapshot::testkit::make_main_for(&main, "ZPUBL", "2026-11-13", 100.0);
+        crate::snapshot::testkit::atomic_write(&crate::snapshot::status_path(&main), &serde_json::json!({"schema": "athena.snapshot-status/1", "last_attempt": {"outcome": "failed", "stage": "validate", "error": "x", "current_unusable": "hash_mismatch"}, "last_success": null, "current_generation": null}).to_string());
+        let (port, _state, stop) = start_in(main.clone(), false).await;
+        let s = get_json(port, "/api/data-source").await;
+        assert_eq!(s["snapshot_publication"]["last_attempt"]["outcome"], "failed", "{s}");
+        assert_eq!(s["snapshot_publication"]["last_attempt"]["stage"], "validate");
+        stop.cancel();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_daily_answers_date_is_the_last_bar_and_a_snapshots_manifest_dates_are_kept_apart() {
+        let p = serde_json::json!({"source": "snapshot", "data_as_of": {"daily_bars": "2026-11-12"}, "snapshot_created_at": "2026-11-15T10:15:00Z"});
+        let got = bars_provenance(Some(p), Some(1_794_528_000)); // 2026-11-13 00:00 UTC (20,770 days after the epoch)
+        assert_eq!(got["data_as_of"], "2026-11-13");
+        assert_eq!(got["snapshot_data_as_of"]["daily_bars"], "2026-11-12");
+        assert_eq!(got["snapshot_created_at"], "2026-11-15T10:15:00Z");
+        assert!(bars_provenance(None, Some(0)).is_null(), "a helper that did not report provenance is reported as none, not invented");
+        assert_eq!(bars_provenance(Some(serde_json::json!({"source": "main", "data_as_of": null})), None)["data_as_of"], serde_json::Value::Null);
     }
 
     #[tokio::test]
@@ -1348,6 +1693,50 @@ mod tests {
         stop.cancel();
     }
 
+    #[tokio::test]
+    async fn the_derivative_quotes_route_carries_the_receipt_book_and_trade_times_and_the_servers_clock_and_does_not_make_a_repeat_newer() {
+        let (port, state, stop) = start_with(true).await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api/derivs/quotes");
+        let body: serde_json::Value = client.get(format!("{base}?tokens=NFO:778")).send().await.unwrap().json().await.unwrap();
+        assert!(body["now"].as_i64().unwrap() > 1_700_000_000_000, "the server's own clock, so the page can measure ages in it: {body}");
+        let packet = |ms: i64, last: i64| crate::angel::decode::decode(&crate::angel::decode::test_packet_on(2, "778", ms, last, 9_000, &[(1, 650, 12_340), (0, 130, 12_350)], 1_000, 0.0)).unwrap();
+        state.deriv_quotes.update_at(1_760_000_000_500, 2, crate::deriv_quotes::DerivQuote::from_tick("NFO", 2, &packet(1_760_000_000_000, 12_345)));
+        state.deriv_quotes.update_at(1_760_000_090_000, 2, crate::deriv_quotes::DerivQuote::from_tick("NFO", 2, &packet(1_760_000_000_000, 12_345))); // the same packet again, a minute and a half later
+        let body: serde_json::Value = client.get(format!("{base}?tokens=NFO:778")).send().await.unwrap().json().await.unwrap();
+        let q = &body["quotes"][0];
+        assert_eq!((q["t"].as_i64(), q["r"].as_i64(), q["bs"].as_i64(), q["ooo"].as_i64()), (Some(1_760_000_000_000), Some(1_760_000_000_500), Some(1_760_000_000_500), Some(0)));
+        assert!(q["dly"].is_null());
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_derivative_quotes_route_sends_the_packet_time_and_the_last_trade_time_apart_and_the_reason_a_time_was_refused() {
+        use crate::angel::decode::{decode, test_packet_on, with_sequence, with_trade_time};
+        use crate::deriv_quotes::DerivQuote;
+        let (port, state, stop) = start_with(true).await;
+        let client = reqwest::Client::new();
+        let base = format!("http://127.0.0.1:{port}/api/derivs/quotes");
+        let _ = client.get(format!("{base}?tokens=NFO:779")).send().await.unwrap(); // marks the contract wanted
+        let packet = |ms: i64, trade_raw: i64, seq: i64, last: i64| {
+            let p = with_sequence(with_trade_time(test_packet_on(2, "779", ms, last, 9_000, &[(1, 650, 12_340), (0, 130, 12_350)], 1_000, 0.0), trade_raw), seq);
+            DerivQuote::from_tick("NFO", 2, &decode(&p).unwrap())
+        };
+        // the packet is stamped a minute after the last trade; the stream sent the trade time in seconds
+        state.deriv_quotes.update_at(1_760_000_061_000, 2, packet(1_760_000_060_000, 1_760_000_000, 1, 12_345));
+        let body: serde_json::Value = client.get(format!("{base}?tokens=NFO:779")).send().await.unwrap().json().await.unwrap();
+        let q = &body["quotes"][0];
+        assert_eq!((q["t"].as_i64(), q["lt"].as_i64(), q["r"].as_i64()), (Some(1_760_000_060_000), Some(1_760_000_000_000), Some(1_760_000_061_000)), "{q}");
+        assert!(q.get("tf").is_none());
+        // a malformed last-traded field: no trade time, and the refusal is on the wire
+        state.deriv_quotes.update_at(1_760_000_091_000, 2, packet(1_760_000_090_000, 5, 2, 12_350));
+        let body: serde_json::Value = client.get(format!("{base}?tokens=NFO:779")).send().await.unwrap().json().await.unwrap();
+        let q = &body["quotes"][0];
+        assert!(q["lt"].is_null(), "{q}");
+        assert_eq!(q["tf"], serde_json::json!([{"f": "lt", "v": 5, "why": "implausible"}]));
+        stop.cancel();
+    }
+
     #[test]
     fn the_calendar_defaults_to_the_india_date_and_thirty_days_and_keeps_what_was_asked_for() {
         let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
@@ -1356,21 +1745,119 @@ mod tests {
         assert_eq!(calendar_range(today, None, Some("2026-10-25".into())), ("2026-10-19".to_string(), "2026-10-25".to_string()));
     }
 
+    // ---- the indicator route's request-size limit ----
+    //
+    // These replace one test that sent 5 MB over a real socket to a route that answers 413 and closes before the body is read: the client's write could meet the connection's reset, and the test then failed by chance
+    // (a Windows "connection aborted", seen in about a third of the runs of one session). A connection error is not an answer to a size limit, so no test here counts one as success. The exact sizes are decided in
+    // process, by sending a request straight through the router (no socket); a real connection is used only for the case that does not race, a body the server reads to the end.
+
+    /// The route's own limit: `DefaultBodyLimit::max(MAX_BODY + 64 KiB)` (see `router`).
+    const BODY_LIMIT: usize = crate::pyind::MAX_BODY + 64 * 1024;
+
+    /// A request body of exactly `len` bytes that the route can parse: the file name and no bars, padded in a field the route ignores.
+    fn run_body(len: usize) -> Vec<u8> {
+        let (head, tail) = (r#"{"file":"x.py","bars":[],"pad":""#, r#""}"#);
+        assert!(len >= head.len() + tail.len());
+        let mut body = Vec::with_capacity(len);
+        body.extend_from_slice(head.as_bytes());
+        body.resize(len - tail.len(), b'a');
+        body.extend_from_slice(tail.as_bytes());
+        assert_eq!(body.len(), len);
+        body
+    }
+
+    /// A request whose bars serialise to exactly `bars_len` bytes (`[1,1,1]` is 2n+1 bytes; an even length has one two-digit element).
+    fn bars_body(bars_len: usize) -> Vec<u8> {
+        let (ones, last) = if bars_len % 2 == 1 { ((bars_len - 1) / 2, "1") } else { ((bars_len - 2) / 2, "11") };
+        let mut elements = "1,".repeat(ones - 1);
+        elements.push_str(last);
+        let body = format!(r#"{{"file":"x.py","bars":[{elements}]}}"#).into_bytes();
+        assert_eq!(serde_json::to_vec(&serde_json::from_slice::<serde_json::Value>(&body).unwrap()["bars"]).unwrap().len(), bars_len);
+        body
+    }
+
+    /// One request through the router itself: the same layers and the same limit as the server, with no socket in between.
+    async fn through_the_router(state: &AppState, body: axum::body::Body) -> (StatusCode, Vec<u8>) {
+        use tower::ServiceExt;
+        let port = state.port;
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/pyind/run")
+            .header("host", format!("127.0.0.1:{port}"))
+            .header("origin", format!("http://127.0.0.1:{port}"))
+            .header("content-type", "application/json")
+            .body(body)
+            .unwrap();
+        let response = router(state.clone()).oneshot(request).await.unwrap();
+        let status = response.status();
+        (status, axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap().to_vec())
+    }
+
+    /// What the handler says when it is reached and the indicator is not switched on: 403 and a JSON error. Nothing was executed.
+    fn reached_the_handler(status: StatusCode, body: &[u8], why: &str) {
+        let shown = String::from_utf8_lossy(&body[..body.len().min(200)]).into_owned();
+        assert_eq!(status, StatusCode::FORBIDDEN, "{why}: the handler answers 403 when the indicator is not switched on; got: {shown}");
+        let json = serde_json::from_slice::<serde_json::Value>(body).ok();
+        assert_eq!(json.is_some(), true, "{why}: the reply is not the handler's JSON: {shown}");
+        let json = json.unwrap();
+        assert_eq!(json["error"].as_str().is_some_and(|e| e.contains("not switched on")), true, "{why}: {json}");
+    }
+
+    /// What the framework says when the body is past the limit: 413 and its own plain text, which is not the handler's JSON (the handler never ran).
+    fn refused_before_the_handler(status: StatusCode, body: &[u8], why: &str) {
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{why}");
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(body).is_err(), true, "{why}: a JSON reply would be the handler's: {}", String::from_utf8_lossy(&body[..body.len().min(200)]));
+    }
+
     #[tokio::test]
-    async fn the_indicator_run_route_takes_a_body_between_two_and_four_megabytes_and_refuses_a_larger_one() {
-        let (port, _state, stop) = start().await;
-        let client = reqwest::Client::new();
-        let url = format!("http://127.0.0.1:{port}/api/pyind/run");
-        let origin = format!("http://127.0.0.1:{port}");
-        let post = |bytes: usize| {
-            let bar = r#"{"t":1,"o":1,"h":1,"l":1,"c":1,"v":1},"#;
-            let body = format!(r#"{{"file":"x.py","bars":[{}{{"t":1,"o":1,"h":1,"l":1,"c":1,"v":1}}]}}"#, bar.repeat(bytes / bar.len()));
-            client.post(&url).header("Origin", &origin).header("content-type", "application/json").body(body).send()
+    async fn the_indicator_run_route_passes_exactly_what_is_inside_its_limit_and_refuses_the_next_byte_before_the_handler() {
+        let (_port, state, stop) = start().await;
+        for (len, why) in [(3 * 1024 * 1024, "3 MB"), (BODY_LIMIT - 1, "one byte under the limit"), (BODY_LIMIT, "exactly the limit")] {
+            let (status, body) = through_the_router(&state, axum::body::Body::from(run_body(len))).await;
+            reached_the_handler(status, &body, why);
+        }
+        for (len, why) in [(BODY_LIMIT + 1, "one byte over the limit"), (5 * 1024 * 1024, "5 MB")] {
+            let (status, body) = through_the_router(&state, axum::body::Body::from(run_body(len))).await;
+            refused_before_the_handler(status, &body, why);
+        }
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn a_body_with_no_declared_length_is_stopped_at_the_same_limit_while_it_is_read() {
+        let (_port, state, stop) = start().await;
+        let streamed = |len: usize| {
+            let body = run_body(len);
+            let chunks: Vec<Result<axum::body::Bytes, std::io::Error>> = body.chunks(64 * 1024).map(|c| Ok(axum::body::Bytes::copy_from_slice(c))).collect();
+            axum::body::Body::from_stream(futures_util::stream::iter(chunks))
         };
-        // 3 MB is inside the runner's own limit: the engine answers (this test's indicator folder has no such file), the framework does not refuse it
-        assert_ne!(post(3 * 1024 * 1024).await.unwrap().status(), 413);
-        // 5 MB is past it: refused before the handler
-        assert_eq!(post(5 * 1024 * 1024).await.unwrap().status(), 413);
+        let (status, body) = through_the_router(&state, streamed(BODY_LIMIT)).await;
+        reached_the_handler(status, &body, "streamed, exactly the limit");
+        let (status, body) = through_the_router(&state, streamed(BODY_LIMIT + 1)).await;
+        refused_before_the_handler(status, &body, "streamed, one byte over the limit");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn the_handlers_own_four_megabyte_limit_on_the_bars_is_a_separate_check_inside_the_framework_limit() {
+        let (_port, state, stop) = start().await;
+        let max = crate::pyind::MAX_BODY;
+        let (status, body) = through_the_router(&state, axum::body::Body::from(bars_body(max))).await;
+        reached_the_handler(status, &body, "bars of exactly 4 MB");
+        let (status, body) = through_the_router(&state, axum::body::Body::from(bars_body(max + 1))).await;
+        let shown = String::from_utf8_lossy(&body[..body.len().min(200)]).into_owned();
+        let json = serde_json::from_slice::<serde_json::Value>(&body).ok();
+        assert_eq!((status, json.as_ref().and_then(|j| j["error"].as_str()).is_some_and(|e| e.contains("at most 4 MB"))), (StatusCode::BAD_REQUEST, true), "bars one byte past 4 MB are the handler's refusal (400, in JSON), not the framework's (413): {shown}");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn a_three_megabyte_indicator_request_reaches_the_handler_over_a_real_connection() {
+        let (port, _state, stop) = start().await;
+        let reply = reqwest::Client::new().post(format!("http://127.0.0.1:{port}/api/pyind/run")).header("Origin", format!("http://127.0.0.1:{port}")).header("content-type", "application/json").body(run_body(3 * 1024 * 1024)).send().await.expect("a body the server reads to the end is answered");
+        let status = reply.status();
+        let body = reply.bytes().await.unwrap();
+        reached_the_handler(status, &body, "3 MB over a socket");
         stop.cancel();
     }
 
@@ -1446,6 +1933,127 @@ mod tests {
         assert_eq!(body["feed"], "on");
         assert_eq!(client.get(&url).header("Origin", "http://evil.test").send().await.unwrap().status(), 403);
         assert_eq!(client.get(&url).header("Host", "evil.test").send().await.unwrap().status(), 403);
+        stop.cancel();
+    }
+
+    // ---- T6 review: who and why for an override, the new refusals, and the operation kind in the work status ----
+    #[tokio::test]
+    async fn an_override_without_an_operator_or_a_reason_is_refused_before_anything_else_is_looked_at() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}/api/work/resolve");
+        let post = |body: serde_json::Value| { let (c, u, o) = (client.clone(), url.clone(), origin.clone()); async move { c.post(u).header("Origin", o).json(&body).send().await.unwrap().status() } };
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "retry"})).await, 400, "no operator, no reason");
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "retry", "operator": "asha"})).await, 400, "no reason");
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "retry", "operator": "  ", "reason": "x"})).await, 400, "a blank operator");
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "retry", "operator": "asha", "reason": "x".repeat(241)})).await, 400, "a reason past its size");
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 1, "action": "retry", "operator": "asha", "reason": "looked"})).await, 409, "with both, the request is looked at (and no job holds a worker)");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn a_failure_with_an_unconfirmed_worker_and_a_closed_service_have_their_own_answers() {
+        use crate::analyse_worker::AnalyseError;
+        use axum::body::to_bytes;
+        let body = |r: Response| async move { (r.status(), serde_json::from_slice::<serde_json::Value>(&to_bytes(r.into_body(), 1 << 20).await.unwrap()).unwrap()) };
+        let (status, v) = body(analyse_error_response(AnalyseError::Unconfirmed(9))).await;
+        assert_eq!((status, v["reason"].as_str(), v["job"].as_u64()), (StatusCode::BAD_GATEWAY, Some("unconfirmed"), Some(9)), "{v}");
+        let (status, v) = body(analyse_error_response(AnalyseError::Closed)).await;
+        assert_eq!((status, v["reason"].as_str()), (StatusCode::SERVICE_UNAVAILABLE, Some("shutting_down")), "{v}");
+        let (status, _) = body(fund_error(FundError::Overloaded)).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        let (status, _) = body(fund_error(FundError::TimedOut)).await;
+        assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn the_work_status_says_what_kind_of_work_each_job_was_and_totals_each_kind() {
+        let (port, _state, stop) = start().await;
+        let origin = format!("http://127.0.0.1:{port}");
+        let client = reqwest::Client::new();
+        let _ = client.post(format!("http://127.0.0.1:{port}/api/analyse")).header("Origin", &origin).json(&serde_json::json!({"query": "SECRET-QUERY-77"})).send().await.unwrap();
+        let _ = client.post(format!("http://127.0.0.1:{port}/api/backtest")).header("Origin", &origin).json(&serde_json::json!({"symbol": "SBIN"})).send().await.unwrap();
+        let work = get_json(port, "/api/work").await;
+        let pool = work["pools"].as_array().unwrap().iter().find(|p| p["pool"] == "analyse").cloned().expect("listed");
+        let kinds: Vec<&str> = pool["recent"].as_array().unwrap().iter().filter_map(|j| j["kind"].as_str()).collect();
+        assert_eq!(kinds, vec!["backtest", "view"], "newest first, each with its kind: {pool}");
+        assert_eq!((pool["kinds"]["view"]["submitted"].as_u64(), pool["kinds"]["backtest"]["submitted"].as_u64()), (Some(1), Some(1)), "{pool}");
+        assert_eq!(work.to_string().contains("SECRET-QUERY-77"), false, "what a person typed is not in the status");
+        stop.cancel();
+    }
+
+    // ---- T6 review 2: what a client that goes away does to its request (a real HTTP connection and a stand-in worker child) ----
+    fn slow_analyse() -> Option<Arc<crate::analyse_worker::AnalyseWorker>> {
+        let python = ["../.venv/Scripts/python.exe", "../.venv/bin/python"].into_iter().find(|p| std::path::Path::new(p).exists())?;
+        let code = r#"
+import json, sys, time, os
+print(json.dumps({"ready": True}), flush=True)
+for line in sys.stdin:
+    r = json.loads(line)
+    time.sleep(1.5)
+    print(json.dumps({"id": r["id"], "ok": True, "result": {"pid": os.getpid()}}), flush=True)
+"#;
+        Some(Arc::new(crate::analyse_worker::AnalyseWorker::new(vec![python.into(), "-c".into(), code.into()])))
+    }
+
+    async fn analyse_pool(port: u16) -> serde_json::Value {
+        let work = get_json(port, "/api/work").await;
+        work["pools"].as_array().unwrap().iter().find(|p| p["pool"] == "analyse").cloned().expect("the analyse pool is listed")
+    }
+
+    #[tokio::test]
+    async fn a_client_that_disconnects_from_a_running_analysis_lets_it_finish_and_the_worker_keeps_its_child() {
+        let Some(analyse) = slow_analyse() else { return };
+        analyse.warm().await;
+        let (port, _state, stop) = start_full(PathBuf::from("no/such.duckdb"), false, Arc::new(|_s| Box::pin(async { None })), analyse).await;
+        let origin = format!("http://127.0.0.1:{port}");
+        let impatient = reqwest::Client::builder().timeout(Duration::from_millis(500)).build().unwrap();
+        let gone = impatient.post(format!("http://127.0.0.1:{port}/api/analyse")).header("Origin", &origin).json(&serde_json::json!({"query": "TCS"})).send().await;
+        assert_eq!(gone.is_err(), true, "the client gave up before the 1.5 s answer");
+        tokio::time::sleep(Duration::from_millis(2_500)).await; // the analysis is read-only: it finishes, and its result is discarded
+        let pool = analyse_pool(port).await;
+        let job = &pool["recent"][0];
+        assert_eq!((job["state"].as_str(), job["abandoned"].as_bool(), job["child"].as_u64()), (Some("done"), Some(true), Some(1)), "the job ran to the end and is marked abandoned: {pool}");
+        assert_eq!(pool["totals"]["cancelled"], 0, "{pool}");
+        // the same child serves the next request: it was not restarted
+        let r = reqwest::Client::new().post(format!("http://127.0.0.1:{port}/api/analyse")).header("Origin", &origin).json(&serde_json::json!({"query": "INFY"})).send().await.unwrap();
+        assert_eq!(r.status(), 200);
+        assert_eq!(analyse_pool(port).await["recent"][0]["child"], 1, "no new child was started");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn a_client_that_disconnects_while_its_analysis_is_queued_cancels_the_queued_job_and_the_running_one_is_untouched() {
+        let Some(analyse) = slow_analyse() else { return };
+        analyse.warm().await;
+        let (port, _state, stop) = start_full(PathBuf::from("no/such.duckdb"), false, Arc::new(|_s| Box::pin(async { None })), analyse).await;
+        let origin = format!("http://127.0.0.1:{port}");
+        let first = tokio::spawn({ let (o, p) = (origin.clone(), port); async move { reqwest::Client::new().post(format!("http://127.0.0.1:{p}/api/analyse")).header("Origin", o).json(&serde_json::json!({"query": "AAA"})).send().await.unwrap().status() } });
+        tokio::time::sleep(Duration::from_millis(300)).await; // it is running; the next one waits
+        let impatient = reqwest::Client::builder().timeout(Duration::from_millis(500)).build().unwrap();
+        let gone = impatient.post(format!("http://127.0.0.1:{port}/api/analyse")).header("Origin", &origin).json(&serde_json::json!({"query": "BBB"})).send().await;
+        assert_eq!(gone.is_err(), true);
+        assert_eq!(first.await.unwrap(), 200, "the running analysis finished normally");
+        let pool = analyse_pool(port).await;
+        let states: Vec<(&str, &str)> = pool["recent"].as_array().unwrap().iter().map(|j| (j["state"].as_str().unwrap_or(""), j["reason"].as_str().unwrap_or(""))).collect();
+        assert_eq!(states, vec![("cancelled", "cancelled_while_queued"), ("done", "ok"), ("done", "ok")], "the queued request was cancelled when its client went; the warm-up and the first request were done: {pool}");
+        stop.cancel();
+    }
+
+    #[tokio::test]
+    async fn acknowledging_recovery_when_nothing_is_blocked_is_refused_and_a_bad_action_is_still_a_bad_request() {
+        let (port, _state, stop) = start().await;
+        let client = reqwest::Client::new();
+        let origin = format!("http://127.0.0.1:{port}");
+        let url = format!("http://127.0.0.1:{port}/api/work/resolve");
+        let post = |body: serde_json::Value| { let (c, u, o) = (client.clone(), url.clone(), origin.clone()); async move { c.post(u).header("Origin", o).json(&body).send().await.unwrap().status() } };
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 0, "action": "acknowledge_recovery", "operator": "asha", "reason": "looked"})).await, 409, "the action is known, and nothing is blocked");
+        let reply = client.post(url.clone()).header("Origin", origin.clone()).json(&serde_json::json!({"pool": "analyse", "job": 0, "action": "retry_journal", "operator": "asha", "reason": "looked"})).send().await.unwrap();
+        assert_eq!(reply.status(), 409, "retry_journal is a known action, and no write has failed");
+        let body: serde_json::Value = reply.json().await.unwrap();
+        assert_eq!(body["reason"], "not_blocked", "it is refused as nothing being blocked (a retry of a held worker would say it holds none): {body}");
+        assert_eq!(post(serde_json::json!({"pool": "analyse", "job": 0, "action": "forget", "operator": "asha", "reason": "looked"})).await, 400);
         stop.cancel();
     }
 }

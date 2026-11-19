@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-17",
+  "disposition": "backup/inventory accepted within inspected scope; commit execution pending plan corrections; T6 remains closed; T8 paused",
+  "head": "37f1fc19846a178083d9ced7a7a25aeffe65b1f9",
+  "pending_allowed_paths_before_review_artifacts": 2873,
+  "main_backup": {
+    "files": 3791,
+    "directories": 8,
+    "manifest_missing": 0,
+    "manifest_extra": 0,
+    "sha256": "dd5053e59045a8dcf669fb365f379237f777515d27689cbcc777bebd26c86077"
+  },
+  "ignored_backup": {
+    "files": 643,
+    "sha256": "aa3839baf7990c5815b73cdfc3182bc1497aad729089947c8b10fb505c5f4a9b"
+  },
+  "production_server_prefix": {
+    "bytes": 55874,
+    "identical": true,
+    "sha256": "9ba94c424045fa27921360f30030da76cd3885463a85cf7eb1d71fd9b4f577b5"
+  },
+  "independently_extracted_restore": false,
+  "independently_rerun_stress": false,
+  "plan_findings": [
+    "GP1 C12 normally skips both cross-language tests",
+    "GP2 inherited protected path conflicts with proposed checkout/gate",
+    "GP3 candidate code/harness identity and allowlisted comparison",
+    "GP4 local maintenance proposals/settings matrix absent",
+    "GP5 C11 unnecessarily restores known flaky state"
+  ],
+  "application_code_changed": false
+}

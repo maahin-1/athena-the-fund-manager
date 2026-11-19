@@ -1,0 +1,15 @@
+# candidate build fails
+# exit=1
+# calls:
+build_candidate -Source C:\Users\LEGION\AppData\Local\Temp\fg-test-ebda4d7a0c894a00a03c534c999a23e4\source -Ref HEAD -Dest C:\Users\LEGION\AppData\Local\Temp\fg-test-ebda4d7a0c894a00a03c534c999a23e4\w6\candidate -Out C:\Users\LEGION\AppData\Local\Temp\fg-test-ebda4d7a0c894a00a03c534c999a23e4\o6\1-candidate -Baseline 37f1fc19846a178083d9ced7a7a25aeffe65b1f9
+# output:
+1 build_candidate    failed exit=1 (0s)
+2 compare_manifest   NOT RUN: the candidate was not built or was refused (stage 1)
+3 origin_probe       NOT RUN: the candidate was not built or was refused (stage 1)
+4 python_gate        NOT RUN: the candidate was not built or was refused (stage 1)
+5 formula_golden     NOT RUN: the candidate was not built or was refused (stage 1)
+6 rust_gate          NOT RUN: the candidate was not built or was refused (stage 1)
+7 crosslang          NOT RUN: the candidate was not built or was refused (stage 1)
+8 web_gate           NOT RUN: the candidate was not built or was refused (stage 1)
+9 hygiene            NOT RUN: the candidate was not built or was refused (stage 1)
+final gate ok=False (not run: 8)

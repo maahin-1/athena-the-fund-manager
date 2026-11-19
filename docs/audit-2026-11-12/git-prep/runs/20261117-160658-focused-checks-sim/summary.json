@@ -1,0 +1,112 @@
+[
+    {
+        "group":  "C00",
+        "files":  1,
+        "collected":  22,
+        "passed":  22,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C01",
+        "files":  2,
+        "collected":  13,
+        "passed":  13,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C02",
+        "files":  5,
+        "collected":  102,
+        "passed":  102,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C03",
+        "files":  5,
+        "collected":  73,
+        "passed":  73,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C04",
+        "files":  2,
+        "collected":  53,
+        "passed":  53,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C05",
+        "files":  4,
+        "collected":  55,
+        "passed":  55,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C06",
+        "files":  5,
+        "collected":  120,
+        "passed":  120,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C07",
+        "files":  4,
+        "collected":  87,
+        "passed":  87,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C08",
+        "files":  5,
+        "collected":  45,
+        "passed":  45,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C09",
+        "files":  5,
+        "collected":  99,
+        "passed":  99,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    },
+    {
+        "group":  "C10",
+        "files":  5,
+        "collected":  60,
+        "passed":  60,
+        "skipped":  0,
+        "failed":  0,
+        "errors":  0,
+        "ok":  true
+    }
+]

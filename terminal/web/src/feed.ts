@@ -37,7 +37,19 @@ export interface DerivRow {
   volume: number;
   oi: number;
   oip: number;
+  /** The exchange's timestamp of the packet (ms): when the event the packet reports happened; null when the packet had none or the server refused it. It is not the time of the last trade (`lt`). */
   t: number | null;
+  /** (T3 review) The exchange's time of the last trade, from the packet's own last-traded field (ms); null when absent or refused. A server that predates it omits the field: the trade time is then unknown. */
+  lt?: number | null;
+  /** (T3 review) Times the server refused, with the field (`t` or `lt`), the value and the reason. Omitted when there are none. */
+  tf?: { f: string; v: number; why: string }[];
+  /** (T3) When the server received the packet that gave the quote its content, when it last received a change of the best bid or ask, how late the last new trade arrived (ms) and how many older packets were discarded. A server that predates these omits them. */
+  r?: number | null;
+  bs?: number | null;
+  dly?: number | null;
+  ooo?: number;
+  /** When the server last discarded such a packet (ms, server clock); absent when none was. */
+  oooAt?: number;
 }
 
 /** A tick older than this is the last session's, not a measure of the feed's delay. */
@@ -63,6 +75,8 @@ export class Feed {
   status: FeedStatus = { socket: 'closed', feed: 'connecting', latencyMs: null, ageMs: null };
   /** The newest pushed quote of each future and option a panel named, by `SEGMENT:TOKEN`. */
   readonly derivs = new Map<string, DerivRow>();
+  /** The server's clock less this page's as of the last frame that carried the server's time (ms), or null before one did: the receipt times on derivative rows are in the server's clock. */
+  serverSkewMs: number | null = null;
   private derivNeeds = new Map<string, Set<string>>();
   private lastDerivs = '';
   private derivListeners = new Set<DerivListener>();
@@ -161,9 +175,11 @@ export class Feed {
       this.lastSent = key;
       this.socket.send(JSON.stringify({ type: 'watch', symbols }));
     }
+    // over the server's limit, the contracts kept are the first named, in each panel's own order (its priority), never the first in alphabetical order: sorting first dropped whichever contracts
+    // happened to have the larger token numbers, the at-the-money pair included. The list sent is sorted, so the same set is the same message.
     const all = new Set<string>();
     this.derivNeeds.forEach((set) => set.forEach((k) => all.add(k)));
-    const keys = [...all].sort().slice(0, MAX_DERIVS).join(',');
+    const keys = [...all].slice(0, MAX_DERIVS).sort().join(',');
     if (keys !== this.lastDerivs) {
       this.lastDerivs = keys;
       this.socket.send(JSON.stringify({ type: 'derivs', keys }));
@@ -194,6 +210,7 @@ export class Feed {
     } catch {
       return;
     }
+    if (typeof m.sm === 'number' && Number.isFinite(m.sm)) this.serverSkewMs = m.sm - Date.now();
     if (m.type === 'q' && Array.isArray(m.q)) {
       for (const q of m.q) this.quotes.set(q.s, q);
       this.measure(m.sm, m.q.filter((q) => q.src === 'stream').map((q) => q.t));

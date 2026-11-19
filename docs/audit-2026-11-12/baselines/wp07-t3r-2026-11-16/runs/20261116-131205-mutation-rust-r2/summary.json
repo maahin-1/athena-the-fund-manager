@@ -1,0 +1,12 @@
+{
+ "label": "mutation-rust-r2",
+ "total": 4,
+ "counts": {
+  "caught": 4,
+  "SURVIVED": 0,
+  "invalid": 0,
+  "pattern_error": 0,
+  "timeout": 0
+ },
+ "files_restored": true
+}

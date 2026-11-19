@@ -1,0 +1,22 @@
+{
+  "first": {
+    "session": {
+      "state": "last_session",
+      "referenceMs": 1794718800000
+    },
+    "badge": {
+      "text": "last session prices",
+      "title": "The market is shut or these contracts have not traded lately: these are the last prices the exchange sent."
+    }
+  },
+  "second": {
+    "session": {
+      "state": "live",
+      "referenceMs": 1794718801000
+    },
+    "badge": {
+      "text": "live prices",
+      "title": "Prices, volume and open interest as the broker's stream last sent them."
+    }
+  }
+}

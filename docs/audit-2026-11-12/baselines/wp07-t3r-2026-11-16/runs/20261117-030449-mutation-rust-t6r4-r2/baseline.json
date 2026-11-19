@@ -1,0 +1,40 @@
+[
+ {
+  "name": "baseline-unmutated",
+  "command": [
+   "cargo",
+   "test",
+   "--offline",
+   "--locked",
+   "--",
+   "bounded::",
+   "helper::",
+   "fundamentals::tests::",
+   "flow_board::",
+   "bars::join_tests::",
+   "server::tests::an_override",
+   "server::tests::a_failure_with",
+   "server::tests::the_work",
+   "server::tests::acknowledging"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 158
+ },
+ {
+  "name": "baseline-1-unmutated",
+  "command": [
+   "cargo",
+   "test",
+   "--offline",
+   "--locked",
+   "--",
+   "bounded::tests::every_caller_of_a_concurrent"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 2
+ }
+]

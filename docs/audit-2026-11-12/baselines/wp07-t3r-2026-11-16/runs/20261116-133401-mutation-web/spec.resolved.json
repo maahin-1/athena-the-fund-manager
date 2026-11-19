@@ -1,0 +1,25 @@
+{
+  "cwd": "D:/projects/learn-project/athena-the-fund-manager/terminal/web",
+  "kind": "vitest",
+  "timeout": 600,
+  "env": {"npm_config_offline": "true", "npm_config_update_notifier": "false", "npm_config_audit": "false", "npm_config_fund": "false"},
+  "command": ["C:/Program Files/nodejs/npm.cmd", "test", "--", "--config", "D:/projects/learn-project/athena-the-fund-manager/docs/audit-2026-11-12/baselines/wp07-t3r-2026-11-16/runs/20261116-131953-web-green-5/vitest.config.mjs", "--reporter=default", "test/provenance.test.ts", "test/datasource-fixtures.test.ts"],
+  "mutations": [
+    {"id": "ts-missing-recent-read-as-recent", "note": "T5-F2: a refresh failure with no `recent` from the server is treated as current", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "recent: raw.recent === true, at: num(raw.at)", "new": "recent: raw.recent !== false, at: num(raw.at)"},
+    {"id": "ts-old-failures-current", "note": "T5-F2: failures the server marks as not recent still drive the badge", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "const refresh = Object.entries(sources.refreshFailures).filter(([, f]) => f.recent);", "new": "const refresh = Object.entries(sources.refreshFailures).filter(() => true);"},
+    {"id": "ts-retained-claim-without-served-answer", "note": "T5-F2: retained data is claimed to be served whether or not a matching answer was", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "if (!served.length) return", "new": "if (false) return"},
+    {"id": "ts-served-reader-not-matched", "note": "T5-F2: any recent answer, of any reader, counts as the matching one", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "entries.filter((e) => e.reader === name && e.r.kind === 'ok'", "new": "entries.filter((e) => e.r.kind === 'ok'"},
+    {"id": "ts-answer-before-failure-counts", "note": "T5-F2: an answer given before the failure supports the retained-data claim", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "(f.at === null || e.at === null || e.at >= f.at)", "new": "true"},
+    {"id": "ts-reader-key-fallback-removed", "note": "T5-F2: an entry without a reader field is matched by its whole key", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "|| key.split(':')[0];", "new": "|| key;"},
+    {"id": "ts-failure-age-not-read", "note": "T5-F2: the failure's age is dropped", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "ageSeconds: num(raw.age_seconds) };", "new": "ageSeconds: null };"},
+    {"id": "ts-retained-data-not-described", "note": "T5-F1: the retained data (reader, source, cache age) is not named", "file": "d:/projects/learn-project/athena-the-fund-manager/terminal/web/src/provenance.ts",
+     "old": "${cacheText(e.r.value)}` : '')).join('; ');", "new": "` : '')).join('; ');"}
+  ]
+}

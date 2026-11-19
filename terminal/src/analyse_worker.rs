@@ -1,17 +1,18 @@
 //! The live analysis: the project's own Python dashboard service, kept running as one worker process (`athena.dashboard.worker`).
 //! It is started when the terminal starts (building the service takes about 15 seconds), or on the first request if that failed, and then answers one request at a time over
-//! JSON lines. A request that fails, times out or finds the worker gone drops the process, so the next request starts a fresh one.
+//! JSON lines.
+//!
+//! Since T6 the requests go through a bounded queue (`bounded.rs`): one worker (the conservative count the terminal always had), four places for waiting requests, and one deadline per request
+//! that covers its wait in the queue, the worker's start and the answer (300 s in all, 180 s of it at most for a start). A request past the queue's capacity is refused at once (`Busy`); a request whose
+//! deadline passes ends with `TimedOut(job)`; a worker that did not answer, or whose request was cancelled, is ended (terminate, wait, kill, wait) and released only when its exit is confirmed. A worker that
+//! cannot be confirmed gone is held (`Held` for new requests) until its exit is confirmed later or a person resolves it (`/api/work`).
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::Mutex;
 
-const START_LIMIT: Duration = Duration::from_secs(180);
-const ANSWER_LIMIT: Duration = Duration::from_secs(300);
+use crate::bounded::{Limits, Outcome, Pool, PoolView, ProcessLauncher, Refusal};
+
 const MAX_QUERY: usize = 60;
 const MAX_ERROR: usize = 240;
 
@@ -19,25 +20,27 @@ const MAX_ERROR: usize = 240;
 pub enum AnalyseError {
     /// The query is empty, too long or has characters no instrument name has.
     BadQuery,
-    /// The worker could not start, died, or did not answer in time.
+    /// The worker could not start, died, or did not answer.
     Unavailable,
     /// The worker answered with a failure; the text is the project's own message.
     Failed(String),
-}
-
-struct Live {
-    _child: Child, // kill_on_drop: dropping this ends the process
-    stdin: ChildStdin,
-    out: Lines<BufReader<ChildStdout>>,
+    /// The queue is full: refused at once, nothing was queued (T6).
+    Busy,
+    /// The job's deadline (queue wait plus execution) passed; the number is the job's ID (T6).
+    TimedOut(u64),
+    /// A worker that could not be confirmed gone is held, and no new job may take it until it is resolved (T6).
+    Held,
+    /// The request failed and its worker could not be confirmed gone (the number is the job's ID): whatever it was doing may still be going.
+    Unconfirmed(u64),
+    /// The service is shutting down.
+    Closed,
 }
 
 /// The most a strategy tree may weigh as JSON (the strategy model's own limits keep a valid one far below this).
 pub const MAX_STRATEGY_BYTES: usize = 20_000;
 
 pub struct AnalyseWorker {
-    command: Vec<String>,
-    live: Mutex<Option<Live>>,
-    next_id: AtomicU64,
+    pool: Arc<Pool<ProcessLauncher>>,
 }
 
 /// Characters in a ticker, an ISIN or a company name.
@@ -48,38 +51,30 @@ pub fn query_ok(query: &str) -> bool {
 
 impl AnalyseWorker {
     pub fn new(command: Vec<String>) -> Self {
-        AnalyseWorker { command, live: Mutex::new(None), next_id: AtomicU64::new(1) }
+        Self::with_limits(command, Limits::default())
     }
 
-    pub fn standard(python: &str) -> Self {
-        Self::new(vec![python.into(), "-m".into(), "athena.dashboard.worker".into()])
-    }
-
-    async fn start(&self) -> Option<Live> {
-        let mut cmd = Command::new(self.command.first()?);
-        cmd.args(&self.command[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
-        let mut child = cmd.spawn().ok()?;
-        let stdin = child.stdin.take()?;
-        let mut out = BufReader::new(child.stdout.take()?).lines();
-        let ready = tokio::time::timeout(START_LIMIT, async {
-            while let Ok(Some(line)) = out.next_line().await {
-                if serde_json::from_str::<Value>(&line).ok().is_some_and(|v| v["ready"] == true) {
-                    return true;
-                }
-            }
-            false
-        })
-        .await
-        .unwrap_or(false);
-        ready.then_some(Live { _child: child, stdin, out })
-    }
-
-    /// Start the worker now (about 15 seconds) so the first analysis asked for does not wait for it.
-    pub async fn warm(&self) {
-        let mut guard = self.live.lock().await;
-        if guard.is_none() {
-            *guard = self.start().await;
+    /// The project's worker; with a journal file, a worker that could not be confirmed gone is remembered across a restart.
+    pub fn standard(python: &str, journal: Option<std::path::PathBuf>) -> Self {
+        let command = vec![python.into(), "-m".into(), "athena.dashboard.worker".into()];
+        match journal {
+            Some(path) => AnalyseWorker { pool: Arc::new(Pool::with_journal("analyse", ProcessLauncher::new(command, Stdio::null), Limits::default(), path)) },
+            None => Self::new(command),
         }
+    }
+
+    pub fn with_limits(command: Vec<String>, limits: Limits) -> Self {
+        AnalyseWorker { pool: Arc::new(Pool::new("analyse", ProcessLauncher::new(command, Stdio::null), limits)) }
+    }
+
+    /// The pool as the status and resolve routes see it.
+    pub fn pool_view(&self) -> Arc<dyn PoolView> {
+        self.pool.clone()
+    }
+
+    /// Start the worker now (about 15 seconds) so the first analysis asked for does not wait for it. It goes through the queue, so a request that comes meanwhile waits its turn on the same deadline.
+    pub async fn warm(&self) {
+        self.pool.warm().await;
     }
 
     /// The dashboard view for a typed ticker, ISIN or name, as the worker built it (`relatives` lists related instruments).
@@ -87,7 +82,7 @@ impl AnalyseWorker {
         if !query_ok(query) {
             return Err(AnalyseError::BadQuery);
         }
-        self.call(json!({"op": "view", "query": query.trim(), "relatives": relatives})).await
+        self.call("view", json!({"op": "view", "query": query.trim(), "relatives": relatives})).await
     }
 
     /// The built-in rules replayed over the symbol's history, each against buy and hold, with the numbers of each curve; or, with a `strategy` (the tree
@@ -103,45 +98,27 @@ impl AnalyseWorker {
             }
             payload["strategy"] = tree;
         }
-        self.call(payload).await
+        self.call("backtest", payload).await
     }
 
-    async fn call(&self, mut payload: Value) -> Result<Value, AnalyseError> {
-        let mut guard = self.live.lock().await; // one request at a time: the worker is one process and the model calls are slow
-        if guard.is_none() {
-            *guard = Some(self.start().await.ok_or(AnalyseError::Unavailable)?);
-        }
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        payload["id"] = json!(id);
-        let request = payload.to_string() + "
-";
-        let outcome = {
-            let live = guard.as_mut().expect("started above");
-            tokio::time::timeout(ANSWER_LIMIT, async {
-                live.stdin.write_all(request.as_bytes()).await.ok()?;
-                live.stdin.flush().await.ok()?;
-                while let Ok(Some(line)) = live.out.next_line().await {
-                    if let Ok(v) = serde_json::from_str::<Value>(&line) {
-                        if v["id"] == id {
-                            return Some(v);
-                        }
-                    }
-                }
-                None // the worker closed its output
-            })
-            .await
-            .ok()
-            .flatten()
+    async fn call(&self, kind: &'static str, payload: Value) -> Result<Value, AnalyseError> {
+        let ticket = match self.pool.enqueue(kind, payload, None) {
+            Ok(t) => t,
+            Err(Refusal::QueueFull { .. }) => return Err(AnalyseError::Busy),
+            Err(Refusal::Held { .. }) => return Err(AnalyseError::Held),
+            Err(Refusal::Closed) => return Err(AnalyseError::Closed),
+            Err(Refusal::Unrecovered) => return Err(AnalyseError::Held),
         };
-        let Some(reply) = outcome else {
-            *guard = None; // dead, stuck or silent: the next request starts a new one
-            return Err(AnalyseError::Unavailable);
-        };
-        if reply["ok"] == true {
-            Ok(reply["result"].clone())
-        } else {
-            let text = reply["error"].as_str().unwrap_or("the analysis failed");
-            Err(AnalyseError::Failed(text.chars().take(MAX_ERROR).collect()))
+        let id = ticket.id;
+        match ticket.result().await {
+            Outcome::Reply(reply) if reply["ok"] == true => Ok(reply["result"].clone()),
+            Outcome::Reply(reply) => {
+                let text = reply["error"].as_str().unwrap_or("the analysis failed");
+                Err(AnalyseError::Failed(text.chars().take(MAX_ERROR).collect()))
+            }
+            Outcome::Expired(_) => Err(AnalyseError::TimedOut(id)),
+            Outcome::Unconfirmed(_) => Err(AnalyseError::Unconfirmed(id)),
+            Outcome::Failed(_) | Outcome::Cancelled => Err(AnalyseError::Unavailable),
         }
     }
 }
@@ -234,5 +211,69 @@ for line in sys.stdin:
     async fn a_missing_program_and_a_bad_query_are_refused_without_hanging() {
         assert_eq!(AnalyseWorker::new(vec!["no-such-program-xyz".into()]).view("TCS", false).await, Err(AnalyseError::Unavailable));
         assert_eq!(AnalyseWorker::new(vec![]).view("a;b", false).await, Err(AnalyseError::BadQuery));
+    }
+
+    // ---- T6: bounded queue, deadlines that include the wait and the start, and children ended before their worker is released (real Python children, short real limits) ----
+    use crate::bounded::Limits;
+    use std::time::{Duration, Instant};
+
+    /// Queries starting with `S` take 1.2 s, `HANG` takes a minute (and ignores its input closing), anything else answers at once.
+    const SLOWISH: &str = r#"
+import json, sys, time, os
+print(json.dumps({"ready": True}), flush=True)
+for line in sys.stdin:
+    r = json.loads(line)
+    q = r["query"]
+    time.sleep(60 if q == "HANG" else 1.2 if q.startswith("S") else 0)
+    print(json.dumps({"id": r["id"], "ok": True, "result": {"pid": os.getpid(), "query": q}}), flush=True)
+"#;
+
+    fn limits(capacity: usize, deadline_ms: u64) -> Limits {
+        Limits { workers: 1, capacity, deadline: Duration::from_millis(deadline_ms), start_limit: Duration::from_secs(20), grace: Duration::from_millis(300), recheck: Duration::from_secs(5), history: 50 }
+    }
+    fn slowish(l: Limits) -> Option<Arc<AnalyseWorker>> {
+        let python = ["../.venv/Scripts/python.exe", "../.venv/bin/python"].into_iter().find(|p| std::path::Path::new(p).exists())?;
+        Some(Arc::new(AnalyseWorker::with_limits(vec![python.into(), "-c".into(), SLOWISH.into()], l)))
+    }
+
+    #[tokio::test]
+    async fn a_full_queue_is_refused_at_once_and_the_accepted_requests_still_finish() {
+        let Some(w) = slowish(limits(1, 60_000)) else { return };
+        let (a, b) = (tokio::spawn({ let w = w.clone(); async move { w.view("S1", false).await } }), tokio::spawn({ let w = w.clone(); async move { w.view("S2", false).await } }));
+        tokio::time::sleep(Duration::from_millis(100)).await; // both are in: one runs, one waits
+        let t = Instant::now();
+        assert_eq!(w.view("S3", false).await, Err(AnalyseError::Busy));
+        assert!(t.elapsed() < Duration::from_millis(500), "refused without waiting: {:?}", t.elapsed());
+        assert!(a.await.unwrap().is_ok() && b.await.unwrap().is_ok(), "the running and the queued request were not disturbed");
+    }
+
+    #[tokio::test]
+    async fn the_deadline_includes_the_wait_so_a_second_request_behind_a_long_one_times_out_on_the_same_clock() {
+        let Some(w) = slowish(limits(2, 2_000)) else { return };
+        // (warmed first, so the first request's 2 s is its 1.2 s answer and not also a Python start: on a busy machine a start of a second or more made this test fail now and then)
+        w.warm().await;
+        let first = tokio::spawn({ let w = w.clone(); async move { w.view("S1", false).await } });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let t = Instant::now();
+        let second = w.view("S2", false).await; // waits ~1.2 s, then needs 1.2 s with ~0.75 s of its 2 s left
+        assert!(matches!(second, Err(AnalyseError::TimedOut(_))), "{second:?}");
+        assert!(t.elapsed() > Duration::from_millis(1_400) && t.elapsed() < Duration::from_millis(2_600), "it ended near its own 2 s deadline, not 1.2 + 1.2 s: {:?}", t.elapsed());
+        assert!(first.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_request_past_its_deadline_has_its_child_ended_and_confirmed_before_the_next_gets_a_worker() {
+        // (2.5 s, and warmed first: with a deadline near a Python start's time, a slow start on a busy machine ended the first request in its start, or the next one before its fresh child answered)
+        let Some(w) = slowish(limits(2, 2_500)) else { return };
+        w.warm().await;
+        // (the test's own bound, so a worker that ignores its deadline fails this test instead of hanging it)
+        let hung = tokio::time::timeout(Duration::from_secs(10), w.view("HANG", false)).await.expect("the request ended near its deadline");
+        let Err(AnalyseError::TimedOut(id)) = hung else { panic!("{hung:?}") };
+        let ok = w.view("OK", false).await.expect("a fresh child answers");
+        assert!(ok["pid"].is_u64());
+        let status = w.pool_view().status();
+        let job = status["recent"].as_array().unwrap().iter().find(|r| r["id"] == id).cloned().unwrap();
+        assert_eq!((job["state"].as_str(), job["reason"].as_str()), (Some("expired"), Some("deadline_exceeded")), "{status}");
+        assert_eq!(status["retained"].as_array().unwrap().len(), 0, "the child was confirmed gone, so nothing is held");
     }
 }

@@ -7,7 +7,7 @@ capped and scaled and says so."""
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,6 +22,7 @@ MIN_TRUST = 0.1  # the least trust a measured analyst gets, so a verdict never s
 MIN_CASES = 300  # measured cases per horizon before an analyst can count as calibrated
 MIN_EDGE = 0.05  # accuracy above the best fixed answer needed at every horizon
 UNCALIBRATED, CALIBRATED = "uncalibrated", "calibrated"
+DEFAULT_EVIDENCE = frozenset({"archival"})  # calibration v2: archival filings only; Yahoo's deadline-filtered statements are an approximation and are not pooled in (see athena.evaluation.evidence)
 BASELINES = frozenset({"rule_trend"})  # plain rules scored beside the analysts in the logs; they never take part in a verdict
 
 
@@ -35,6 +36,7 @@ class Measure:
 @dataclass(frozen=True)
 class Calibration:
     measures: Mapping[str, Mapping[int, Measure]] = field(default_factory=dict)  # analyst -> horizon -> measure
+    evidence: Mapping[str, Any] = field(default_factory=dict)  # which evidence classes the measures came from and what was left out; not saved in calibration.json (a derived summary of the logs)
 
     def trust(self, analyst: str) -> float:
         """Half when the analyst only matches the best fixed answer (as when it is unmeasured), rising to 1 at 10 points above it and falling to
@@ -65,8 +67,17 @@ class Calibration:
         return cls({a: {int(h): Measure(int(m["cases"]), float(m["accuracy"]), float(m["best_fixed"])) for h, m in per.items()} for a, per in data.items()})
 
     @classmethod
-    def from_log_rows(cls, rows: Iterable[Mapping[str, Any]]) -> "Calibration":
-        calls = [c for c in calls_from_rows(rows) if c.specialist not in BASELINES]
+    def from_log_rows(cls, rows: Iterable[Mapping[str, Any]], evidence_classes: Collection[str] | None = None) -> "Calibration":
+        """Measure each analyst from run-log rows. `evidence_classes` keeps only those evidence classes (`DEFAULT_EVIDENCE`, archival filings, is what `athena.verdicts.cli --calibrate` uses): rows
+        resting on Yahoo's deadline-filtered approximation, or that recorded no source, are then left out and counted in `evidence`. The default (None) pools every class, as this function always
+        did, and `evidence["used"]` says so: a caller that pools is choosing to."""
+        everything = [c for c in calls_from_rows(rows) if c.specialist not in BASELINES]
+        calls = everything if evidence_classes is None else [c for c in everything if c.evidence in evidence_classes]
+        left_out: dict[str, int] = {}
+        for c in everything:
+            if evidence_classes is not None and c.evidence not in evidence_classes:
+                left_out[c.evidence] = left_out.get(c.evidence, 0) + 1
+        evidence = {"used": ["all (pooled, unqualified)"] if evidence_classes is None else sorted(evidence_classes), "left_out": left_out}
         measures: dict[str, dict[int, Measure]] = {}
         for analyst in sorted({c.specialist for c in calls}):
             for horizon in sorted({c.horizon for c in calls if c.specialist == analyst}):
@@ -74,12 +85,12 @@ class Calibration:
                 if result is None or not result.cases:
                     continue
                 measures.setdefault(analyst, {})[horizon] = Measure(result.cases, result.accuracy, max(result.outcome_mix.values()))
-        return cls(measures)
+        return cls(measures, evidence)
 
     @classmethod
-    def from_logs(cls, paths: Iterable[Path]) -> "Calibration":
+    def from_logs(cls, paths: Iterable[Path], evidence_classes: Collection[str] | None = None) -> "Calibration":
         rows = [json.loads(line) for path in paths for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
-        return cls.from_log_rows(rows)
+        return cls.from_log_rows(rows, evidence_classes)
 
     def save(self, path: Path = CALIBRATION_PATH) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

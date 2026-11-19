@@ -21,6 +21,7 @@ from athena.documents.pagenum import pdf_page_of, printed_numbers
 from athena.documents.read import coverage
 from athena.documents.search import Finder
 from athena.documents.store import DEFAULT_PATH, DocStore
+from athena.forensic import availability
 from athena.forensic.model import Case, LaneSpec
 from athena.forensic.tools import Tool, ToolContext, ToolError
 
@@ -60,10 +61,12 @@ class DocData:
         return self._printed[doc_id]
 
     def document(self, ctx: ToolContext) -> dict[str, Any]:
+        """The case's document, if it was available by the case date (`athena.forensic.availability`): one published after it, or with no known publication date in a strict historical
+        case, is refused here, in code, whatever the prompt says. The result carries `publication`, what the tools show about when it was published."""
         doc = self.store.document(ctx.case.target)
         if doc is None:
             raise ToolError(f"no document {ctx.case.target!r} in the document store")
-        return doc
+        return {**doc, "publication": availability.check(ctx, "document", ctx.case.target, doc.get("published"))}
 
 
 def _int(args: dict[str, Any], key: str, default: int | None = None) -> int | None:
@@ -73,10 +76,10 @@ def _int(args: dict[str, Any], key: str, default: int | None = None) -> int | No
 
 def document_tools(data: DocData) -> list[Tool]:
     def doc_map(ctx: ToolContext, args: dict[str, Any]) -> Any:
-        data.document(ctx)
+        doc = data.document(ctx)
         found = coverage(data.store, ctx.case.target)
         figures = data.store.figures(ctx.case.target)
-        return {**found, "figures_held": sorted(figures) if figures else [], "limits": LIMITS}
+        return {**found, "figures_held": sorted(figures) if figures else [], "publication": doc["publication"], "limits": LIMITS}
 
     def doc_open(ctx: ToolContext, args: dict[str, Any]) -> Any:
         doc = data.document(ctx)
@@ -113,11 +116,11 @@ def document_tools(data: DocData) -> list[Tool]:
         return {"query": query, "sections_searched": sections or "all", "passages": [{"page": h.page, "section": h.section, "text": h.text} for h in hits]}
 
     def doc_figures(ctx: ToolContext, args: dict[str, Any]) -> Any:
-        data.document(ctx)
+        doc = data.document(ctx)
         figures = data.store.figures(ctx.case.target)
         if figures is None:
             raise ToolError("no offer figures were taken from this document")
-        return {"figures": figures, "note": "amounts were taken by program from the pages cited (crore unless printed otherwise); [●] is blank in a draft"}
+        return {"figures": figures, "publication": doc["publication"], "note": "amounts were taken by program from the pages cited (crore unless printed otherwise); [●] is blank in a draft"}
 
     def doc_baseline(ctx: ToolContext, args: dict[str, Any]) -> Any:
         data.document(ctx)

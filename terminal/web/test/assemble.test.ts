@@ -32,6 +32,16 @@ describe('the keys a chain needs prices for', () => {
     expect(keys.some((k) => k.kind === 'put' && k.strike === 23_500)).toBe(false);
     expect(chainKeys(structure(false)).some((k) => k.kind === 'future')).toBe(false);
   });
+
+  it('come most needed first: the future, then the strikes nearest the price outwards (the middle strike when no price is known)', () => {
+    const keys = chainKeys(structure(), 25_140);
+    expect(keys[0].kind).toBe('future');
+    expect(keys.slice(1, 5).map((k) => `${k.kind} ${k.strike}`)).toEqual(['call 25100', 'put 25100', 'call 25200', 'put 25200']);
+    const strikes = keys.slice(1).map((k) => Math.abs(k.strike - 25_140));
+    expect(strikes).toEqual([...strikes].sort((a, b) => a - b));
+    const unknown = chainKeys(structure());
+    expect(unknown[1].strike).toBe(25_000); // the middle of 23,500..26,500
+  });
 });
 
 describe('a chain assembled from a synthetic market', () => {
@@ -121,7 +131,7 @@ describe('a chain with less than everything', () => {
     const spot = 24_500;
     const quotes = new Map([
       [keyOf({ underlying: 'NIFTY', expiry, kind: 'future', strike: 0 }), syntheticQuote({ underlying: 'NIFTY', expiry, kind: 'future', strike: 0 }, { spot, rate: 0.07, now })],
-      [keyOf({ underlying: 'NIFTY', expiry, kind: 'call', strike: 24_000 }), { last: 1, bid: null, ask: null, volume: 0, oi: 5, oiChange: 0 }], // far below the intrinsic value
+      [keyOf({ underlying: 'NIFTY', expiry, kind: 'call', strike: 24_000 }), { last: 1, bid: 0.9, ask: 1.1, volume: 0, oi: 5, oiChange: 0 }], // a two-sided book far below the intrinsic value
     ]);
     const v = assemble(s, quotes, spot, now, 0.07);
     expect(v.rows).toHaveLength(2);
@@ -131,6 +141,19 @@ describe('a chain with less than everything', () => {
     expect(v.rows[0].put!.quote).toBeNull();
     expect(v.rows[0].call!.greeks).toBeNull();
     expect(v.pcr.oi).not.toBeNull();
+  });
+
+  it('(T3, intentional change) gives no volatility from a last trade alone: with no two-sided book the side says so, and its open interest still counts', () => {
+    const s = structure(true, [24_000, 24_500]);
+    const spot = 24_500;
+    const quotes = new Map([
+      [keyOf({ underlying: 'NIFTY', expiry, kind: 'future', strike: 0 }), syntheticQuote({ underlying: 'NIFTY', expiry, kind: 'future', strike: 0 }, { spot, rate: 0.07, now })],
+      [keyOf({ underlying: 'NIFTY', expiry, kind: 'call', strike: 24_000 }), { last: 1_000, bid: null, ask: null, volume: 0, oi: 5, oiChange: 0 }],
+    ]);
+    const v = assemble(s, quotes, spot, now, 0.07);
+    expect(v.rows[0].call!.iv).toBeNull();
+    expect(v.rows[0].call!.ivNote).toBe('withheld: no two-sided book');
+    expect(v.pcr.callOi).toBe(5);
   });
 
   it('has no forward, volatilities or at-the-money strike when there is neither spot nor a future', () => {

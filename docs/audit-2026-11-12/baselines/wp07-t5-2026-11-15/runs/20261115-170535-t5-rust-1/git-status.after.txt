@@ -1,0 +1,117 @@
+ M README.md
+ M docs/brokers/README.md
+ M scripts/check_all.py
+ M scripts/terminal.ps1
+ M src/athena/agents/base.py
+ M src/athena/brokers/cli.py
+ M src/athena/brokers/desk.py
+ M src/athena/brokers/model.py
+ M src/athena/brokers/safety.py
+ M src/athena/council/debate.py
+ M src/athena/council/evidence.py
+ M src/athena/council/judge.py
+ M src/athena/evaluation/pit_cases.py
+ M src/athena/evaluation/pit_score.py
+ M src/athena/evaluation/schema.py
+ M src/athena/evaluation/scorecard.py
+ M src/athena/evaluation/walkforward.py
+ M src/athena/forensic/agent.py
+ M src/athena/forensic/job.py
+ M src/athena/forensic/model.py
+ M src/athena/forensic/ownership/lane.py
+ M src/athena/forensic/scoring.py
+ M src/athena/forensic/store.py
+ M src/athena/forensic/supervisor.py
+ M src/athena/forensic/text/lane.py
+ M src/athena/forensic/tools.py
+ M src/athena/forensic/verify.py
+ M src/athena/fundamentals/ingest.py
+ M src/athena/fundamentals/shares.py
+ M src/athena/fundamentals/store.py
+ M src/athena/llm/budget.py
+ M src/athena/llm/cache.py
+ M src/athena/llm/client.py
+ M src/athena/llm/router.py
+ M src/athena/ops/jobs.py
+ M src/athena/ops/snapshot.py
+ M src/athena/ops/supervisor.py
+ M src/athena/pit/yahoo_asof.py
+ M src/athena/reference/store.py
+ M src/athena/valuation/calibrate.py
+ M src/athena/valuation/industry.py
+ M src/athena/valuation/study.py
+ M src/athena/verdicts/calibration.py
+ M src/athena/verdicts/cli.py
+ M src/athena/verdicts/decisions.py
+ M src/athena/verdicts/runner.py
+ M src/athena/warehouse/chart_bars.py
+ M src/athena/warehouse/warehouse.py
+ M terminal/src/analysis.rs
+ M terminal/src/bars.rs
+ M terminal/src/calendar.rs
+ M terminal/src/fundamentals.rs
+ M terminal/src/search.rs
+ M terminal/src/server.rs
+ M terminal/src/snapshot.rs
+ M terminal/web/src/panels/chart.ts
+ M tests/test_brokers_live_gate.py
+ M tests/test_council_debate_judge.py
+ M tests/test_council_run.py
+ M tests/test_forensic.py
+ M tests/test_live_base.py
+ M tests/test_llm_budget.py
+ M tests/test_llm_resilience.py
+ M tests/test_ops.py
+ M tests/test_pit_score.py
+ M tests/test_snapshot.py
+ M tests/test_specialist_base.py
+ M tests/test_supervisor.py
+ M tests/test_val_calibrate.py
+ M tests/test_verdicts_cli.py
+ M tests/test_verdicts_runner.py
+?? AGENTS.md
+?? CLAUDE.md
+?? docs/audit-2026-11-12/
+?? examples/
+?? r.txt
+?? scripts/block_env_access.py
+?? src/athena/evaluation/claims.py
+?? src/athena/evaluation/cohort.py
+?? src/athena/evaluation/evidence.py
+?? src/athena/evaluation/policy.py
+?? src/athena/forensic/availability.py
+?? src/athena/forensic/lineage.py
+?? src/athena/fundamentals/vintages.py
+?? src/athena/llm/envelope.py
+?? src/athena/llm/ledger.py
+?? src/athena/timing.py
+?? src/athena/valuation/manifest.py
+?? src/athena/warehouse/generations.py
+?? terminal/web/src/provenance.ts
+?? tests/test_brokers_daily_loss.py
+?? tests/test_brokers_kill_race.py
+?? tests/test_brokers_send_outcome.py
+?? tests/test_check_all.py
+?? tests/test_claims.py
+?? tests/test_cohort_walkforward.py
+?? tests/test_council_binding.py
+?? tests/test_env_access_hook.py
+?? tests/test_forensic_availability.py
+?? tests/test_forensic_exposure_dispatch.py
+?? tests/test_forensic_lineage.py
+?? tests/test_forensic_support_binding.py
+?? tests/test_fund_vintages.py
+?? tests/test_llm_envelope.py
+?? tests/test_llm_ledger.py
+?? tests/test_llm_replies_unexpected.py
+?? tests/test_pit_evidence_class.py
+?? tests/test_snapshot_generations.py
+?? tests/test_snapshot_provenance.py
+?? tests/test_specialist_claims.py
+?? tests/test_study_policy.py
+?? tests/test_terminal_startup_script.py
+?? tests/test_timing.py
+?? tests/test_val_dated_inputs.py
+?? tests/test_verdict_settlement.py
+?? tests/test_verdicts_freshness.py
+?? tests/test_warehouse_membership_versions.py

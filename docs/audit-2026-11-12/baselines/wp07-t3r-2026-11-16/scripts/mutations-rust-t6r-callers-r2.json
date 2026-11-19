@@ -1,0 +1,67 @@
+﻿{
+    "cwd":  "C:/Users/LEGION/ath-wp07/w/terminal",
+    "kind":  "cargo",
+    "timeout":  900,
+    "env":  {
+                "CARGO_TARGET_DIR":  "C:/Users/LEGION/ath-wp07/t",
+                "CARGO_NET_OFFLINE":  "true"
+            },
+    "command":  [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--",
+                    "helper::",
+                    "fundamentals::tests::",
+                    "flow_board::",
+                    "bars::join_tests::",
+                    "server::tests::an_override",
+                    "server::tests::a_failure_with",
+                    "server::tests::the_work"
+                ],
+    "mutations":  [
+                      {
+                          "id":  "t6r-fund-shutdown-is-timeout",
+                          "note":  "R2: a shutdown is reported as a timeout",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+                          "old":  "Why::ShuttingDown =\u003e FundError::Failed(\"the terminal is shutting down\".into()),",
+                          "new":  "Why::ShuttingDown =\u003e FundError::TimedOut,"
+                      },
+                      {
+                          "id":  "t6r-fund-helper-full-limit",
+                          "note":  "R2: the helper is given the whole limit although the wait for a place used some",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+                          "old":  "h.run(op, \u0026args, budget.remaining()).await",
+                          "new":  "h.run(op, \u0026args, self.limit).await"
+                      },
+                      {
+                          "id":  "t6r-fund-admission-unbudgeted",
+                          "note":  "R2: the wait for a place does not draw on the request\u0027s deadline",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+                          "old":  "self.admission.admit(op.kind(), \u0026budget).await.map_err(admit_error)?;",
+                          "new":  "self.admission.admit(op.kind(), \u0026Budget::new(Duration::from_secs(100_000))).await.map_err(admit_error)?;"
+                      },
+                      {
+                          "id":  "t6r-board-module-fresh-limit",
+                          "note":  "R2: the board module gets a whole new limit",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/flow_board.rs",
+                          "old":  "tokio::time::timeout(budget.remaining(), async { cmd.spawn()?.wait_with_output().await })",
+                          "new":  "tokio::time::timeout(self.limit, async { cmd.spawn()?.wait_with_output().await })"
+                      },
+                      {
+                          "id":  "t6r-bars-stop-falls-back",
+                          "note":  "R2: a stopped helper request is followed by the command",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+                          "old":  "Next::Stop(_) =\u003e return None,",
+                          "new":  "Next::Stop(_) =\u003e {}"
+                      },
+                      {
+                          "id":  "t6r-bars-helper-full-limit",
+                          "note":  "R2: the helper is given the whole limit",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/bars.rs",
+                          "old":  "h.run(crate::helper::HelperOp::ChartBars, \u0026args, budget.remaining()).await.next()",
+                          "new":  "h.run(crate::helper::HelperOp::ChartBars, \u0026args, limit).await.next()"
+                      }
+                  ]
+}

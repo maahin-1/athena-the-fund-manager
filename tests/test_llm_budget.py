@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from athena.llm.budget import BudgetExceeded, Meter, MeteredLLM
+from athena.llm.budget import BudgetExceeded, BudgetUnavailable, Meter, MeteredLLM
 from athena.llm.router import StaticRouter
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
@@ -60,12 +60,16 @@ def test_a_new_month_starts_the_count_again(tmp_path):
     assert m.calls_this_month("strong") == 1
 
 
-def test_a_missing_or_broken_budget_file_means_no_ceiling(tmp_path):
+def test_a_missing_budget_file_means_the_owner_set_no_ceiling_but_a_broken_one_means_the_ceilings_are_unknown(tmp_path):
     m = meter(tmp_path)
-    assert m.ceilings() == {}
+    assert m.ceilings() == {} and m.ceiling_state()[1] == "absent"
+    MeteredLLM(Fake(), "strong", m).complete("a", "b")  # absent: nothing to enforce
     (tmp_path / "b.json").write_text("not json", encoding="utf-8")
-    assert m.ceilings() == {}
-    MeteredLLM(Fake(), "strong", m).complete("a", "b")
+    assert m.ceilings() == {} and m.ceiling_state()[1] == "invalid"
+    inner = Fake()
+    with pytest.raises(BudgetUnavailable, match="cannot be trusted"):
+        MeteredLLM(inner, "strong", m).complete("a", "b")  # it exists but cannot be read: not "no ceiling"; refused, and the model is never asked
+    assert inner.calls == 0
 
 
 def test_the_router_hands_out_metered_clients_only_when_given_a_meter(tmp_path):

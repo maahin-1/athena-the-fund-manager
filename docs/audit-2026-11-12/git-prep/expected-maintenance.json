@@ -1,0 +1,316 @@
+{
+ "note": "Allowlist manifest for verify/compare_manifest.py: every file the maintenance branch adds or changes, with the SHA-256 of the verified source bytes (looked up by source_path or path under the backup trees). A file is accepted only if the candidate holds what the declared line-ending policy makes of those bytes. Additions, changes AND removals are checked against the reference: the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip). A baseline file absent from the candidate fails unless it is listed under deleted (none is planned). Protected names never appear here. Revision after the first hosted run: M06 (one follow-up maintenance commit) adds the guard v4 files, the checkout-identity script and its tests, and changes ci.yml, ci/expected-counts.json, web_gate.ps1, final_gate.ps1 and test_final_gate.ps1; Revision after the dependency remediation: M07 adds terminal/Cargo.lock and terminal/Cargo.toml (the two commits that update the locked dependencies and the follow-up that narrows the duckdb requirement). This file is self_exempt because it changes in that commit and cannot hold its own hash.",
+ "baseline_head": "37f1fc19846a178083d9ced7a7a25aeffe65b1f9",
+ "compared_against": "the integration TIP commit (this manifest lists only maintenance changes; the final gate passes the tip as --baseline-ref, so every other file must be identical to the tip)",
+ "branch": "maintenance",
+ "files": [
+  {
+   "path": "docs/audit-2026-11-12/REPOSITORY-MAINTENANCE-PLAN.md",
+   "sha256": "96acf3dcc94a016260e733869f5efd6304f26e3e759387ce4b0845e906554a4d",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/ENFORCEMENT-TESTS.md",
+   "sha256": "d79b404d6dacaac8790715df79582d919fc5076d633f38331fff9ca2a2bc9b91",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/README.md",
+   "sha256": "71558bdc34f7de8f0d574e7de0f9eb14908dfd4fd424a1c4a4e460f3d00770d4",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/SETTINGS-MATRIX.md",
+   "sha256": "c26fafb4457b8a1c132f4b826d27738fb5180b12800313c49b03256c6db9bbcf",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/checks/check_proposal.py",
+   "sha256": "9b9c34f709fa529722b34935a01ea84fd83f2499045373e6debdc5ec3f66aeaa",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/checks/run_static_checks.py",
+   "sha256": "0ff2ef1bc908884a5259c1267fc04f90b99ae36eda08200581bce7d3788c7577",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/checks/test_check_proposal.py",
+   "sha256": "9d619e03b30e36ecce7392bd98f97a0a6455e778d210c314d88513d11472151a",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-155420-static-checks/exit-codes.json",
+   "sha256": "d2436e5923ec326fc560d144ae31544e9e7525c4daf473de37aca42defb5ebf4",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-155420-static-checks/negative-control.json",
+   "sha256": "e51cdbf19cf6167bfd289bf4de82e0907c70bacdea4aa6a3febfdd0df5ac5215",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-155420-static-checks/negative-control.txt",
+   "sha256": "63174ab3018897c48c420d98cc8da6b3ac205b10717334758268111f660faf58",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-155420-static-checks/policy-tests.txt",
+   "sha256": "6fc6a402f65f1cd4b35e69f49efacfabcafc84c9b4e7befc35f23490fb0107a0",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-155420-static-checks/proposal.json",
+   "sha256": "b0e4133c32512a8d6cdb8aa8e5af344b9f68d148e258d2c14b26bcb11d62b8cd",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-155420-static-checks/proposal.txt",
+   "sha256": "ff571aa970eab80fa4c73fabe0ae99a10f754d4d292ba93ea60575e3da1d01fc",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-170638-static-checks/negative-control.json",
+   "sha256": "763617c88e1afc08f780443359b362313e889e17885665c9337a91dc99e23fd4",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-170638-static-checks/negative-control.txt",
+   "sha256": "3e327be5dde207b93762b20897eac0070f37dea15da3bb533746a67b53035f68",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-170638-static-checks/policy-tests.txt",
+   "sha256": "64d96d67455ae6465768c6c91cab6043aafe09f514875fcd34627669896ac462",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-170638-static-checks/proposal.json",
+   "sha256": "f58f2a7a1660575ee58472e21d492b8686b14d36d6e77eca717e0628964228aa",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-170638-static-checks/proposal.txt",
+   "sha256": "254793fc7b2103923d5c8ee483622cb5d817c6719560eca7de892c75081093fc",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-170638-static-checks/summary.json",
+   "sha256": "f14e3b2d0a21c4df8f0660e681409c723087da6cdde217564595eedabed1294b",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-184107-static-checks/negative-control.json",
+   "sha256": "f68f85eed3b06b1629ae2fbe8412d87cbe3d8df27726eeed27d17aeb83aa7652",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-184107-static-checks/negative-control.txt",
+   "sha256": "822d843e6a1376dafb686e8fadc791e9c31923cace0ddc2dc2b31d21820358ed",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-184107-static-checks/policy-tests.txt",
+   "sha256": "dc20dc3f90976eff84d51cf5b642c567223d31e9801dd4cb8e1c830f6243ae2d",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-184107-static-checks/proposal.json",
+   "sha256": "f58f2a7a1660575ee58472e21d492b8686b14d36d6e77eca717e0628964228aa",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-184107-static-checks/proposal.txt",
+   "sha256": "254793fc7b2103923d5c8ee483622cb5d817c6719560eca7de892c75081093fc",
+   "group": "M01"
+  },
+  {
+   "path": "docs/audit-2026-11-12/maintenance-proposal/runs/20261117-184107-static-checks/summary.json",
+   "sha256": "f128eaf88c22e7465bc3fff49f3ad05683518cdc4da906dfcc8640e60d06179d",
+   "group": "M01"
+  },
+  {
+   "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+   "sha256": "39ebc1b3f094cc77ea504ec86c67c0ed48185a9dcac51a64ce3245ca618200ea",
+   "group": "M02",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/ISSUE_TEMPLATE/bug_report.yml"
+  },
+  {
+   "path": ".github/ISSUE_TEMPLATE/config.yml",
+   "sha256": "727fe3a360d8b3b2a5751612935347a95a0c704b558992685ea9fb37dc954699",
+   "group": "M02",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/ISSUE_TEMPLATE/config.yml"
+  },
+  {
+   "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+   "sha256": "b5dfc74e290af8d85876c6631593dfb32a3c11abd7f8080f8bf455ae8d04dede",
+   "group": "M02",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/ISSUE_TEMPLATE/feature_request.yml"
+  },
+  {
+   "path": ".github/PULL_REQUEST_TEMPLATE.md",
+   "sha256": "ccf04248ac6b86fcca412d1b53683819d80122e8a346ea1d92771b9e7f3cc091",
+   "group": "M02",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/PULL_REQUEST_TEMPLATE.md"
+  },
+  {
+   "path": "CODE_OF_CONDUCT.md",
+   "sha256": "0332037aa0d9dfed2b628c6fa0858a195828545000c3b171b32a564b6117bad1",
+   "group": "M02",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/CODE_OF_CONDUCT.md"
+  },
+  {
+   "path": "CONTRIBUTING.md",
+   "sha256": "5d9caa891607dc1c49b7ab4f2690a56170d68e3c3a4abbbcce46f1e052ae5a6f",
+   "group": "M02",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/CONTRIBUTING.md"
+  },
+  {
+   "path": "SECURITY.md",
+   "sha256": "91b437b39e6da5c0cee4f1a6ead0b996f303fa2eee92aef4bc2f3bca4a71bf31",
+   "group": "M02",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/SECURITY.md"
+  },
+  {
+   "path": ".github/CODEOWNERS",
+   "sha256": "729f7ec8bdbe3e58dfbcb10f8ea6941490ae432ae8a7ebef0761e49e108d70ba",
+   "group": "M03",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/CODEOWNERS"
+  },
+  {
+   "path": ".github/workflows/ci.yml",
+   "sha256": "122dd35b23260da2669e1100dd298362fc283dd375ec9d73d4da4d7cd3ebbaff",
+   "group": "M04, M06",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/workflows/ci.yml"
+  },
+  {
+   "path": ".github/workflows/dependency-review.yml",
+   "sha256": "6cd4b80e3dce7098722ff36f88bfb4cbaf35be4bf313ca99c07a172163a3ffa0",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/workflows/dependency-review.yml"
+  },
+  {
+   "path": "ci/expected-counts.json",
+   "sha256": "8ca0b04c848a22cf0ec537e6ecd7a3aa6b399825bd5d65e5ad921d7524172ca8",
+   "group": "M04, M06",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/ci/expected-counts.json"
+  },
+  {
+   "path": "ci/inherited-protected.sha256",
+   "sha256": "a0c69f8e8ef97aa0525f856b093ff83cb7398a9eae4e659b26681abd3313385c",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/ci/inherited-protected.sha256"
+  },
+  {
+   "path": "ci/python-constraints.txt",
+   "sha256": "12ce5f072cffeef7dd7f70e173fe000f39ff4bba9f1ec8022e7f98537f3bf8d5",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/ci/python-constraints.txt"
+  },
+  {
+   "path": "ci/workflow-policy.json",
+   "sha256": "17d8bc9ca146003e23b79a7a4013bb72c0897a97932b5fcab291a47ddc84d8da",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/ci/workflow-policy.json"
+  },
+  {
+   "path": "scripts/ci/check_repo_policy.py",
+   "sha256": "5030586c1df6f026bb742c850b0b7e1efb9ead15b3df92e12317dd1a57e3eef4",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/scripts/ci/check_repo_policy.py"
+  },
+  {
+   "path": "scripts/ci/check_workflows.py",
+   "sha256": "7477d0f84417a7b42b4c80fe938dd63d72569488bc196be61e450b0236b0383a",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/scripts/ci/check_workflows.py"
+  },
+  {
+   "path": "scripts/ci/safe_checkout.sh",
+   "sha256": "4ad98d54b1f59af09c82aef49c0fc9cf490d583c15425fe53b2bee68121bb8e5",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/scripts/ci/safe_checkout.sh"
+  },
+  {
+   "path": "tests/test_ci_repo_policy.py",
+   "sha256": "04d92db1f567b8f2445a13fcb58878a4ed5e8277de57376c21a265094fbbe484",
+   "group": "M04",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py"
+  },
+  {
+   "path": ".github/dependabot.yml",
+   "sha256": "170fd336ed1a9d7d0efeef9bbd03c595c95fc7508f0af4f498511a1f82b77f0d",
+   "group": "M05",
+   "source_path": "docs/audit-2026-11-12/maintenance-proposal/files/.github/dependabot.yml"
+  },
+  {
+   "path": "scripts/ci/record_checkout_identity.sh",
+   "sha256": "2562307b69c91cca9d20d5be2aa0f1c7e2d47e7f0edcf29e5366ebf90b1017ba",
+   "group": "M06"
+  },
+  {
+   "path": "tests/test_ci_checkout_identity.py",
+   "sha256": "e12b3b2b6415c44f903ab4ad2d4c1897b958f13a00d151f0f990a4f7c9075e49",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard.setup.v4.mjs",
+   "sha256": "600924933bc19692a4b5f40cb114708165712f4823fa5132976f48da29f342c8",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard_selftest_v4.mjs",
+   "sha256": "6bf12d2e4f18bc6e72b231e1893c3f02feedd69b5ee4c412ea8ab4b5a2a5af7d",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard_regressions_v4.mjs",
+   "sha256": "de6eeb2f91b492ddbb7a77aff10b7721909a451bd8e83ded3c8c1076c9e3334a",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/guard_judge_v4.mjs",
+   "sha256": "b981d8ae8d0c39c73127774f564533aae28cac28f6139d04e66eafe64a8e3ae9",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/guard/GUARD-V4.md",
+   "sha256": "98dfbf67aacca09239e8dfeee064634010ef133b8100679f97143eb02b7a5953",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/web_gate.ps1",
+   "sha256": "5bd60a56decbccaca586a3868781cec3492ec79a0ac5850c8876a9c75221689d",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/final_gate.ps1",
+   "sha256": "c715dfb54b9d428f05d0b64947fe91359d62001e2ab8960c88a2d182514f4097",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/verify/test_final_gate.ps1",
+   "sha256": "542f99fc6897676b4883f51b3b6162a68e3a7b6973e9d03f0c5f2060171b880c",
+   "group": "M06"
+  },
+  {
+   "path": "docs/audit-2026-11-12/git-prep/expected-maintenance.json",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "group": "M06 (self_exempt: the file cannot hold its own hash)"
+  },
+  {
+   "path": "terminal/Cargo.lock",
+   "sha256": "326a434b829e76c870ae4ad8149330dd18be7f9cac90234c1323060fc03c35fe",
+   "group": "M07 (dependency remediation: rustls 0.23.46, duckdb 1.10506.1, zip 9.0.5)"
+  },
+  {
+   "path": "terminal/Cargo.toml",
+   "sha256": "43bfcba84e17dfc4a212e107928693a5a98faf504acae5fa31a39149bd3b4dcd",
+   "group": "M07 (duckdb requirement narrowed to ~1.10506.1)"
+  }
+ ],
+ "deleted": [],
+ "self_exempt": [
+  "docs/audit-2026-11-12/git-prep/expected-maintenance.json"
+ ]
+}

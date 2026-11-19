@@ -84,7 +84,7 @@ pub fn calendar(path: &Path, from: &str, to: &str) -> Result<Value, CalendarErro
     if end < start || (end - start).num_days() > MAX_DAYS {
         return Err(CalendarError::BadRange);
     }
-    let conn = crate::snapshot::open_read_only(path).map_err(|_| CalendarError::Busy)?;
+    let conn = crate::snapshot::open(path, "calendar").map_err(|_| CalendarError::Busy)?.conn;
     let (from, to) = (start.to_string(), end.to_string());
 
     let events: Vec<Value> = conn

@@ -1,0 +1,23 @@
+[
+ {
+  "name": "baseline-unmutated",
+  "command": [
+   "cargo",
+   "test",
+   "--offline",
+   "--locked",
+   "--",
+   "helper::",
+   "fundamentals::tests::",
+   "flow_board::",
+   "bars::join_tests::",
+   "server::tests::an_override",
+   "server::tests::a_failure_with",
+   "server::tests::the_work"
+  ],
+  "exit_code": 0,
+  "problems": [],
+  "clean": true,
+  "total": 55
+ }
+]

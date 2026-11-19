@@ -1,0 +1,20 @@
+run A PATH: sh resolvable = False   (so Command::new("sh").status() fails to spawn: every one of the eight returned early and Rust reported it ok)
+run B PATH (Git for Windows bin prepended): sh resolves to C:\Program Files\Git\bin\sh.exe ; sh -c true exit code = 0   (spawn succeeds: the early-return branch is NOT taken)
+stand-in logs written by the shell (only sh creates a `calls` file):
+  athena-sentiment-14320  lines=2  modified=16:42:31  -> during run B
+  athena-ipo-14320  lines=1  modified=16:42:30  -> during run B
+  athena-flow-board-14320  lines=2  modified=16:42:29  -> during run B
+web: files=306 tests=895 passed=895 failed=0 pending/skipped=0 todo=0
+web ids written: 895 lines
+guard v2 records: guard-installed, False=70; fetch, True=130
+denied fetch attempts: 130; absolute http(s) targets: 0; distinct relative targets: 3
+denied non-fetch (net/tls/http/dns/dgram/child_process/fs): 0; fs reads outside the allowed roots (recorded, not denied): 0
+     112  /api/<sym>
+      18  /api/<sym>/<sym>
+git status identical before/after: True
+helper.log (not opened, not modified by this run) before: size=0 mtime=2026-10-28T11:17:41
+helper.log (not opened) after: size=0 mtime=2026-10-28T11:17:41
+files under terminal/ (outside target and node_modules) modified since this run began: 0
+terminal source+lock tree hash (first 16 hex of sha256 over the sorted per-file hashes and names): 0FC9768081D6FE90
+HEAD: 37f1fc19846a178083d9ced7a7a25aeffe65b1f9
+work-dir junction removed after run: True

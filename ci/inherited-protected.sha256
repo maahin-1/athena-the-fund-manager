@@ -1,0 +1,3 @@
+# SHA-256 of "<path> NUL <object id>" of each protected-name entry the baseline 37f1fc1 already tracked. Hashes only: no name is stored.
+# Any other protected entry, or a changed one, fails scripts/ci/check_repo_policy.py. Do not "fix" a failure by adding a line here without the owner's separate authorization.
+fcb22932b48f5a1e1bc17e286115c943cb641dd589cb9c2e133495fac9880862

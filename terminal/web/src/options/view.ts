@@ -6,6 +6,7 @@ import { DEFAULT_RATE, yearsToExpiry } from './black76';
 import { renderChain } from './chainview';
 import type { Quote } from './chain';
 import { PayoffBuilder } from './payoffview';
+import { qualitySummary, type SessionState } from './quality';
 import { lineChart } from './svgchart';
 import { liveFeed, type LiveFeed } from './livefeed';
 import { keyOf, syntheticFeed, type OptionFeed } from './synthetic';
@@ -203,12 +204,33 @@ export class OptionsView {
     this.toolbar.append(this.underlyingInput, this.datalist, this.expirySelect, this.aroundSelect, greeksLabel, el('span', 'note', 'Rate %'), this.rateInput, refresh, this.badge);
   }
 
-  /** What the prices are, said beside them: made up, live, or the last ones the exchange sent. */
+  /** The moment (the server's clock, when the feed has one) and the session the quotes are judged against. */
+  private qualityContext(): { nowMs?: number; session?: SessionState } {
+    return { nowMs: this.feed.serverNow?.(), session: this.feed.session?.() };
+  }
+
+  /** What the prices are, said beside them: made up, live, or the last ones the exchange sent. A live feed says "live prices" only while the chain's required inputs (its forward and its at-the-money
+   *  call and put) are judged fit: when they are not, the badge says what the worst of them is, whatever the newest quote is. */
   private updateBadge(): void {
     const b = this.feed.badge?.() ?? (this.feed.synthetic ? { text: 'synthetic prices', title: 'These prices are made up for a test market; the server has no live derivative stream (the fake feed is on, or the broker is not connected).' } : { text: 'live prices', title: '' });
-    this.badge.textContent = b.text;
-    this.badge.title = b.title;
-    this.badge.dataset.kind = this.feed.synthetic ? 'synthetic' : b.text.startsWith('live') ? 'live' : 'last';
+    let { text, title } = b;
+    let kind = this.feed.synthetic ? 'synthetic' : b.text.startsWith('live') ? 'live' : 'last';
+    const q = this.view?.quality ?? null;
+    if (q && !this.feed.synthetic && q.status !== 'ok') {
+      const summary = qualitySummary(q);
+      if (b.text.startsWith('live')) {
+        text = q.status === 'withheld' ? 'inputs withheld' : 'quotes labelled';
+        title = summary;
+        kind = 'quality';
+      } else {
+        title = `${b.title}\n${summary}`.trim();
+      }
+    } else if (q && !this.feed.synthetic && q.rows.withheld > 0) {
+      title = `${b.title}\n${q.rows.withheld} contract sides have no volatility: their own quotes failed the quality rules (see the cell).`.trim();
+    }
+    this.badge.textContent = text;
+    this.badge.title = title;
+    this.badge.dataset.kind = kind;
   }
 
   /** The price of the underlying itself, for a live feed: an index from the exchange's snapshot, a share from the cash stream; none for a commodity. */
@@ -263,10 +285,12 @@ export class OptionsView {
       } catch (e) {
         return this.failed(e, () => void this.start(underlying));
       }
-      this.datalist.replaceChildren(...this.underlyings.filter((u) => !u.odd && u.options).map((u) => new Option(`${u.underlying} · ${u.class}`, u.underlying)));
+      this.datalist.replaceChildren(...this.underlyings.filter((u) => u.underlying && !u.odd && u.options).map((u) => new Option(`${u.underlying} · ${u.class}`, u.underlying)));
     }
-    const wanted = (underlying ?? '').toUpperCase();
-    const pick = this.underlyings.find((u) => u.underlying === wanted && u.options) ?? this.underlyings.find((u) => u.underlying === (this.underlying || this.settings.underlying) && u.options) ?? this.underlyings.find((u) => u.options && !u.odd);
+    // an empty name is no request: it must not match a nameless row, so the page falls back to the one shown or saved (NIFTY by default)
+    const wanted = (underlying ?? '').trim().toUpperCase();
+    const named = (name: string) => (name ? this.underlyings.find((u) => u.underlying === name && u.options) : undefined);
+    const pick = named(wanted) ?? named(this.underlying || this.settings.underlying) ?? this.underlyings.find((u) => u.underlying && u.options && !u.odd);
     if (!pick) {
       this.note.textContent = 'No option contracts are listed.';
       return;
@@ -283,7 +307,7 @@ export class OptionsView {
   /** Choose an underlying: its expiries, then the chain of the first. An underlying that is not listed says so and leaves the page as it was. */
   private async choose(text: string): Promise<void> {
     const name = text.trim().toUpperCase();
-    const info = this.underlyings.find((u) => u.underlying === name);
+    const info = name ? this.underlyings.find((u) => u.underlying === name) : undefined;
     if (!info || !info.options) {
       this.note.textContent = name ? `${name} has no option contracts in the list.` : '';
       return;
@@ -317,10 +341,13 @@ export class OptionsView {
     this.note.textContent = 'loading…';
     try {
       const structure = await this.api.chain(underlying, expiry);
-      const [quotes, spot] = await Promise.all([this.feed.quotes(chainKeys(structure)), this.feed.spot(underlying)]);
+      // the price first, so the contracts nearest the money are asked for first (a live feed streams only so many)
+      const spot = await this.feed.spot(underlying);
+      const before = this.view && this.structure?.underlying === underlying ? (this.view.forward ?? this.view.spot) : null;
+      const quotes = await this.feed.quotes(chainKeys(structure, spot ?? before));
       if (mine !== this.token) return;
       this.structure = structure;
-      this.view = assemble(structure, quotes, spot, this.now(), this.settings.rate);
+      this.view = assemble(structure, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
       this.note.textContent = '';
       this.paintChain();
       this.paintCurves();
@@ -410,7 +437,7 @@ export class OptionsView {
     for (const n of near) {
       try {
         const quotes = await this.feed.quotes(chainKeys(n.chain));
-        const v = assemble(n.chain, quotes, spot, this.now(), this.settings.rate);
+        const v = assemble(n.chain, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
         if (v.atmIv !== null) points.push({ x: T(n.date) * 365, y: v.atmIv * 100 });
       } catch {
         /* an expiry that cannot be read is left out of the curve */
@@ -445,9 +472,10 @@ export class OptionsView {
     this.refreshing = true;
     const mine = this.token;
     try {
-      const [quotes, spot] = await Promise.all([this.feed.quotes(chainKeys(s)), this.feed.spot(s.underlying)]);
+      const spot = await this.feed.spot(s.underlying);
+      const quotes = await this.feed.quotes(chainKeys(s, this.view?.forward ?? spot));
       if (mine !== this.token) return;
-      this.view = assemble(s, quotes, spot, this.now(), this.settings.rate);
+      this.view = assemble(s, quotes, spot, this.now(), this.settings.rate, this.qualityContext());
       this.paintChain(false);
       this.paintCurves();
       this.updateBadge();

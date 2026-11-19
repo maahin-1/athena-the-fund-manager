@@ -3,6 +3,7 @@ import { VolumeSteps, type Bar } from '../bars';
 import type { Quote } from '../feed';
 import { compact, pct, price, signed } from '../format';
 import { marketState } from '../market';
+import { provenanceNote } from '../provenance';
 import { el, type AppContext } from '../panels/base';
 import { defaultRangeOf, parseInterval, rangesOf } from '../interval';
 import { barLimit, isIntraday, type Interval, type Range, type Timeframe } from '../ranges';
@@ -59,6 +60,8 @@ const DEFAULT_RANGE: Record<Timeframe, string> = { '1m': '1D', '2m': '1D', '3m':
 export interface Fetched {
   bars: Bar[];
   note: string;
+  /** What the server said about where the bars came from (see `provenance.ts`); absent for an answer that has none (intraday bars, an older server). */
+  provenance?: unknown;
 }
 export type BarsFetcher = (symbol: string, tf: Timeframe, limit: number | null, adjusted: boolean) => Promise<Fetched>;
 
@@ -66,12 +69,12 @@ export type BarsFetcher = (symbol: string, tf: Timeframe, limit: number | null, 
 export const fetchBars: BarsFetcher = async (symbol, tf, limit, adjusted) => {
   const url = `/api/bars?symbol=${encodeURIComponent(symbol)}&tf=${tf}${tf === '1D' ? `&limit=${limit ?? 5000}${adjusted ? '' : '&adj=0'}` : ''}`;
   for (let attempt = 0; ; attempt++) {
-    const body = (await (await fetch(url)).json()) as { bars: Bar[]; note?: string };
+    const body = (await (await fetch(url)).json()) as { bars: Bar[]; note?: string; provenance?: unknown };
     if (body.note === 'loading' && attempt < 6) {
       await new Promise((r) => setTimeout(r, 1500));
       continue;
     }
-    return { bars: body.bars, note: body.note === 'loading' ? '' : (body.note ?? '') };
+    return { bars: body.bars, note: body.note === 'loading' ? '' : (body.note ?? ''), provenance: body.provenance ?? undefined };
   }
 };
 
@@ -679,7 +682,9 @@ export class ChartLabView {
     if (this.model.replaying && !this.following) this.resyncPlayer();
     this.applyRange();
     const custom = !(this.tf in RANGES);
-    this.say(bars.length ? fetched.note || (custom ? `${this.tf} bars are built from ${source.fetch} bars` : '') : `no ${this.tf} bars for ${this.symbol}`);
+    const where = provenanceNote(fetched.provenance); // which data answered: a snapshot, or no data at all and why (nothing for the real file)
+    const said = bars.length ? fetched.note || (custom ? `${this.tf} bars are built from ${source.fetch} bars` : '') : fetched.note === 'warehouse busy' && where ? '' : `no ${this.tf} bars for ${this.symbol}`;
+    this.say([said, where].filter(Boolean).join(' '));
     if (this.model.compare) void this.loadCompare(this.model.compare.symbol);
     this.paintBar();
   }

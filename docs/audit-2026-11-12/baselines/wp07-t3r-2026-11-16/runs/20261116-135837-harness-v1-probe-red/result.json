@@ -1,0 +1,15 @@
+{
+ "harness": "mutate.v1.py",
+ "record": {
+  "id": "probe-suite-load-failure",
+  "file": "C:\\Users\\LEGION\\AppData\\Local\\Temp\\tmpno2wnv1m\\inert.txt",
+  "note": "review probe T3-C2",
+  "outcome": "caught",
+  "failing": [
+   "test/synthetic.test.ts"
+  ],
+  "seconds": 0.1,
+  "exit_code": 1
+ },
+ "expected_by_the_review": "not caught (a suite-level FAIL line is not assertion evidence)"
+}

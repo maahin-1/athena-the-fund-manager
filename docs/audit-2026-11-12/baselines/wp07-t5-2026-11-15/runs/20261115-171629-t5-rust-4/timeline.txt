@@ -1,0 +1,6 @@
+2026-11-15 17:16:29  run 20261115-171629-t5-rust-4
+2026-11-15 17:16:30  cargo test --offline --locked --no-run
+2026-11-15 17:16:46  build exit 0
+2026-11-15 17:16:49  cargo test --offline --locked (PATH as is: no sh)
+2026-11-15 17:16:56  test exit 0
+2026-11-15 17:16:56  done

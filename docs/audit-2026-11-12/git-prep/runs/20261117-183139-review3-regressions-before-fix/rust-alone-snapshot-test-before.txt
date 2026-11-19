@@ -1,0 +1,40 @@
+﻿cargo.exe :    Compiling tokio v1.53.2
+At line:6 char:10
++   $out = & cargo test --locked -- --exact $id --test-threads=1 2>&1
++          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tokio v1.53.2:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling tokio-rustls v0.26.6
+   Compiling hyper v1.12.0
+   Compiling tower v0.5.3
+   Compiling tokio-util v0.7.20
+   Compiling tokio-tungstenite v0.24.0
+   Compiling tower-http v0.5.2
+   Compiling tower-http v0.6.11
+   Compiling hyper-util v0.1.21
+   Compiling hyper-rustls v0.27.10
+   Compiling axum v0.7.9
+   Compiling reqwest v0.12.28
+   Compiling athena-terminal v0.1.0 (D:\projects\learn-project\athena-the-fund-manager\terminal)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 17s
+     Running unittests src\main.rs (target\debug\deps\athena_terminal-d408eecd9aeb9b47.exe)
+
+running 1 test
+test server::tests::a_daily_answer_from_a_snapshot_names_the_generation_the_reason_and_both_dates ... FAILED
+
+failures:
+
+---- server::tests::a_daily_answer_from_a_snapshot_names_the_generation_the_reason_and_both_dates stdout ----
+
+thread 'server::tests::a_daily_answer_from_a_snapshot_names_the_generation_the_reason_and_both_dates' (62144) panicked at src\server.rs:1252:9:
+assertion failed: get_json(port, "/api/data-source").await["readers"]["bars"].is_object()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    server::tests::a_daily_answer_from_a_snapshot_names_the_generation_the_reason_and_both_dates
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.28s
+
+error: test failed, to rerun pass `--bin athena-terminal`

@@ -1,0 +1,12 @@
+{
+ "label": "mutation-rust-t3b",
+ "total": 1,
+ "counts": {
+  "caught": 1,
+  "SURVIVED": 0,
+  "invalid": 0,
+  "pattern_error": 0,
+  "timeout": 0
+ },
+ "files_restored": true
+}

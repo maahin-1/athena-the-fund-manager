@@ -1,0 +1,27 @@
+﻿cargo.exe :     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.55s
+At line:6 char:10
++   $out = & cargo test --locked -- --exact $id --test-threads=1 2>&1
++          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Finished `t...get(s) in 0.55s:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+     Running unittests src\main.rs (target\debug\deps\athena_terminal-d408eecd9aeb9b47.exe)
+
+running 1 test
+test server::tests::the_data_source_endpoint_reports_each_readers_last_answer_and_whether_they_differ ... FAILED
+
+failures:
+
+---- server::tests::the_data_source_endpoint_reports_each_readers_last_answer_and_whether_they_differ stdout ----
+
+thread 'server::tests::the_data_source_endpoint_reports_each_readers_last_answer_and_whether_they_differ' (59472) panicked at src\server.rs:1281:9:
+assertion failed: s["readers"]["bars"].is_object()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    server::tests::the_data_source_endpoint_reports_each_readers_last_answer_and_whether_they_differ
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.17s
+
+error: test failed, to rerun pass `--bin athena-terminal`

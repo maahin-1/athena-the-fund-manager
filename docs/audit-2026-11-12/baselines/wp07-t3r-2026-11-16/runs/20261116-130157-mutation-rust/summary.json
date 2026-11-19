@@ -1,0 +1,12 @@
+{
+ "label": "mutation-rust",
+ "total": 20,
+ "counts": {
+  "caught": 19,
+  "SURVIVED": 1,
+  "invalid": 0,
+  "pattern_error": 0,
+  "timeout": 0
+ },
+ "files_restored": true
+}

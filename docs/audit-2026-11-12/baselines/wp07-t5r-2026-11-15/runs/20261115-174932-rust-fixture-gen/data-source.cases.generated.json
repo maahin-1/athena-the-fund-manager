@@ -1,0 +1,556 @@
+{
+  "failed_publication_main": {
+    "mixed_generations": false,
+    "readers": {
+      "calendar": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "data_as_of": null,
+        "fallback_reason": null,
+        "generation_basis": "observed",
+        "generation_id": "main:<observed>",
+        "main_error": null,
+        "reader": "calendar",
+        "recent": true,
+        "snapshot_created_at": null,
+        "snapshot_status": null,
+        "source": "main",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": false
+      }
+    },
+    "recent_generations": [
+      "main:<observed>"
+    ],
+    "refresh_failures": {},
+    "snapshot_publication": {
+      "cleanup": {
+        "deferred": [],
+        "removed": []
+      },
+      "current_generation": null,
+      "last_attempt": {
+        "at": "2026-11-15T10:30:00Z",
+        "current_unusable": "hash_mismatch",
+        "error": "OSError: copy would not open",
+        "generation_attempted": "20261115T103000Z-c0ffee",
+        "outcome": "failed",
+        "stage": "validate"
+      },
+      "last_success": null,
+      "schema": "athena.snapshot-status/1",
+      "updated_at": "2026-11-15T10:30:00Z"
+    },
+    "window_seconds": 600
+  },
+  "failed_replacement_snapshot": {
+    "mixed_generations": false,
+    "readers": {
+      "calendar": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": "2026-11-12"
+        },
+        "fallback_reason": "locked_by_writer",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "main_error": "<scrubbed>",
+        "reader": "calendar",
+        "recent": true,
+        "snapshot_created_at": "2026-11-15T10:15:03Z",
+        "snapshot_status": {
+          "cleanup": {
+            "deferred": [],
+            "removed": []
+          },
+          "current_generation": "20261115T101503Z-a1b2c6",
+          "last_attempt": {
+            "at": "2026-11-15T10:30:00Z",
+            "current_unusable": null,
+            "error": "OSError: copy would not open",
+            "generation_attempted": "20261115T103000Z-c0ffee",
+            "outcome": "failed",
+            "stage": "validate"
+          },
+          "last_success": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6"
+          },
+          "schema": "athena.snapshot-status/1",
+          "updated_at": "2026-11-15T10:30:00Z"
+        },
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": true
+      }
+    },
+    "recent_generations": [
+      "20261115T101503Z-a1b2c6"
+    ],
+    "refresh_failures": {},
+    "snapshot_publication": {
+      "cleanup": {
+        "deferred": [],
+        "removed": []
+      },
+      "current_generation": "20261115T101503Z-a1b2c6",
+      "last_attempt": {
+        "at": "2026-11-15T10:30:00Z",
+        "current_unusable": null,
+        "error": "OSError: copy would not open",
+        "generation_attempted": "20261115T103000Z-c0ffee",
+        "outcome": "failed",
+        "stage": "validate"
+      },
+      "last_success": {
+        "at": "2026-11-15T10:15:00Z",
+        "generation_id": "20261115T101503Z-a1b2c6"
+      },
+      "schema": "athena.snapshot-status/1",
+      "updated_at": "2026-11-15T10:30:00Z"
+    },
+    "window_seconds": 600
+  },
+  "locked_snapshot": {
+    "mixed_generations": false,
+    "readers": {
+      "bars:SBIN:adjusted": {
+        "age_seconds": 4,
+        "at": 1794599996,
+        "data_as_of": "2026-11-13",
+        "fallback_reason": "locked_by_writer",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "main_error": "<scrubbed>",
+        "reader": "bars",
+        "recent": true,
+        "snapshot_created_at": "2026-11-15T10:15:03Z",
+        "snapshot_data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": "2026-11-12"
+        },
+        "snapshot_status": {
+          "cleanup": {
+            "deferred": [],
+            "removed": []
+          },
+          "current_generation": "20261115T101503Z-a1b2c6",
+          "last_attempt": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6",
+            "outcome": "published"
+          },
+          "last_success": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6"
+          },
+          "schema": "athena.snapshot-status/1",
+          "updated_at": "2026-11-15T10:30:00Z"
+        },
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": "SBIN:adjusted",
+        "validated": true
+      },
+      "calendar": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": "2026-11-12"
+        },
+        "fallback_reason": "locked_by_writer",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "main_error": "<scrubbed>",
+        "reader": "calendar",
+        "recent": true,
+        "snapshot_created_at": "2026-11-15T10:15:03Z",
+        "snapshot_status": {
+          "cleanup": {
+            "deferred": [],
+            "removed": []
+          },
+          "current_generation": "20261115T101503Z-a1b2c6",
+          "last_attempt": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6",
+            "outcome": "published"
+          },
+          "last_success": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6"
+          },
+          "schema": "athena.snapshot-status/1",
+          "updated_at": "2026-11-15T10:30:00Z"
+        },
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": true
+      }
+    },
+    "recent_generations": [
+      "20261115T101503Z-a1b2c6"
+    ],
+    "refresh_failures": {},
+    "snapshot_publication": {
+      "cleanup": {
+        "deferred": [],
+        "removed": []
+      },
+      "current_generation": "20261115T101503Z-a1b2c6",
+      "last_attempt": {
+        "at": "2026-11-15T10:15:00Z",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "outcome": "published"
+      },
+      "last_success": {
+        "at": "2026-11-15T10:15:00Z",
+        "generation_id": "20261115T101503Z-a1b2c6"
+      },
+      "schema": "athena.snapshot-status/1",
+      "updated_at": "2026-11-15T10:30:00Z"
+    },
+    "window_seconds": 600
+  },
+  "main_missing_snapshot": {
+    "mixed_generations": false,
+    "readers": {
+      "calendar": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": "2026-11-12"
+        },
+        "fallback_reason": "main_missing",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "main_error": "<scrubbed>",
+        "reader": "calendar",
+        "recent": true,
+        "snapshot_created_at": "2026-11-15T10:15:03Z",
+        "snapshot_status": {
+          "cleanup": {
+            "deferred": [],
+            "removed": []
+          },
+          "current_generation": "20261115T101503Z-a1b2c6",
+          "last_attempt": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6",
+            "outcome": "published"
+          },
+          "last_success": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6"
+          },
+          "schema": "athena.snapshot-status/1",
+          "updated_at": "2026-11-15T10:30:00Z"
+        },
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": true
+      }
+    },
+    "recent_generations": [
+      "20261115T101503Z-a1b2c6"
+    ],
+    "refresh_failures": {},
+    "snapshot_publication": {
+      "cleanup": {
+        "deferred": [],
+        "removed": []
+      },
+      "current_generation": "20261115T101503Z-a1b2c6",
+      "last_attempt": {
+        "at": "2026-11-15T10:15:00Z",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "outcome": "published"
+      },
+      "last_success": {
+        "at": "2026-11-15T10:15:00Z",
+        "generation_id": "20261115T101503Z-a1b2c6"
+      },
+      "schema": "athena.snapshot-status/1",
+      "updated_at": "2026-11-15T10:30:00Z"
+    },
+    "window_seconds": 600
+  },
+  "main_only": {
+    "mixed_generations": false,
+    "readers": {
+      "calendar": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "data_as_of": null,
+        "fallback_reason": null,
+        "generation_basis": "observed",
+        "generation_id": "main:<observed>",
+        "main_error": null,
+        "reader": "calendar",
+        "recent": true,
+        "snapshot_created_at": null,
+        "snapshot_status": null,
+        "source": "main",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": false
+      },
+      "screen": {
+        "age_seconds": 3,
+        "at": 1794599997,
+        "data_as_of": null,
+        "fallback_reason": null,
+        "generation_basis": "observed",
+        "generation_id": "main:<observed>",
+        "main_error": null,
+        "reader": "screen",
+        "recent": true,
+        "snapshot_created_at": null,
+        "snapshot_status": null,
+        "source": "main",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": false
+      }
+    },
+    "recent_generations": [
+      "main:<observed>"
+    ],
+    "refresh_failures": {},
+    "snapshot_publication": null,
+    "window_seconds": 600
+  },
+  "main_unreadable_snapshot": {
+    "mixed_generations": false,
+    "readers": {
+      "calendar": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": "2026-11-12"
+        },
+        "fallback_reason": "main_unreadable",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "main_error": "<scrubbed>",
+        "reader": "calendar",
+        "recent": true,
+        "snapshot_created_at": "2026-11-15T10:15:03Z",
+        "snapshot_status": {
+          "cleanup": {
+            "deferred": [],
+            "removed": []
+          },
+          "current_generation": "20261115T101503Z-a1b2c6",
+          "last_attempt": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6",
+            "outcome": "published"
+          },
+          "last_success": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6"
+          },
+          "schema": "athena.snapshot-status/1",
+          "updated_at": "2026-11-15T10:30:00Z"
+        },
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": true
+      }
+    },
+    "recent_generations": [
+      "20261115T101503Z-a1b2c6"
+    ],
+    "refresh_failures": {},
+    "snapshot_publication": {
+      "cleanup": {
+        "deferred": [],
+        "removed": []
+      },
+      "current_generation": "20261115T101503Z-a1b2c6",
+      "last_attempt": {
+        "at": "2026-11-15T10:15:00Z",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "outcome": "published"
+      },
+      "last_success": {
+        "at": "2026-11-15T10:15:00Z",
+        "generation_id": "20261115T101503Z-a1b2c6"
+      },
+      "schema": "athena.snapshot-status/1",
+      "updated_at": "2026-11-15T10:30:00Z"
+    },
+    "window_seconds": 600
+  },
+  "mixed_generations": {
+    "mixed_generations": true,
+    "readers": {
+      "bars:ZMIXA:adjusted": {
+        "age_seconds": 6,
+        "at": 1794599994,
+        "data_as_of": "2026-11-13",
+        "fallback_reason": "locked_by_writer",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101501Z-a1b2c4",
+        "main_error": "<scrubbed>",
+        "reader": "bars",
+        "recent": true,
+        "snapshot_created_at": "2026-11-15T10:15:01Z",
+        "snapshot_data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": null
+        },
+        "snapshot_status": null,
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": "ZMIXA:adjusted",
+        "validated": true
+      },
+      "bars:ZMIXB:adjusted": {
+        "age_seconds": 2,
+        "at": 1794599998,
+        "data_as_of": "2026-11-13",
+        "fallback_reason": "locked_by_writer",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101502Z-a1b2c5",
+        "main_error": "<scrubbed>",
+        "reader": "bars",
+        "recent": true,
+        "snapshot_created_at": "2026-11-15T10:15:02Z",
+        "snapshot_data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": null
+        },
+        "snapshot_status": null,
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": "ZMIXB:adjusted",
+        "validated": true
+      }
+    },
+    "recent_generations": [
+      "20261115T101501Z-a1b2c4",
+      "20261115T101502Z-a1b2c5"
+    ],
+    "refresh_failures": {},
+    "snapshot_publication": null,
+    "window_seconds": 600
+  },
+  "no_data": {
+    "mixed_generations": false,
+    "readers": {
+      "search": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "failure": {
+          "main_error": "<scrubbed>",
+          "main_reason": "main_unreadable",
+          "snapshot_detail": "no snapshot has been published",
+          "snapshot_reason": "absent"
+        },
+        "reader": "search",
+        "recent": true,
+        "subject": null
+      }
+    },
+    "recent_generations": [],
+    "refresh_failures": {},
+    "snapshot_publication": null,
+    "window_seconds": 600
+  },
+  "refresh_failure_retained": {
+    "mixed_generations": false,
+    "readers": {
+      "search": {
+        "age_seconds": 5,
+        "at": 1794599995,
+        "data_as_of": null,
+        "fallback_reason": null,
+        "generation_basis": "observed",
+        "generation_id": "main:<observed>",
+        "main_error": null,
+        "reader": "search",
+        "recent": true,
+        "snapshot_created_at": null,
+        "snapshot_status": null,
+        "source": "main",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": false
+      }
+    },
+    "recent_generations": [
+      "main:<observed>"
+    ],
+    "refresh_failures": {
+      "search": {
+        "at": 1794599980,
+        "failure": {
+          "main_error": "<scrubbed>",
+          "main_reason": "main_missing",
+          "snapshot_detail": "no snapshot has been published",
+          "snapshot_reason": "absent"
+        }
+      }
+    },
+    "snapshot_publication": null,
+    "window_seconds": 600
+  },
+  "stale_entry": {
+    "mixed_generations": false,
+    "readers": {
+      "calendar": {
+        "age_seconds": 700,
+        "at": 1794599300,
+        "data_as_of": {
+          "daily_bars": "2026-11-13",
+          "index_bars": "2026-11-12"
+        },
+        "fallback_reason": "locked_by_writer",
+        "generation_basis": "manifest",
+        "generation_id": "20261115T101503Z-a1b2c6",
+        "main_error": "<scrubbed>",
+        "reader": "calendar",
+        "recent": false,
+        "snapshot_created_at": "2026-11-15T10:15:03Z",
+        "snapshot_status": {
+          "cleanup": {
+            "deferred": [],
+            "removed": []
+          },
+          "current_generation": "20261115T101503Z-a1b2c6",
+          "last_attempt": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6",
+            "outcome": "published"
+          },
+          "last_success": {
+            "at": "2026-11-15T10:15:00Z",
+            "generation_id": "20261115T101503Z-a1b2c6"
+          },
+          "schema": "athena.snapshot-status/1",
+          "updated_at": "2026-11-15T10:30:00Z"
+        },
+        "source": "snapshot",
+        "source_path": "<scrubbed>",
+        "subject": null,
+        "validated": true
+      }
+    },
+    "recent_generations": [],
+    "refresh_failures": {},
+    "snapshot_publication": null,
+    "window_seconds": 600
+  }
+}

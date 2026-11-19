@@ -1,0 +1,8 @@
+{
+  "existing_fake_tests_passed": 27,
+  "reviewer_probes_failed": 3,
+  "cargo_exit": 101,
+  "reproduced_runs": 2,
+  "scope": "isolated copied bounded module and fake children only",
+  "source_sha256": "98797204d661be5a41f040ed7e618e76b77c50c47b3f5566e25ae7d6394a8828"
+}

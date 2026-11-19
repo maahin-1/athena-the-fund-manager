@@ -10,8 +10,9 @@ from collections.abc import Mapping
 from typing import Any, Protocol
 
 from athena.agents.base import parse_model_json
-from athena.council.evidence import MODEL_READING, render, unknown_citations
+from athena.council.evidence import MODEL_READING, citation_errors, figure_binding_errors, render, text_errors, unknown_citations
 from athena.evaluation.grounding import check_grounded
+from athena.llm import envelope
 
 SIDES = {
     "bull": "the strongest honest case that the stock will beat the market over the next few months",
@@ -39,16 +40,18 @@ def _check(reply: str, sheet: Mapping[str, Any]) -> tuple[dict[str, Any] | None,
         return None, [str(exc)]
     if set(parsed) != KEYS:
         return None, [f"the reply must have exactly the keys {sorted(KEYS)}"]
+    # Types first: nothing below may iterate or format a value of the wrong type (null, a bare string, a mixed list). A case is a substantive argument, so it must cite.
+    errors = [*text_errors(parsed["case"], "the case", MAX_WORDS), *text_errors(parsed["weakest_point"], "the weakest point"), *citation_errors(parsed["evidence"], sheet, "evidence")]
+    if errors:
+        return None, errors
     text = f"{parsed['case']} {parsed['weakest_point']}"
-    errors = []
-    if len(str(parsed["case"]).split()) > MAX_WORDS:
-        errors.append(f"the case is over {MAX_WORDS} words")
-    bad = unknown_citations(text + " " + " ".join(map(str, parsed["evidence"])), sheet)
+    bad = unknown_citations(text, sheet)
     if bad:
         errors.append(f"these ids are not on the sheet: {bad}")
     grounding = check_grounded(text, sheet)
     if not grounding.ok:
         errors.append(f"figures not found on the sheet: {list(grounding.ungrounded)}")
+    errors += figure_binding_errors(text, parsed["evidence"], sheet)  # a figure that is a fact's value must be a fact this case cites
     return (parsed if not errors else None), errors
 
 
@@ -60,6 +63,7 @@ def argue(side: str, sheet: Mapping[str, Any], llm: Client) -> dict[str, Any]:
         parsed, errors = _check(llm.complete(SYSTEM, user + feedback), sheet)
         if parsed is not None:
             return {**parsed, "side": side}
+        envelope.note_validation(f"council:{side}", errors)
         feedback = "\n\nYour previous reply was rejected: " + "; ".join(errors) + ". Reply again, fixing this."
     return {"side": side, "failed": "; ".join(errors)}
 

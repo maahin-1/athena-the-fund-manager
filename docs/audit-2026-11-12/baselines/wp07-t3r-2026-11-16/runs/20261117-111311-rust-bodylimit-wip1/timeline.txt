@@ -1,0 +1,6 @@
+2026-11-17 11:13:11  run 20261117-111311-rust-bodylimit-wip1
+2026-11-17 11:13:12  cargo test --offline --locked --no-run
+2026-11-17 11:14:17  build exit 0
+2026-11-17 11:14:21  cargo test --offline --locked server::tests::
+2026-11-17 11:14:28  test exit 101
+2026-11-17 11:14:28  done

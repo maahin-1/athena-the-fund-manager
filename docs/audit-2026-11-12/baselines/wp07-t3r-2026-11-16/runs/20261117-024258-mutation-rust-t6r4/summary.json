@@ -1,0 +1,17 @@
+{
+ "label": "mutation-rust-t6r4",
+ "harness": "mutate.py v2",
+ "total": 14,
+ "counts": {
+  "caught": 13,
+  "SURVIVED": 0,
+  "mixed": 0,
+  "error_only": 0,
+  "unattributed": 0,
+  "invalid": 0,
+  "timeout": 1,
+  "pattern_error": 0,
+  "harness_error": 0
+ },
+ "files_restored": true
+}

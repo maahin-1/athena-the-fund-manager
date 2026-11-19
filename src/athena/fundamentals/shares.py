@@ -69,6 +69,12 @@ def choose(counts: Sequence[dict[str, Any]]) -> Choice:
     return Choice(None, "none")
 
 
+def choose_as_of(counts: Sequence[dict[str, Any]], cutoff: Any) -> Choice:
+    """The company's share count as it could be known at `cutoff`: chosen only from the filings made by then (`filed` <= `cutoff`; counts given newest period first). `Choice(None, "none")` when no
+    filing had been made, never the company's count today."""
+    return choose([c for c in counts if c.get("filed") is not None and c["filed"] <= cutoff])
+
+
 def refresh(store: FundamentalsStore, symbol: str) -> Choice:
     """Set the company's stored count from its filings' counts. A company with no counts keeps what it has."""
     choice = choose(store.share_counts(symbol))

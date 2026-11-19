@@ -1,0 +1,9 @@
+names checked: 39
+basename .env                          matches: 0
+basename .env.*                        matches: 0
+basename *.env (non-dot included)      matches: 0
+basename .envrc                        matches: 0
+any dot-directory segment              matches: 0
+any dot-named file                     matches: 0
+not .rs/Cargo/runner (allowlist)       matches: 0
+pattern self-check on synthetic names: basename .env -> 1; basename .env.* -> 1; basename *.env (non-dot included) -> 2; basename .envrc -> 1; any dot-directory segment -> 1; any dot-named file -> 3; not .rs/Cargo/runner (allowlist) -> 6

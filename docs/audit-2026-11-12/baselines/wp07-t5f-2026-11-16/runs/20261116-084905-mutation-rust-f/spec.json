@@ -1,0 +1,105 @@
+{
+ "cwd": "C:/Users/LEGION/ath-wp07/w/terminal",
+ "kind": "cargo",
+ "timeout": 900,
+ "env": {
+  "CARGO_TARGET_DIR": "C:/Users/LEGION/ath-wp07/t",
+  "CARGO_NET_OFFLINE": "true"
+ },
+ "command": [
+  "cargo",
+  "test",
+  "--offline",
+  "--locked",
+  "--",
+  "fundamentals::",
+  "snapshot::",
+  "search::"
+ ],
+ "mutations": [
+  {
+   "id": "rs-price-registers-as-screen",
+   "note": "T5-F1: the price cache registers under the reader name `screen`",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "crate::snapshot::record_served(&self.price_reader, None, served_provenance(held, !read_now));",
+   "new": "crate::snapshot::record_served(\"screen\", None, served_provenance(held, !read_now));"
+  },
+  {
+   "id": "rs-cache-hit-not-registered",
+   "note": "T5-F1: a price served from the cache registers nothing (only a fresh read does)",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "crate::snapshot::record_served(&self.price_reader, None, served_provenance(held, !read_now));",
+   "new": "if read_now { crate::snapshot::record_served(&self.price_reader, None, served_provenance(held, !read_now)); }"
+  },
+  {
+   "id": "rs-failure-written-over-served",
+   "note": "T5-F1: a failed refresh with closes held is registered as what was served",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "                    if cache.is_none() {\n                        crate::snapshot::record_served(",
+   "new": "                    if true {\n                        crate::snapshot::record_served("
+  },
+  {
+   "id": "rs-refresh-failure-not-recorded",
+   "note": "T5-F1: the failed refresh is not recorded at all",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "crate::snapshot::record_refresh_failure(&self.price_reader, failure.clone());",
+   "new": "let _ = failure.clone();"
+  },
+  {
+   "id": "rs-failure-not-cleared-on-recovery",
+   "note": "T5-F1: a good read leaves the earlier refresh failure in place",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "crate::snapshot::clear_refresh_failure(&self.price_reader);",
+   "new": "let _ = &self.price_reader;"
+  },
+  {
+   "id": "rs-provenance-of-held-data-lost",
+   "note": "T5-F1: the cache serves a generic provenance instead of the data it was read from",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "    let mut p = held.provenance.clone();",
+   "new": "    let mut p = json!({\"source\": \"main\", \"generation_id\": \"main:unknown\"});"
+  },
+  {
+   "id": "rs-cache-age-always-zero",
+   "note": "T5-F1: the age of the held closes is not carried",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "if hit { held.read_at.elapsed().as_secs() } else { 0 }",
+   "new": "0"
+  },
+  {
+   "id": "rs-price-date-not-carried",
+   "note": "T5-F1: the date the closes stop at is dropped",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/fundamentals.rs",
+   "old": "o.insert(\"data_as_of\".into(), json!(held.latest_day));",
+   "new": "o.insert(\"data_as_of\".into(), Value::Null);"
+  },
+  {
+   "id": "rs-refresh-always-recent",
+   "note": "T5-F2: every refresh failure is reported recent",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+   "old": "o.insert(\"recent\".into(), json!(now.saturating_sub(*at) <= window));",
+   "new": "o.insert(\"recent\".into(), json!(true));"
+  },
+  {
+   "id": "rs-refresh-boundary-exclusive",
+   "note": "T5-F2: a failure exactly at the window is already history (a different rule from served entries)",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+   "old": "o.insert(\"recent\".into(), json!(now.saturating_sub(*at) <= window));",
+   "new": "o.insert(\"recent\".into(), json!(now.saturating_sub(*at) < window));"
+  },
+  {
+   "id": "rs-refresh-age-missing",
+   "note": "T5-F2: the refresh failure carries no age",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+   "old": "o.insert(\"age_seconds\".into(), json!(now.saturating_sub(*at)));",
+   "new": "let _ = ();"
+  },
+  {
+   "id": "rs-refresh-reader-missing",
+   "note": "T5-F2: the refresh failure does not say which reader it is",
+   "file": "C:/Users/LEGION/ath-wp07/w/terminal/src/snapshot.rs",
+   "old": "o.insert(\"reader\".into(), json!(k));",
+   "new": "let _ = k;"
+  }
+ ]
+}

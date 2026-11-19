@@ -1,0 +1,45 @@
+{
+  "invalidReceipt": {
+    "state": "ok",
+    "flags": [],
+    "faults": [
+      {
+        "field": "receivedAt",
+        "value": 1794808800000,
+        "reason": "future",
+        "aheadMs": 3600000,
+        "origin": "page"
+      }
+    ]
+  },
+  "invalidPacket": {
+    "state": "ok",
+    "flags": [],
+    "faults": [
+      {
+        "field": "packetTime",
+        "value": 1794808800000,
+        "reason": "future",
+        "aheadMs": 3600000,
+        "origin": "page"
+      }
+    ]
+  },
+  "serverRefusedPacket": {
+    "state": "ok",
+    "flags": [],
+    "faults": [
+      {
+        "field": "packetTime",
+        "value": 1794808800000,
+        "reason": "future",
+        "origin": "server"
+      }
+    ]
+  },
+  "unknownSessionNoReceipts": {
+    "state": "ok",
+    "flags": [],
+    "faults": []
+  }
+}

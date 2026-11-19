@@ -20,6 +20,8 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS ref_industry_stat (source TEXT, region TEXT, dataset TEXT, industry TEXT, metric TEXT, value DOUBLE, n_firms INTEGER,"
     " as_of DATE, file TEXT, PRIMARY KEY (source, region, dataset, industry, metric, as_of))",
     "CREATE TABLE IF NOT EXISTS ref_company_industry (symbol TEXT PRIMARY KEY, industry TEXT, method TEXT, confidence DOUBLE, as_of DATE)",
+    # WP04: `ref_company_industry` holds ONE mapping per symbol and replaces it; this keeps every mapping with the date it was made, so a past date reads the classification that stood then (or none).
+    "CREATE TABLE IF NOT EXISTS ref_company_industry_version (symbol TEXT, industry TEXT, method TEXT, confidence DOUBLE, as_of DATE, PRIMARY KEY (symbol, as_of))",
     "CREATE TABLE IF NOT EXISTS ref_country_premium (country TEXT, region TEXT, rating TEXT, default_spread DOUBLE, total_erp DOUBLE, crp DOUBLE, as_of DATE,"
     " PRIMARY KEY (country, as_of))",
     "CREATE TABLE IF NOT EXISTS ref_rating_spread (rating TEXT, spread DOUBLE, as_of DATE, PRIMARY KEY (rating, as_of))",
@@ -125,7 +127,27 @@ class ReferenceStore:
     # ---- company map
     def put_company_industries(self, rows: Sequence[tuple[str, str, str, float, date]]) -> int:
         """Rows are (symbol, industry, method, confidence, as_of); an existing symbol is replaced."""
-        return self._bulk("ref_company_industry", ["symbol", "industry", "method", "confidence", "as_of"], [list(r) for r in rows])
+        columns = ["symbol", "industry", "method", "confidence", "as_of"]
+        data = [list(r) for r in rows]
+        self._bulk("ref_company_industry_version", columns, data)
+        return self._bulk("ref_company_industry", columns, data)
+
+    def seed_company_industry_versions(self) -> int:
+        """Copy the current map into the versions table, each row dated by its own `as_of` (when the mapping was made, which is all that is known), for a store written before versions were kept.
+        Idempotent. Returns the rows added."""
+        before = self._con.execute("SELECT count(*) FROM ref_company_industry_version").fetchone()[0]
+        self._con.execute("INSERT OR IGNORE INTO ref_company_industry_version SELECT symbol, industry, method, confidence, as_of FROM ref_company_industry")
+        return int(self._con.execute("SELECT count(*) FROM ref_company_industry_version").fetchone()[0] - before)
+
+    def company_industry_as_of(self, symbol: str, on_or_before: date) -> tuple[str, str, float, date] | None:
+        """`(industry, method, confidence, as_of)` of the newest mapping made on or before the date, or None when none had been made: a past date never reads a later classification."""
+        try:
+            row = self._con.execute(
+                "SELECT industry, method, confidence, as_of FROM ref_company_industry_version WHERE symbol = ? AND as_of <= ? ORDER BY as_of DESC LIMIT 1", [symbol, on_or_before]
+            ).fetchone()
+        except duckdb.CatalogException:  # a store written before versions existed, opened read-only
+            return None
+        return tuple(row) if row else None  # type: ignore[return-value]
 
     def company_industry(self, symbol: str) -> tuple[str, str, float] | None:
         row = self._con.execute("SELECT industry, method, confidence FROM ref_company_industry WHERE symbol = ?", [symbol]).fetchone()

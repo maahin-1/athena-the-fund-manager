@@ -1,0 +1,42 @@
+{
+    "cwd":  "C:/Users/LEGION/ath-wp07/w/terminal",
+    "kind":  "cargo",
+    "timeout":  900,
+    "env":  {
+                "CARGO_TARGET_DIR":  "C:/Users/LEGION/ath-wp07/t",
+                "CARGO_NET_OFFLINE":  "true"
+            },
+    "command":  [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--",
+                    "bounded::",
+                    "helper::",
+                    "fundamentals::tests::",
+                    "flow_board::",
+                    "bars::join_tests::",
+                    "server::tests::an_override",
+                    "server::tests::a_failure_with",
+                    "server::tests::the_work",
+                    "server::tests::acknowledging"
+                ],
+    "mutations":  [
+                      {
+                          "id":  "t6r4-pool-exit-not-counted",
+                          "note":  "R1: a stopped worker is not recorded, so shutdown never completes (rerun against the time-bounded concurrent-shutdown tests: the whole suite hung on an unbounded older test, which the harness scores as a timeout)",
+                          "file":  "C:/Users/LEGION/ath-wp07/w/terminal/src/bounded.rs",
+                          "old":  "self.exited.send_modify(|n| *n += 1);",
+                          "new":  "self.exited.send_modify(|n| *n += 0);",
+                          "command":  [
+                                          "cargo",
+                                          "test",
+                                          "--offline",
+                                          "--locked",
+                                          "--",
+                                          "bounded::tests::every_caller_of_a_concurrent"
+                                      ]
+                      }
+                  ]
+}

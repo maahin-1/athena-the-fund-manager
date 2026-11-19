@@ -44,7 +44,7 @@ impl IpoJobs {
         let program = self.module.first().ok_or_else(|| IpoError::Failed("the IPO page is not configured".into()))?;
         let mut cmd = Command::new(program);
         cmd.args(&self.module[1..]).arg("--warehouse").arg(&self.warehouse).stdin(Stdio::null()).stderr(Stdio::null()).stdout(Stdio::piped()).kill_on_drop(true);
-        let output = tokio::time::timeout(LIMIT, async { cmd.spawn()?.wait_with_output().await })
+        let output = tokio::time::timeout(LIMIT, async { { crate::process::background(cmd.as_std_mut()); cmd.spawn() }?.wait_with_output().await })
             .await
             .map_err(|_| IpoError::Failed("the IPO page took longer than a minute and was stopped".into()))?
             .map_err(|_| IpoError::Failed("could not start the IPO page".into()))?;

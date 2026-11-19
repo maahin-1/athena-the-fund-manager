@@ -1,0 +1,6 @@
+2026-11-15 17:12:59  run 20261115-171259-t5-web-1
+2026-11-15 17:12:59  tsc --noEmit (no build output is written)
+2026-11-15 17:13:04  tsc exit 0
+2026-11-15 17:13:04  npm test -- --config <run dir> --reporter=default --reporter=json
+2026-11-15 17:13:20  npm test exit 1
+2026-11-15 17:13:20  done

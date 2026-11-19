@@ -1,0 +1,10 @@
+﻿FAIL [workflows] ci.yml: privileged trigger pull_request_target
+FAIL [workflows] ci.yml: job policy step 0: `actions/checkout@v7` is not pinned to a full commit SHA
+FAIL [workflows] ci.yml: job python step 0: `actions/checkout@v7` is not pinned to a full commit SHA
+FAIL [workflows] ci.yml: job rust step 0: `actions/checkout@v7` is not pinned to a full commit SHA
+FAIL [workflows] ci.yml: job web step 0: `actions/checkout@v7` is not pinned to a full commit SHA
+FAIL [workflows] ci.yml: job gate has no timeout-minutes
+FAIL [dependabot] ecosystems/directories differ: {'pip': '/', 'cargo': '/terminal', 'npm': '/terminal/web', 'github-actions': '/', 'docker': '/'}
+FAIL [dependabot] docker: schedule or open-PR cap not as proposed
+FAIL [codeowners] sensitive path /scripts/ is not listed
+proposal static checks: 9 problem(s)

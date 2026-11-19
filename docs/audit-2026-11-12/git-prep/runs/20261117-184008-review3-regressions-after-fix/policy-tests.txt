@@ -1,0 +1,110 @@
+﻿........................................................................ [ 68%]
+.................................                                        [100%]
+=================================== PASSES ====================================
+=========================== short test summary info ===========================
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_clean_tree_passes
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_runtime_build_and_store_paths_fail
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_oversized_file_fails_unless_it_is_on_the_reviewed_allowlist
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_protected_name_fails_unless_it_is_exactly_the_recorded_inherited_entry
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_failure_output_never_prints_a_protected_name
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_parser_in_use_is_the_real_pyyaml
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_good_workflow_passes
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_each_basic_defect_is_rejected
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_event_text_and_every_nested_expression_in_a_script_is_rejected
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_expression_inside_shell_or_uses_is_rejected
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_every_reference_must_match_its_recorded_repository_and_sha_pair
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_reusable_workflow_at_job_level_is_validated_too
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_actions_checkout_is_never_allowed_and_every_job_must_start_with_the_access_safe_step
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_checkout_step_must_be_the_canonical_script_with_only_the_token
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_shipped_workflows_pass_the_shipped_policy
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_checkout_script_never_writes_a_protected_name_and_keeps_the_entries_as_metadata
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_checkout_script_fails_loudly_when_the_fetch_fails
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[REMOTE_URL-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[REMOTE_URL-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[CHECKOUT_SHA-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[CHECKOUT_SHA-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[ATHENA_CHECKOUT_TOKENLESS-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[ATHENA_CHECKOUT_TOKENLESS-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[ATHENA_CHECKOUT_ANYTHING-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[ATHENA_CHECKOUT_ANYTHING-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GIT_CONFIG_COUNT-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GIT_CONFIG_COUNT-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GIT_SSH_COMMAND-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GIT_SSH_COMMAND-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GIT_DIR-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GIT_DIR-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GH_TOKEN-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GH_TOKEN-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GITHUB_SHA-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GITHUB_SHA-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GITHUB_REPOSITORY-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[GITHUB_REPOSITORY-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[HOME-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[HOME-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[XDG_CONFIG_HOME-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[XDG_CONFIG_HOME-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[BASH_ENV-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[BASH_ENV-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[SHELLOPTS-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[SHELLOPTS-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[PS4-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[PS4-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[HTTPS_PROXY-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[HTTPS_PROXY-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[remote_url-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[remote_url-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[Checkout_Sha-workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_workflow_or_job_environment_variable_that_steers_the_checkout_is_rejected[Checkout_Sha-job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_environment_block_that_is_not_a_literal_mapping_is_rejected_because_it_could_carry_any_name[workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_environment_block_that_is_not_a_literal_mapping_is_rejected_because_it_could_carry_any_name[job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_ordinary_environment_variables_are_still_allowed_at_both_levels[workflow]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_ordinary_environment_variables_are_still_allowed_at_both_levels[job]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_job_container_is_rejected_because_it_brings_its_own_git_and_environment
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_shipped_policy_records_the_control_names
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_stand_in_git_really_is_the_one_the_script_runs
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_takes_the_remote_and_the_commit_from_the_trusted_job_context_and_forwards_no_git_control_variables
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_any_override_before_it_runs_git_at_all[override0]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_any_override_before_it_runs_git_at_all[override1]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_any_override_before_it_runs_git_at_all[override2]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_repository_that_is_not_a_plain_owner_and_name[owner]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_repository_that_is_not_a_plain_owner_and_name[a/b/c]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_repository_that_is_not_a_plain_owner_and_name[x@evil.invalid/y]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_repository_that_is_not_a_plain_owner_and_name[owner/re po]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_repository_that_is_not_a_plain_owner_and_name[../x]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_repository_that_is_not_a_plain_owner_and_name[owner/..]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_repository_that_is_not_a_plain_owner_and_name[https://evil.invalid/x]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_commit_that_is_not_a_full_lowercase_sha[abc123]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_commit_that_is_not_a_full_lowercase_sha[0123456789ABCDEF0123456789ABCDEF01234567]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_commit_that_is_not_a_full_lowercase_sha[0123456789abcdef0123456789abcdef0123456]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_commit_that_is_not_a_full_lowercase_sha[0123456789abcdef0123456789abcdef012345670]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_commit_that_is_not_a_full_lowercase_sha[HEAD]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_commit_that_is_not_a_full_lowercase_sha[main]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_authenticated_mode_refuses_a_commit_that_is_not_a_full_lowercase_sha[]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_fetched_commit_must_equal_the_requested_one_before_anything_is_checked_out
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_overrides_are_honoured_only_in_the_explicit_tokenless_fixture_mode
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_token_is_never_written_to_the_repository_configuration
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_protected_names_that_carry_pattern_characters_are_excluded_exactly_by_the_real_script
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_a_protected_name_in_another_case_is_excluded_like_the_exact_case_and_never_written
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[trailing space]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[trailing space in a directory]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[line feed]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[carriage return]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[tab]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[other control byte]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[trailing dot]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[backslash]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[leading space]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[protected name with a trailing space]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[protected name with a line feed]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_an_unsupported_path_shape_is_rejected_before_any_checkout[protected name as a directory]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_ordinary_names_with_spaces_inside_and_brackets_and_stars_are_still_checked_out
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[blocked]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[blocked ]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[blocked  ]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[ lead]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[a[1]*?]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[[x]]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[#hash]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[!bang]
+PASSED docs/audit-2026-11-12/maintenance-proposal/files/tests/test_ci_repo_policy.py::test_the_exclusion_line_encodes_a_name_so_git_selects_the_exclusion_not_the_include_all_pattern[a b ]
+105 passed in 28.00s

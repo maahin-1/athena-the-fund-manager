@@ -15,8 +15,9 @@ from athena.contracts import AthenaError
 from athena.evaluation.grounding import check_grounded
 from athena.forensic.agent import AgentResult, run_agent
 from athena.forensic.budget import CHARS_PER_TOKEN, BudgetExhausted, CallBudget, Client
-from athena.forensic.model import ANSWER, ESTABLISHED, FLAG, NOTE, OBSERVATION, OPEN, QUESTION, REJECTED, SINGLE_SOURCE, UNROUTABLE, Case, Entry, LaneSpec
-from athena.forensic.scoring import classify, concern
+from athena.forensic import lineage
+from athena.forensic.model import ANSWER, CORROBORATED, ESTABLISHED, FLAG, NOTE, OBSERVATION, OPEN, QUESTION, REJECTED, SINGLE_SOURCE, UNROUTABLE, Case, Entry, LaneSpec
+from athena.forensic.scoring import STATUS_KEY, assess_support, classify, concern
 from athena.forensic.store import ForensicStore
 from athena.forensic.tools import Registry
 from athena.guard.scope import advice_in
@@ -156,14 +157,19 @@ class Supervisor:
     def _report(self, case: Case, lane_names: Sequence[str], results: Mapping[str, list[AgentResult]], budget: CallBudget, stopped: str) -> dict[str, Any]:
         entries = self.store.entries(case.case_id)
         flags = [e for e in entries if e.kind == FLAG]
-        kept = [e for e in flags if e.status in (ESTABLISHED, SINGLE_SOURCE)]
+        kept = [e for e in flags if e.status in (ESTABLISHED, CORROBORATED, SINGLE_SOURCE)]
+        lookup = lambda ev: self.store.evidence(case.case_id, ev)  # noqa: E731
 
         def chain(flag: Entry) -> dict[str, Any]:
             refs = []
             for ev in flag.evidence:
-                row = self.store.evidence(case.case_id, ev)
-                refs.append({"evidence": ev, "tool": row["tool"] if row else None, "args": row["args"] if row else None})
-            support = [{"id": e.id, "author": e.author, "text": e.text[:240]} for e in entries if e.kind in (OBSERVATION, ANSWER) and e.body.get("supports") == flag.id and e.status != REJECTED]
+                row = lookup(ev)
+                refs.append({"evidence": ev, "tool": row["tool"] if row else None, "args": row["args"] if row else None, "sources": sorted(lineage.keys(lineage.of_row(case.target, row))) if row else []})
+            support = []
+            for e in entries:
+                if e.kind in (OBSERVATION, ANSWER) and e.body.get("supports") == flag.id and e.status != REJECTED:
+                    how = assess_support(e, flag, lookup, case.target)
+                    support.append({"id": e.id, "author": e.author, "text": e.text[:240], "counts": how.kind == "independent", "relation": how.kind, "why": how.reason, "sources": list(how.sources), "checked": e.body.get("checked")})
             return {"id": flag.id, "type": flag.body.get("flag_type"), "author": flag.author, "text": flag.text, "why": flag.reason, "references": refs, "innocent_explanations": flag.body.get("innocent"), "supported_by": support}
 
         unanswered = [{"id": q.id, "to": q.body.get("to"), "text": q.text[:240], "status": q.status} for q in entries if q.kind == QUESTION and q.status in (OPEN, UNROUTABLE)]
@@ -176,23 +182,30 @@ class Supervisor:
         for name in self.kind_lanes.get(case.kind, ()):
             if name not in self.lanes and name not in self.code_lanes:
                 not_examined.append({"lane": name, "why": "no such agent is available yet"})
+        unread = self.store.truncated(case.case_id)[:20]
         return {
             "case": {"id": case.case_id, "kind": case.kind, "target": case.target, "as_of": case.as_of.isoformat()},
             "concern": concern(kept),
             "established": [chain(f) for f in kept if f.status == ESTABLISHED],
+            "corroborated": [chain(f) for f in kept if f.status == CORROBORATED],
             "single_source": [chain(f) for f in kept if f.status == SINGLE_SOURCE],
+            "status_key": dict(STATUS_KEY),  # what each status means, so a reader does not take `corroborated` for proof
+            "truncated_unread": unread,
+            "coverage_note": ("Part of " + str(len(unread)) + " stored result(s) was never shown to any lane (evidence.read reopens it); a lane's reading of those results is not examination of what was cut."
+                              if unread else "Every stored result was shown whole, or reopened."),
             "observations": sum(1 for e in entries if e.kind == OBSERVATION and e.status != REJECTED),
             "rejected_entries": sum(1 for e in entries if e.status == REJECTED),
             "lanes": {name: [{"status": r.status, "steps": r.steps, "written": r.written, "rejected": r.rejected, "summary": r.summary, "note": r.note} for r in runs] for name, runs in results.items()},
             "unanswered_questions": unanswered,
             "not_examined": not_examined,
             "stopped_because": stopped,
+            "availability": self.store.availability_summary(case.case_id),  # the date policy this case ran under and what it kept out
             "cost": self._cost(case, budget),
             "note": "A stylized analytical framework for the owner. Flags are differences to examine, not findings of wrongdoing, and not investment advice.",
         }
 
     def _narrative(self, report: dict[str, Any], budget: CallBudget) -> str:
-        facts = {k: report[k] for k in ("concern", "established", "single_source", "not_examined", "unanswered_questions", "stopped_because")}
+        facts = {k: report[k] for k in ("concern", "established", "corroborated", "single_source", "not_examined", "unanswered_questions", "stopped_because")}
         fallback = self._plain(report)
         if self.llm is None:  # a run of code lanes only: nothing to ask, and no call is made
             return fallback
@@ -200,7 +213,7 @@ class Supervisor:
             text = budget.client(self.llm, "supervisor", 0).complete(SUPERVISOR_SYSTEM, json.dumps(facts, ensure_ascii=False, default=str)).strip()
         except (AthenaError, BudgetExhausted):
             return fallback
-        ids = {f["id"] for f in report["established"] + report["single_source"]}
+        ids = {f["id"] for f in report["established"] + report["corroborated"] + report["single_source"]}
         cited = set(re.findall(r"\bL\d+\b", text))
         if not text or advice_in(text) or _FORBIDDEN.search(text) or not cited <= ids or not check_grounded(re.sub(r"\bL\d+\b", "", text), facts).ok:
             return fallback
@@ -210,7 +223,7 @@ class Supervisor:
     def _plain(report: dict[str, Any]) -> str:
         c = report["concern"]
         span = c["low"] if c["low"] == c["high"] else f"{c['low']} to {c['high']}"
-        parts = [f"Concern level: {span}. {c['established']} established difference(s) and {c['single_source']} with one source only."]
+        parts = [f"Concern level: {span}. {c['established']} established difference(s), {c['corroborated']} corroborated by a second model lane (not human-reviewed) and {c['single_source']} with one source only."]
         parts += [f"{f['id']}: {f['text']}" for f in report["established"][:3]]
         if report["not_examined"]:
             parts.append("Not examined: " + "; ".join(f"{n['lane']} ({n['why']})" for n in report["not_examined"]) + ".")

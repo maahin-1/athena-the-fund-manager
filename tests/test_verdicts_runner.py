@@ -109,7 +109,8 @@ def test_status_says_why_a_stored_verdict_is_out_of_date(tmp_path):
 
 
 def test_no_verdict_yet_is_none_with_no_reasons(tmp_path):
-    assert runner(database(tmp_path)).status("TCS") == {"verdict": None, "reasons": []}
+    state = runner(database(tmp_path)).status("TCS")
+    assert state["verdict"] is None and state["reasons"] == [] and state["inputs"]["fresh"] is True  # `inputs` (WP02) is additive
 
 
 def test_refresh_makes_only_changed_stocks_that_already_have_a_verdict_within_the_budget(tmp_path):

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGE_LIVE_MS, Feed, type DerivRow, type SocketLike } from '../src/feed';
+import { AGE_LIVE_MS, Feed, MAX_DERIVS, type DerivRow, type SocketLike } from '../src/feed';
 import { liveFeed, PUSH_KEEP_MS } from '../src/options/livefeed';
 import { keyOf, type ContractKey } from '../src/options/synthetic';
 
@@ -39,6 +39,16 @@ describe('futures and options on the socket', () => {
     expect(lists()).toEqual(['NFO:1,NFO:2']);
     feed.needDerivs('a', []);
     expect(lists()).toEqual(['NFO:1,NFO:2', 'NFO:1']);
+  });
+
+  it('over the limit, keeps the contracts named first, not the first in alphabetical order', () => {
+    const { s, feed } = connected();
+    const wanted = Array.from({ length: MAX_DERIVS }, (_, i) => `NFO:${90_000 + i}`); // named first: the ones that matter (large token numbers)
+    const extra = Array.from({ length: 50 }, (_, i) => `NFO:${10_000 + i}`); // named after: smaller numbers, first in alphabetical order
+    feed.needDerivs('options', [...wanted, ...extra]);
+    const sent = (s.sent.filter((m) => (m as { type: string }).type === 'derivs').at(-1) as { keys: string }).keys.split(',');
+    expect(sent.length).toBe(MAX_DERIVS);
+    expect(new Set(sent)).toEqual(new Set(wanted));
   });
 
   it('keeps each pushed row and tells the listeners', () => {
@@ -87,6 +97,21 @@ describe('the options feed with a push source', () => {
     expect(named().at(-1)).toBe('NFO:9');
     live.release();
     expect(named().at(-1)).toBe('');
+  });
+
+  it('the newest ask goes first, so a new chain is streamed though an old one still fills the limit', async () => {
+    const { s, feed } = connected();
+    let t = 1_000;
+    const live = liveFeed({ spotOf: () => 24_000, push: feed, now: () => t, fetcher: (async () => new Response(JSON.stringify({ live: true, quotes: [] }))) as typeof fetch });
+    await live.probe();
+    const old = Array.from({ length: MAX_DERIVS }, (_, i) => key(String(10_000 + i))); // the chain left a moment ago, still held for PUSH_KEEP_MS
+    await live.quotes(old);
+    t += 1_000;
+    const fresh = Array.from({ length: 40 }, (_, i) => key(String(90_000 + i))); // the chain now shown, at-the-money first
+    await live.quotes(fresh);
+    const sent = (s.sent.filter((m) => (m as { type: string }).type === 'derivs').at(-1) as { keys: string }).keys.split(',');
+    expect(sent.length).toBe(MAX_DERIVS);
+    for (const k of fresh) expect(sent).toContain(`NFO:${k.ref!.token}`);
   });
 
   it('asks the quotes route when the socket is not pushing', async () => {

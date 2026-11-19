@@ -10,12 +10,13 @@ Two things are measured, because they answer different questions.
 
 Known limits, stated on every report: prices are raw closes, so returns are adjusted for the splits and bonuses the exchange lists and a company with a demerger, scheme or
 capital reduction after the date is left out; dividends are not added to returns; a company that is no longer listed has no later price and is absent (survivorship);
-a restated figure replaces the original in the store, so a period restated after the date drops out instead of being read as first filed; the industry tables are the 2026 ones
+with the approximate `latest_filtered` statement policy a restated figure replaces the original, so a period restated after the date drops out instead of being read as first filed (the strict `vintage`
+policy reads the filing that was public then, from `statement_versions`, and a period whose original was never stored is absent; `Snapshot.statement_policy` says which ran); the industry tables are the 2026 ones
 for every date; and the market-wide inputs (risk-free rate, equity premium) are today's for every date, which shifts levels but hardly the ranking inside one date."""
 from __future__ import annotations
 
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -24,12 +25,16 @@ from typing import Any
 
 import duckdb
 
+from athena.contracts import AthenaError
+from athena.evaluation.policy import APPROXIMATE_CURRENT, INPUT_POLICY_LABELS, POLICY, STRICT_DATED
 from athena.fundamentals import history
+from athena.fundamentals import shares as share_counts
 from athena.fundamentals.store import FundamentalsStore
 from athena.price_integrity.actions import parse_subject
 from athena.reference.store import ReferenceStore
 from athena.valuation import inputs, scenarios, wacc
 from athena.valuation import industry as ind
+from athena.valuation.manifest import input_manifest
 from athena.valuation.industry import IndustryContext
 from athena.valuation.scenarios import Policy
 
@@ -115,15 +120,75 @@ def shrink_betas(context: IndustryContext, average_unlevered: float, share: floa
 
 # ---- the past: what was filed by a day, split-adjusted
 
-class AsOfFundamentals:
-    """The fundamentals store as it stood at a moment: only rows filed by then, and the share count that applied then."""
+VINTAGE, LATEST_FILTERED = "vintage", "latest_filtered"
+POLICY_LABELS = {
+    VINTAGE: "statements read from the version of each filing that was public at the date (statement_versions); a period whose original is not held is absent, not filled from a later restatement",
+    LATEST_FILTERED: "approximate statements: today's latest-value table filtered by filing date, so a period restated after the date drops out instead of being read as first filed",
+}
 
-    def __init__(self, base: FundamentalsStore, cutoff: datetime, share_factor: dict[str, float]):
+
+class AsOfFundamentals:
+    """The fundamentals store as it stood at a moment: the statements public by then, and the share count that applied then.
+
+    `policy` says how the statements are read. `"vintage"` is the strict reader: for each period the version (filing) that was public at the cutoff, from the immutable `statement_versions`
+    (`FundamentalsStore.lines_as_of`); it raises when the store holds no versions, because an empty answer would look like "no company had statements". `"latest_filtered"` is the old approximation,
+    kept and LABELLED: the latest-value table filtered by `filed <= cutoff`, which cannot show an original that a revision replaced. `"auto"` (the default) is `vintage` when the store has versions and
+    `latest_filtered` when it has none; `policy` and `label` say which was used, and a report must carry the label."""
+
+    def __init__(
+        self, base: FundamentalsStore, cutoff: datetime, share_factor: dict[str, float], policy: str = "auto", *, inputs: str = APPROXIMATE_CURRENT,
+        actions: dict[str, list[tuple[date, str, float | None]]] | None = None, day: date | None = None,
+    ):
+        """`inputs` is the study's input policy (`athena.evaluation.policy`). `approximate_current` (the default, and what every earlier study was) takes today's share count and divides it by the splits
+        after the date (`share_factor`). `strict_dated` takes the share count from the latest filing by the date and adjusts it for the splits and bonuses between that filing's period end and the date
+        (`actions`, `day` are then required); a company with no such count has `shares` None, and `share_status` says why. It never falls back to today's count."""
+        if policy not in ("auto", VINTAGE, LATEST_FILTERED):
+            raise ValueError(f"unknown statement policy {policy!r}")
+        if inputs not in (STRICT_DATED, APPROXIMATE_CURRENT):
+            raise ValueError(f"unknown input policy {inputs!r}")
+        if inputs == STRICT_DATED and (actions is None or day is None):
+            raise ValueError("a strict dated study needs the corporate actions and the study date to adjust a dated share count")
         self._base = base
         self._cutoff = cutoff
         self._factor = share_factor
+        self.inputs = inputs
+        self._actions, self._day = actions or {}, day
+        self.share_versions: dict[str, dict[str, Any]] = {}
+        self._share_status: dict[str, str] = {}
+        self.policy = (VINTAGE if base.has_versions() else LATEST_FILTERED) if policy == "auto" else policy
+        self.label = POLICY_LABELS[self.policy]
+
+    def _dated_shares(self, symbol: str) -> float | None:
+        counts = self._base.share_counts(symbol)
+        choice = share_counts.choose_as_of(counts, self._cutoff)
+        if choice.shares is None or choice.period_end is None:
+            self._share_status[symbol] = f"no share count had been filed by {self._day.isoformat()}"  # type: ignore[union-attr]
+            return None
+        factor = adjustment(self._actions.get(symbol, ()), choice.period_end, self._day)  # type: ignore[arg-type]
+        if factor is None:
+            self._share_status[symbol] = (
+                f"a split, bonus or restructuring after {choice.period_end} cannot be adjusted for (an unreadable ratio, or a demerger, scheme or capital reduction): "
+                f"the share count on {self._day.isoformat()} is not known"  # type: ignore[union-attr]
+            )
+            return None
+        source = next((c for c in counts if c.get("period_end") == choice.period_end and c.get("declared") == choice.shares), None) or {}
+        self._share_status[symbol] = ""
+        self.share_versions[symbol] = {
+            "period_end": choice.period_end, "filed": source.get("filed"), "url": source.get("url"), "how": choice.how, "declared": choice.shares, "adjustment": factor, "shares": choice.shares * factor,
+        }
+        return choice.shares * factor
+
+    def share_status(self, symbol: str) -> str:
+        """For a strict study: why the company's dated share count is missing, or "" when it has one."""
+        if symbol not in self._share_status and self.inputs == STRICT_DATED:
+            self._dated_shares(symbol)
+        return self._share_status.get(symbol, "")
 
     def lines(self, symbol: str, basis: str, statement: str) -> dict[tuple[date, date], dict[str, float]]:
+        if self.policy == VINTAGE:
+            if not self._base.has_versions():
+                raise AthenaError("this store has no statement versions, so a strict as-of read is not possible: run python -m athena.fundamentals.vintages on a copy, or use policy='latest_filtered' (approximate)")
+            return self._base.lines_as_of(symbol, basis, statement, self._cutoff)
         out: dict[tuple[date, date], dict[str, float]] = {}
         rows = self._base._con.execute(
             "SELECT period_start, period_end, key, value FROM statement_lines WHERE symbol = ? AND basis = ? AND statement = ? AND filed <= ? ORDER BY period_end, period_start",
@@ -137,6 +202,10 @@ class AsOfFundamentals:
         row = self._base.company(symbol)
         if row is None:
             return None
+        if self.inputs == STRICT_DATED:
+            if symbol not in self._share_status:
+                self._dated_shares(symbol)
+            return {**row, "shares": self.share_versions[symbol]["shares"] if symbol in self.share_versions else None}
         shares = row.get("shares")
         factor = self._factor.get(symbol, 1.0)
         return {**row, "shares": shares / factor if shares else shares}
@@ -187,6 +256,7 @@ class Row:
     company: inputs.CompanyInputs
     industry: IndustryContext | None
     forward: dict[int, float]  # months ahead -> split-adjusted price return
+    outcome: dict[int, str] = field(default_factory=dict)  # months ahead -> "priced", "restructured" (return unknown from the price alone), "no_end_price" (stopped trading: proceeds unknown) or "not_yet_known"; strict studies only
 
 
 @dataclass(frozen=True)
@@ -194,6 +264,10 @@ class Snapshot:
     day: date
     rows: tuple[Row, ...]
     excluded: dict[str, int]  # reason -> count
+    statement_policy: str = ""  # which `AsOfFundamentals` reader supplied the statements ("vintage" or the approximate "latest_filtered"): a report states it
+    inputs: str = ""  # the input policy the snapshot ran under (`athena.evaluation.policy`): "strict_dated" or "approximate_current"
+    missing: dict[str, list[str]] = field(default_factory=dict)  # strict studies: a required dated input that did not exist -> the companies that abstained for it (they stay accounted for)
+    manifest: dict[str, Any] = field(default_factory=dict)  # the exact input versions read (`athena.valuation.manifest`) and the share-count summary
 
 
 def add_months(day: date, months: int) -> date:
@@ -206,9 +280,18 @@ def add_months(day: date, months: int) -> date:
 
 def build_snapshot(
     fund: FundamentalsStore, ref: ReferenceStore, warehouse: Path, day: date, today: date, horizons: Sequence[int] = (6, 12), actions: dict[str, list[tuple[date, str, float | None]]] | None = None,
-    symbols: Sequence[str] | None = None, progress: Callable[[str], None] | None = None,
+    symbols: Sequence[str] | None = None, progress: Callable[[str], None] | None = None, statement_policy: str = "auto", input_policy: str = APPROXIMATE_CURRENT,
 ) -> Snapshot:
-    """Every stored company as it stood on `day`: its inputs from what had been filed, the price of the day, and its later returns where the later prices exist."""
+    """Every stored company as it stood on `day`: its inputs from what had been filed, the price of the day, and its later returns where the later prices exist. `statement_policy` is
+    `AsOfFundamentals`'s: `vintage` (strict), `latest_filtered` (approximate) or `auto`; the snapshot records which was used.
+
+    `input_policy` is the study's (`athena.evaluation.policy`, locked in docs/audit-2026-11-12/WP04-STUDY-POLICY.md). `approximate_current` is the earlier behaviour, kept and labelled: today's share
+    count, industry map and industry tables read for the past date, and a company with a demerger, scheme or capital reduction AFTER the date is left out. `strict_dated` reads every input as it stood
+    on the date; a company missing one abstains and is listed in `Snapshot.missing` under the input it lacked; nothing that happens after the date decides who is in the snapshot (a later demerger
+    leaves the company in, and its outcome is `restructured`); a company that stopped trading is in with outcome `no_end_price`. Every company is accounted for: rows + excluded + missing = symbols."""
+    strict = input_policy == STRICT_DATED
+    if input_policy not in (STRICT_DATED, APPROXIMATE_CURRENT):
+        raise ValueError(f"unknown input policy {input_policy!r}")
     actions = load_actions(warehouse) if actions is None else actions
     price = closes_on(warehouse, day)
     later = {h: closes_on(warehouse, add_months(day, h)) for h in horizons}
@@ -217,39 +300,75 @@ def build_snapshot(
         symbols = [r[0] for r in fund._con.execute("SELECT symbol FROM companies ORDER BY symbol").fetchall()]
     factors: dict[str, float] = {}
     excluded: dict[str, int] = defaultdict(int)
+    missing: dict[str, list[str]] = defaultdict(list)
     keep: list[str] = []
     for symbol in symbols:
         if symbol not in price:
             excluded["no price on the day"] += 1
             continue
-        factor = adjustment(actions.get(symbol, ()), day)
-        if factor is None:
-            excluded["a demerger, scheme, capital reduction or unreadable split after the day"] += 1
-            continue
-        factors[symbol] = factor
+        if not strict:
+            factor = adjustment(actions.get(symbol, ()), day)
+            if factor is None:
+                excluded["a demerger, scheme, capital reduction or unreadable split after the day"] += 1
+                continue
+            factors[symbol] = factor
         keep.append(symbol)
-    as_of = AsOfFundamentals(fund, datetime.combine(day, datetime.max.time()), factors)
+    as_of = AsOfFundamentals(
+        fund, datetime.combine(day, datetime.max.time()), factors, statement_policy, inputs=input_policy, actions=actions if strict else None, day=day if strict else None,
+    )
     rows: list[Row] = []
     for n, symbol in enumerate(keep):
+        if strict:
+            why = as_of.share_status(symbol) if fund.company(symbol) is not None else ""
+            if why:
+                missing["share count: " + ("none filed by the day" if why.startswith("no share count") else "a corporate action since the filing cannot be adjusted for")].append(symbol)
+                continue
         company = inputs.load_company_inputs(as_of, symbol, "consolidated", price[symbol])  # type: ignore[arg-type]
         if company is None:
             company = inputs.load_company_inputs(as_of, symbol, "standalone", price[symbol])  # type: ignore[arg-type]
         if company is None:
             excluded["no statements filed by the day"] += 1
             continue
+        if strict:
+            context, reason = ind.lookup_as_of(ref, symbol, day)
+            if context is None:
+                missing["industry: " + ("no company mapping dated by the day" if "mapping" in reason else "no industry tables published by the day")].append(symbol)
+                continue
+        else:
+            context = ind.lookup(ref, symbol, today)
         forward: dict[int, float] = {}
+        outcome: dict[int, str] = {}
         for h in horizons:
             end = add_months(day, h)
+            if strict:
+                if end > last_bar_day:
+                    outcome[h] = "not_yet_known"
+                    continue
+                window = adjustment(actions.get(symbol, ()), day, end)
+                if window is None:
+                    outcome[h] = "restructured"  # the return cannot be read from the price alone: unknown, and the company stays in
+                    continue
+                if symbol not in later[h]:
+                    outcome[h] = "no_end_price"  # stopped trading before the end of the window: proceeds unknown
+                    continue
+                forward[h] = later[h][symbol] * window / price[symbol] - 1.0
+                outcome[h] = "priced"
+                continue
             if end > last_bar_day or symbol not in later[h]:
                 continue
             window = adjustment(actions.get(symbol, ()), day, end)
             if window is None:
                 continue
             forward[h] = later[h][symbol] * window / price[symbol] - 1.0
-        rows.append(Row(symbol, company, ind.lookup(ref, symbol, today), forward))
+        rows.append(Row(symbol, company, context, forward, outcome))
         if progress and n % 500 == 0:
             progress(f"{day}: {n}/{len(keep)}")
-    return Snapshot(day, tuple(rows), dict(excluded))
+    version_note = {
+        "share_counts": {"dated": len(as_of.share_versions), "missing": sum(len(v) for k, v in missing.items() if k.startswith("share count"))},
+        "statements": as_of.label, "outcomes": {h: dict(Counter(r.outcome.get(h, "") for r in rows)) for h in horizons} if strict else {},
+    }
+    manifest_ = {**input_manifest(ref, day, policy=input_policy, today=today), **version_note}
+    return Snapshot(day, tuple(rows), dict(excluded), as_of.policy, input_policy, {k: sorted(v) for k, v in missing.items()}, manifest_)
 
 
 def _last_bar_day(warehouse: Path) -> date:
@@ -276,6 +395,7 @@ class Out:
     industry: str | None
     earnings_yield: float | None
     book_to_price: float | None
+    outcome: dict[int, str] = field(default_factory=dict)  # months ahead -> how the later return was (or was not) measured; see `Row.outcome`
 
 
 def average_unlevered_beta(rows: Sequence[Row]) -> float:
@@ -286,16 +406,26 @@ def average_unlevered_beta(rows: Sequence[Row]) -> float:
     return sum(seen.values()) / len(seen) if seen else 1.0
 
 
-def run_variant(snapshot: Snapshot, variant: Variant, ref: ReferenceStore, today: date) -> list[Out]:
+def run_variant(
+    snapshot: Snapshot, variant: Variant, ref: ReferenceStore, today: date, on_date: date | None = None, abstained: dict[str, tuple[str, ...]] | None = None,
+) -> list[Out]:
+    """Value every row of the snapshot under the variant. The rates and tables are read as of `on_date` (a strict study passes the snapshot's own date; the default, `today`, is the approximate
+    study's, which reads today's inputs for a past date). A company whose valuation could not be made because an input does not exist is NOT silently dropped: with `abstained` given it is listed
+    there with what was missing."""
     store = OverrideStore(ref, variant)
     average = average_unlevered_beta(snapshot.rows)
     policy = replace(variant.policy, detail=False)
+    read = on_date or today
     outs: list[Out] = []
     for row in snapshot.rows:
         context = shrink_betas(row.industry, average, variant.beta_shrink) if row.industry is not None else None
-        capital = wacc.company_cost_of_capital(store, row.company, context, today)  # type: ignore[arg-type]
-        got = scenarios.value_company(store, row.company, context, capital, today, policy)  # type: ignore[arg-type]
-        if not got.ok or got.base is None or got.low is None or got.high is None or got.base <= 0 or not row.company.price:
+        capital = wacc.company_cost_of_capital(store, row.company, context, read)  # type: ignore[arg-type]
+        got = scenarios.value_company(store, row.company, context, capital, read, policy)  # type: ignore[arg-type]
+        if not got.ok:
+            if abstained is not None:
+                abstained[row.symbol] = tuple(got.missing) or tuple(getattr(capital, "missing", ()))
+            continue
+        if got.base is None or got.low is None or got.high is None or got.base <= 0 or not row.company.price:
             continue
         c = row.company
         outs.append(Out(
@@ -303,6 +433,7 @@ def run_variant(snapshot: Snapshot, variant: Variant, ref: ReferenceStore, today
             row.industry.industry if row.industry else None,
             c.net_profit / c.market_cap if c.net_profit is not None and c.market_cap else None,
             c.book_equity / c.market_cap if c.book_equity is not None and c.market_cap else None,
+            row.outcome,
         ))
     return outs
 
@@ -405,6 +536,24 @@ def _signals(outs: Sequence[Out], horizon: int, min_cap: float) -> dict[str, tup
     bp = [o for o in pool if o.book_to_price is not None and o.book_to_price > 0]
     out["book to price"] = ([o.book_to_price for o in bp], [o.forward[horizon] for o in bp])  # type: ignore[misc]
     return out
+
+
+def outcome_accounting(outs: Sequence[Out], horizon: int) -> dict[str, Any]:
+    """How the later return of every valued company was measured at `horizon`: `priced`, `restructured` (a demerger, scheme, capital reduction or unreadable ratio: unknown from the price alone),
+    `no_end_price` (stopped trading before the end: proceeds unknown) or `not_yet_known`, with the share of the companies whose outcome WAS due that are unknown. Companies without a recorded outcome (an
+    approximate study) are `unrecorded`: that study cannot say."""
+    counts = Counter(o.outcome.get(horizon, "unrecorded") for o in outs)
+    due = counts["priced"] + counts["restructured"] + counts["no_end_price"]
+    return {**{k: counts.get(k, 0) for k in ("priced", "restructured", "no_end_price", "not_yet_known", "unrecorded")},
+            "unknown_share": (counts["restructured"] + counts["no_end_price"]) / due if due else None}
+
+
+def zero_recovery_sensitivity(outs: Sequence[Out], horizon: int, min_cap: float = MIN_MARKET_CAP_CRORE) -> dict[str, dict[str, Any]]:
+    """The signal metrics again with every company that stopped trading counted at a return of -100% (the locked policy's assumed total-loss scenario, `zero_recovery`). A NAMED sensitivity beside the
+    measurable-only result, never the result itself and not a bound on it: recovery or liquidation proceeds could be positive. The other scenario, valuing each at its last traded close, is not computed here
+    because this study does not hold that close. Restructured names stay out of both: their return is unknown."""
+    filled = [replace(o, forward={**o.forward, horizon: -1.0}) if o.outcome.get(horizon) == "no_end_price" else o for o in outs]
+    return forward_metrics(filled, horizon, min_cap)
 
 
 def forward_metrics(outs: Sequence[Out], horizon: int = 6, min_cap: float = MIN_MARKET_CAP_CRORE) -> dict[str, dict[str, Any]]:

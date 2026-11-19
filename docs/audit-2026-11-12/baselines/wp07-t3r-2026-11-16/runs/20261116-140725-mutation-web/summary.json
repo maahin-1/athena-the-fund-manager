@@ -1,0 +1,17 @@
+{
+ "label": "mutation-web",
+ "harness": "mutate.py v2",
+ "total": 5,
+ "counts": {
+  "caught": 1,
+  "SURVIVED": 1,
+  "mixed": 0,
+  "error_only": 1,
+  "unattributed": 0,
+  "invalid": 2,
+  "timeout": 0,
+  "pattern_error": 0,
+  "harness_error": 0
+ },
+ "files_restored": true
+}

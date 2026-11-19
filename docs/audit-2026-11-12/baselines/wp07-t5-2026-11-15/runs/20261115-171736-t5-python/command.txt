@@ -1,0 +1,1 @@
+python -m pytest tests -q -p no:cacheprovider --ignore=tests/test_dashboard_app.py --ignore=tests/test_live_panel.py --ignore=tests/test_market.py --ignore=tests/test_verdict_panel.py --ignore=tests/test_llm_basics.py --ignore=tests/test_llm_probe.py --ignore=tests/test_llm_router.py --ignore=tests/test_angel_login.py --ignore=tests/test_kite_login.py
