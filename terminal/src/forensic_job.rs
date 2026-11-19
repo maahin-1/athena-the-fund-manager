@@ -105,7 +105,7 @@ impl ForensicJobs {
     async fn run(self: Arc<Self>, url: String, company: String, kind: String) {
         let mut cmd = (self.launch)(&url, &company, &kind);
         cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
-        let outcome = match cmd.spawn() {
+        let outcome = match { crate::process::background(cmd.as_std_mut()); cmd.spawn() } {
             Err(_) => Err("the analysis could not be started".to_string()),
             Ok(child) => match tokio::time::timeout(LIMIT, child.wait_with_output()).await {
                 Err(_) => Err("the analysis took too long and was stopped".to_string()),

@@ -1234,7 +1234,7 @@ impl Launcher for ProcessLauncher {
         // `kill_on_drop` ends a child whose handle this process drops while it is alive. It is not a guarantee when this process itself dies (a crash or a kill leaves its children running): the journal
         // and the explicit resolution are the answer to that, not a cleanup.
         cmd.args(&self.command[1..]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr((self.stderr)()).kill_on_drop(true);
-        let mut child = cmd.spawn().ok()?;
+        let mut child = { crate::process::background(cmd.as_std_mut()); cmd.spawn() }.ok()?;
         let stdin = child.stdin.take()?;
         let out = BufReader::new(child.stdout.take()?).lines();
         Some(ProcessLive { child, stdin: Some(stdin), out, next_id: 1 })
@@ -2301,7 +2301,7 @@ impl Admission {
         }
         // (`kill_on_drop` is only a backstop for a dropped handle while this process is alive; the owner ends the child and confirms it)
         cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
-        let child = cmd.spawn().map_err(|_| DirectError::Spawn)?;
+        let child = { crate::process::background(cmd.as_std_mut()); cmd.spawn() }.map_err(|_| DirectError::Spawn)?;
         self.run_owned(permit, ProcessDirect::new(child), kind, budget, owner).await
     }
 }

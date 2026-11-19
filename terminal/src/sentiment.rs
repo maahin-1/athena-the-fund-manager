@@ -57,7 +57,7 @@ impl SentimentJobs {
             cmd.arg("--tone");
         }
         cmd.arg("--warehouse").arg(&self.warehouse).stdin(Stdio::null()).stderr(Stdio::null()).stdout(Stdio::piped()).kill_on_drop(true);
-        let output = tokio::time::timeout(LIMIT, async { cmd.spawn()?.wait_with_output().await })
+        let output = tokio::time::timeout(LIMIT, async { { crate::process::background(cmd.as_std_mut()); cmd.spawn() }?.wait_with_output().await })
             .await
             .map_err(|_| SentimentError::Failed("the sentiment page took longer than two and a half minutes and was stopped".into()))?
             .map_err(|_| SentimentError::Failed("could not start the sentiment page".into()))?;

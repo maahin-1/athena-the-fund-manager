@@ -1,5 +1,6 @@
 mod analyse_worker;
 mod bounded;
+mod process;
 mod analysis;
 mod angel;
 mod bars;
