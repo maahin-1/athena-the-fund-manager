@@ -11,7 +11,6 @@
 /SECURITY.md                        @maahin-1
 /CONTRIBUTING.md                    @maahin-1
 /.gitattributes                     @maahin-1
-/.gitignore                         @maahin-1
 
 # Access guard and agent instructions; audit policy and approved test exclusions (the named list of excluded Python modules lives under verify/)
 /AGENTS.md                          @maahin-1
