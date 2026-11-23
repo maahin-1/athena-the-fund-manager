@@ -53,7 +53,7 @@ platformdirs==4.12.3
 plotly==7.1.0
 pluggy==1.6.0
 protobuf==7.36.2
-pyarrow==25.0.1
+pyarrow==26.0.1
 pycparser==3.0
 pycryptodome==4.5.0
 pydeck==0.9.3
